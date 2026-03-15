@@ -14,22 +14,32 @@ if (isset($_POST['login'])) {
 
     if ($user) {
 
-        if ($password == $user['password']) {
-
-            $_SESSION['tenantID'] = $user['tenantID'];
-            $_SESSION['shopName'] = $user['shopName'];
-
-            header("Location: dashboardadmin.php");
-            exit;
-
+        // Check if the password is already hashed
+        if (isset($user['first_login']) && $user['first_login'] == 1) {
+            // First login, password is still plaintext
+            if ($password === $user['password']) {
+                $_SESSION['tenantID'] = $user['tenantID'];
+                $_SESSION['shopName'] = $user['shopName'];
+                header("Location: dashboardadmin.php");
+                exit;
+            } else {
+                $error = "Incorrect password.";
+            }
         } else {
-            $error = "Incorrect password.";
+            // Password already hashed after first login
+            if (password_verify($password, $user['password'])) {
+                $_SESSION['tenantID'] = $user['tenantID'];
+                $_SESSION['shopName'] = $user['shopName'];
+                header("Location: dashboardadmin.php");
+                exit;
+            } else {
+                $error = "Incorrect password.";
+            }
         }
 
     } else {
         $error = "Email not found.";
     }
-
 }
 ?>
 
