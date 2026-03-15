@@ -74,7 +74,7 @@ $recentOwners = $conn->query("SELECT ownerName, created_at FROM owners ORDER BY 
                     <span class="material-symbols-outlined block text-2xl">directions_car</span>
                 </div>
                 <h2 class="text-xl font-bold tracking-tight text-slate-900 dark:text-white leading-none">
-                    AutoFix <span class="text-primary">Admin</span>
+                    RapidRepair <span class="text-primary">SuperAdmin</span>
                 </h2>
             </div>
             <nav class="flex-1 px-4 py-4 space-y-1">

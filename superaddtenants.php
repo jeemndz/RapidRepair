@@ -46,7 +46,7 @@ tailwind.config = {
                 "background-light": "#f6f6f8",
                 "background-dark": "#101622",
             },
-            fontFamily: {
+            fontFamily: {   
                 "display": ["Inter"]
             },
         },
@@ -65,7 +65,7 @@ tailwind.config = {
                     <span class="material-symbols-outlined block text-2xl">directions_car</span>
                 </div>
                 <h2 class="text-xl font-bold tracking-tight text-slate-900 dark:text-white leading-none">
-                    AutoFix <span class="text-primary">Admin</span>
+                    Rapid Repair <span class="text-primary">SuperAdmin</span>
                 </h2>
             </div>
             <nav class="flex-1 px-4 py-4 space-y-1">
