@@ -1,0 +1,101 @@
+/* ================= TABLE WRAPPER ================= */
+.table-wrapper {
+    margin-top: 15px;
+    overflow-x: auto;
+}
+
+/* ================= TABLE ================= */
+.table-wrapper table {
+    width: 100%;
+    border-collapse: collapse;
+    background: #ffffff;
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+}
+
+/* ================= TABLE HEADER ================= */
+.table-wrapper thead {
+    background: #2c3e50;
+}
+
+.table-wrapper thead th {
+    color: #ffffff;
+    text-align: left;
+    padding: 12px 14px;
+    font-size: 14px;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+/* ================= TABLE BODY ================= */
+.table-wrapper tbody tr {
+    border-bottom: 1px solid #eaeaea;
+    transition: background 0.2s ease;
+}
+
+.table-wrapper tbody tr:hover {
+    background: #f8f9fa;
+}
+
+.table-wrapper tbody td {
+    padding: 12px 14px;
+    font-size: 14px;
+    color: #333;
+    vertical-align: middle;
+}
+
+/* ================= ROLE BADGES ================= */
+.role {
+    padding: 4px 10px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: capitalize;
+    display: inline-block;
+}
+
+.role.admin {
+    background: #e74c3c;
+    color: #fff;
+}
+
+.role.staff {
+    background: #3498db;
+    color: #fff;
+}
+
+.role.client {
+    background: #2ecc71;
+    color: #fff;
+}
+
+/* ================= ACTIONS ================= */
+.table-wrapper select {
+    padding: 6px 8px;
+    border-radius: 5px;
+    border: 1px solid #ccc;
+    font-size: 13px;
+    margin-right: 6px;
+}
+
+.table-wrapper button {
+    padding: 6px 10px;
+    border: none;
+    border-radius: 5px;
+    background: #2c3e50;
+    color: #fff;
+    font-size: 13px;
+    cursor: pointer;
+    transition: background 0.2s ease;
+}
+
+.table-wrapper button:hover {
+    background: #1a252f;
+}
+
+/* ================= PROTECTED TEXT ================= */
+.table-wrapper em {
+    color: #999;
+    font-size: 13px;
+}

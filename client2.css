@@ -1,0 +1,59 @@
+/* WELCOME BANNER */
+.welcome-banner {
+    background: #254a91;
+    color: white;
+    padding: 25px;
+    border-radius: 6px;
+    text-align: center;
+    margin-bottom: 25px;
+}
+
+.welcome-banner h1 {
+    margin: 0;
+    font-size: 28px;
+}
+
+.welcome-banner p {
+    margin-top: 5px;
+    font-size: 14px;
+    opacity: 0.9;
+}
+
+/* SECTION TITLES */
+.section-title {
+    margin: 25px 0 15px;
+    font-size: 20px;
+    font-weight: 600;
+}
+
+/* SERVICES */
+.services {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 20px;
+}
+
+.service-card {
+    background: white;
+    padding: 10px;
+    border-radius: 6px;
+    box-shadow: 0 3px 8px rgba(0,0,0,0.15);
+}
+
+.service-card img {
+    width: 100%;
+    border-radius: 4px;
+}
+
+/* FEATURED CLIENTS */
+.clients {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 15px;
+}
+
+.clients img {
+    width: 100%;
+    border-radius: 6px;
+    box-shadow: 0 3px 8px rgba(0,0,0,0.15);
+}

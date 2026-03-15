@@ -1,0 +1,249 @@
+/* ================= ACTION BUTTONS (Create / Refresh) ================= */
+.actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.actions .btn {
+    border: none;
+    padding: 10px 18px;
+    border-radius: 999px;
+    color: #fff;
+    cursor: pointer;
+    font-weight: 700;
+    font-size: 14px;
+    letter-spacing: .2px;
+    transition: transform .12s ease, box-shadow .12s ease, opacity .12s ease;
+    box-shadow: 0 10px 18px rgba(0,0,0,0.12);
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.actions .btn:active {
+    transform: translateY(1px);
+    box-shadow: 0 6px 14px rgba(0,0,0,0.12);
+}
+
+.btn.create {
+    background: linear-gradient(135deg, #16a34a, #0bb30b);
+}
+.btn.create:hover { opacity: .92; }
+
+.btn.view {
+    background: linear-gradient(135deg, #254a91, #071f4a);
+}
+.btn.view:hover { opacity: .92; }
+
+
+/* ================= TABLE CONTAINER ================= */
+.table-container {
+    background: #fff;
+    margin-top: 16px;
+    padding: 14px;
+    border-radius: 12px;
+    border: 1px solid #eef1f6;
+    box-shadow: 0 18px 30px rgba(0,0,0,0.08);
+    overflow-x: auto;
+}
+
+/* Optional: tighten h3 spacing */
+.table-container h3 {
+    margin: 6px 4px 12px;
+    font-size: 18px;
+    font-weight: 800;
+    color: #1d3f8b;
+}
+
+/* ================= TABLE BASE ================= */
+table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    min-width: 920px; /* helps layout on wide tables; remove if you want */
+}
+
+/* Header */
+thead th {
+    background: linear-gradient(135deg, #071f4a, #254a91);
+    color: #fff;
+    padding: 12px 12px;
+    text-align: left;
+    font-size: 13px;
+    font-weight: 800;
+    letter-spacing: .2px;
+    border-bottom: 1px solid rgba(255,255,255,0.18);
+    position: sticky;      /* ✅ keeps header visible while scrolling */
+    top: 0;
+    z-index: 2;
+}
+
+/* Rounded header corners */
+thead th:first-child { border-top-left-radius: 10px; }
+thead th:last-child  { border-top-right-radius: 10px; }
+
+/* Body cells */
+tbody td {
+    padding: 12px 12px;
+    font-size: 13.5px;
+    color: #111827;
+    border-bottom: 1px solid #eef1f6;
+    vertical-align: middle;
+}
+
+/* Zebra rows */
+tbody tr:nth-child(even) td {
+    background: #f9fbff;
+}
+
+/* Hover highlight */
+tbody tr:hover td {
+    background: #eef5ff;
+}
+
+/* If no data rows message */
+tbody td[colspan] {
+    text-align: center;
+    color: #6b7280;
+    padding: 16px 12px;
+    font-weight: 700;
+}
+
+/* ================= ACTION COLUMN (icons) ================= */
+.actions-col {
+    white-space: nowrap;
+}
+
+/* All action links/buttons inside table */
+.actions-col a,
+.actions-col .icon-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    border-radius: 10px;
+    border: 1px solid #e5eaf4;
+    background: #fff;
+    margin-right: 8px;
+    cursor: pointer;
+    transition: transform .12s ease, box-shadow .12s ease, background .12s ease;
+    text-decoration: none;
+}
+
+/* Icon color */
+.actions-col i {
+    font-size: 14px;
+    color: #1f3b77;
+}
+
+/* Hover effect */
+.actions-col a:hover,
+.actions-col .icon-btn:hover {
+    transform: translateY(-1px);
+    background: #f3f7ff;
+    box-shadow: 0 10px 18px rgba(37,74,145,0.18);
+    border-color: #dbe6ff;
+}
+
+/* Delete icon style */
+.actions-col a[title="Delete"] i {
+    color: #b91c1c;
+}
+.actions-col a[title="Delete"]:hover {
+    background: #fff1f2;
+    border-color: #fecdd3;
+    box-shadow: 0 10px 18px rgba(185,28,28,0.18);
+}
+
+/* View icon style */
+.actions-col a[title="View"]:hover i {
+    color: #254a91;
+}
+
+/* Edit icon style */
+.actions-col .icon-btn[title="Edit"]:hover i {
+    color: #0f172a;
+}
+
+/* ================= Responsive improvements ================= */
+@media (max-width: 900px) {
+    table { min-width: 820px; }
+}
+
+@media (max-width: 600px) {
+    .actions { flex-wrap: wrap; }
+    .actions .btn { width: 100%; justify-content: center; }
+}
+/* ================= STATUS BADGES ================= */
+.status-badge{
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 12px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: .2px;
+    white-space: nowrap;
+    border: 1px solid transparent;
+}
+
+/* dot */
+.status-badge::before{
+    content: "";
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+}
+
+/* COLORS */
+.status-pending{
+    background: #fff7ed;
+    color: #92400e;
+    border-color: #fed7aa;
+}
+.status-pending::before{ background:#f59e0b; }
+
+.status-approved{
+    background: #ecfdf5;
+    color: #065f46;
+    border-color: #a7f3d0;
+}
+.status-approved::before{ background:#22c55e; }
+
+.status-scheduled{
+    background: #eff6ff;
+    color: #1e40af;
+    border-color: #bfdbfe;
+}
+.status-scheduled::before{ background:#3b82f6; }
+
+.status-ongoing{
+    background: #f5f3ff;
+    color: #5b21b6;
+    border-color: #ddd6fe;
+}
+.status-ongoing::before{ background:#8b5cf6; }
+
+.status-completed{
+    background: #ecfdf5;
+    color: #064e3b;
+    border-color: #6ee7b7;
+}
+.status-completed::before{ background:#10b981; }
+
+.status-cancelled{
+    background: #fff1f2;
+    color: #9f1239;
+    border-color: #fecdd3;
+}
+.status-cancelled::before{ background:#fb7185; }
+
+.status-rejected{
+    background: #fef2f2;
+    color: #991b1b;
+    border-color: #fecaca;
+}
+.status-rejected::before{ background:#ef4444; }

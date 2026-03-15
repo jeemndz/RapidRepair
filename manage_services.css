@@ -1,0 +1,108 @@
+/* ================= CARD STYLING ================= */
+.card {
+    background: #fff;
+    padding: 20px;
+    margin-bottom: 20px;
+    border-radius: 10px;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.05);
+}
+
+/* ================= FORM ================= */
+.card form {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    align-items: center;
+}
+
+.card form select {
+    padding: 8px 12px;
+    border-radius: 5px;
+    border: 1px solid #ccc;
+    font-size: 14px;
+}
+
+.card form button {
+    padding: 8px 15px;
+    border-radius: 5px;
+    border: none;
+    background: #2c3e50;
+    color: #fff;
+    cursor: pointer;
+    font-size: 14px;
+    transition: background 0.2s ease;
+}
+
+.card form button:hover {
+    background: #1a252f;
+}
+
+/* ================= TABLE ================= */
+.table-wrapper {
+    margin-top: 15px;
+    overflow-x: auto;
+}
+
+.table-wrapper table {
+    width: 100%;
+    border-collapse: collapse;
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+}
+
+.table-wrapper thead {
+    background: #2c3e50;
+}
+
+.table-wrapper thead th {
+    color: #fff;
+    text-align: left;
+    padding: 12px 14px;
+    font-size: 14px;
+}
+
+.table-wrapper tbody tr {
+    border-bottom: 1px solid #eaeaea;
+    transition: background 0.2s ease;
+}
+
+.table-wrapper tbody tr:hover {
+    background: #f8f9fa;
+}
+
+.table-wrapper tbody td {
+    padding: 12px 14px;
+    font-size: 14px;
+    color: #333;
+    vertical-align: middle;
+}
+
+/* ================= BUTTONS IN TABLE ================= */
+.table-wrapper button {
+    padding: 5px 10px;
+    border-radius: 5px;
+    border: none;
+    font-size: 13px;
+    cursor: pointer;
+    margin-right: 5px;
+    transition: background 0.2s ease;
+}
+
+.table-wrapper button:first-child {
+    background: #3498db;
+    color: #fff;
+}
+
+.table-wrapper button:first-child:hover {
+    background: #217dbb;
+}
+
+.table-wrapper button:last-child {
+    background: #e74c3c;
+    color: #fff;
+}
+
+.table-wrapper button:last-child:hover {
+    background: #c0392b;
+}

@@ -1,0 +1,195 @@
+/* dashboard.css */
+/* UI base layout comes from pagelayout.css */
+
+:root{
+    --brand: #071f4a;
+    --muted: #6b7280;
+    --cardShadow: 0 8px 18px rgba(0,0,0,0.08);
+}
+
+/* Header */
+.dash-header{
+    display:flex;
+    justify-content:space-between;
+    align-items:flex-end;
+    gap: 14px;
+    flex-wrap: wrap;
+    margin-bottom: 14px;
+}
+
+.dash-title{
+    margin: 0;
+    font-size: 28px;
+    letter-spacing: .2px;
+}
+.dash-subtitle{
+    margin: 6px 0 0;
+    color: var(--muted);
+    font-size: 13px;
+}
+
+/* Filters */
+.filters{
+    display:flex;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.filters .filter-btn{
+    padding: 10px 14px;
+    border-radius: 12px;
+    text-decoration: none;
+    background: #eef2ff;
+    color: #111;
+    font-size: 13px;
+    font-weight: 800;
+    transition: transform .12s ease, background .12s ease, box-shadow .12s ease;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}
+
+.filters .filter-btn:hover{
+    transform: translateY(-1px);
+    background: #e5e7eb;
+}
+
+.filters .filter-btn.active{
+    background: var(--brand);
+    color: #fff;
+}
+
+/* Cards */
+.cards {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+    margin: 16px 0 18px;
+}
+
+@media(max-width: 1100px){
+    .cards{ grid-template-columns: repeat(2, 1fr); }
+}
+@media(max-width: 600px){
+    .cards{ grid-template-columns: 1fr; }
+}
+
+.card {
+    background: #fff;
+    padding: 16px 16px 14px;
+    border-radius: 16px;
+    box-shadow: var(--cardShadow);
+    position: relative;
+    overflow: hidden;
+    transition: transform .12s ease, box-shadow .12s ease;
+}
+
+.card:hover{
+    transform: translateY(-2px);
+    box-shadow: 0 10px 22px rgba(0,0,0,0.12);
+}
+
+.card-top{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap: 10px;
+    margin-bottom: 8px;
+}
+
+.card span {
+    font-size: 13px;
+    color: #111;
+    font-weight: 800;
+}
+
+.card small{
+    font-size: 11px;
+    color: var(--muted);
+    background: #f3f4f6;
+    padding: 4px 10px;
+    border-radius: 999px;
+    font-weight: 700;
+}
+
+.card h2 {
+    margin: 6px 0 6px;
+    font-size: 26px;
+    letter-spacing: .2px;
+}
+
+.card-foot{
+    font-size: 12px;
+    color: var(--muted);
+}
+
+/* Left border accent (matches your old style but smoother) */
+.blue { border-left: 7px solid #4e73df; }
+.red { border-left: 7px solid #e74a3b; }
+.green { border-left: 7px solid #1cc88a; }
+.yellow { border-left: 7px solid #f6c23e; }
+
+/* Charts */
+.charts {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+}
+
+@media(max-width: 900px){
+    .charts{ grid-template-columns: 1fr; }
+}
+
+.chart {
+    background: #fff;
+    border-radius: 16px;
+    padding: 14px;
+    box-shadow: var(--cardShadow);
+}
+
+.chart-head{
+    display:flex;
+    justify-content:space-between;
+    align-items:baseline;
+    gap: 10px;
+    margin-bottom: 10px;
+}
+
+.chart h3 {
+    margin: 0;
+    color: #2a4485;
+    font-size: 16px;
+}
+
+.chart-note{
+    font-size: 12px;
+    color: var(--muted);
+}
+
+/* Optional: role badges kept */
+.role.admin { color: #fff; background: #c0392b; padding: 4px 8px; border-radius: 8px; }
+.role.staff { color: #fff; background: #2980b9; padding: 4px 8px; border-radius: 8px; }
+.role.client { color: #fff; background: #27ae60; padding: 4px 8px; border-radius: 8px; }
+
+/* Search dropdown (if not already styled elsewhere) */
+.search-results{
+    position:absolute;
+    top: 46px;
+    left: 0;
+    right: 0;
+    background: #fff;
+    border-radius: 14px;
+    box-shadow: 0 10px 26px rgba(0,0,0,0.12);
+    overflow:hidden;
+    z-index: 99;
+}
+
+.sr-item{
+    display:block;
+    padding: 10px 12px;
+    text-decoration:none;
+    color:#111;
+    border-bottom: 1px solid #f1f1f1;
+}
+.sr-item:hover{ background:#f6f8ff; }
+.sr-title{ font-weight: 800; font-size: 13px; }
+.sr-sub{ font-size: 12px; color: var(--muted); margin-top: 2px; }
+.sr-empty{ padding: 10px 12px; font-size: 13px; color: var(--muted); }

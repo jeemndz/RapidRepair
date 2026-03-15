@@ -1,0 +1,295 @@
+/* ================= PAGE HEADER (top of content) ================= */
+.page-head{
+    display:flex;
+    justify-content:space-between;
+    align-items:flex-end;
+    gap:14px;
+    margin-bottom: 16px;
+}
+
+.page-title{
+    margin:0;
+    font-size: 34px;
+    font-weight: 900;
+    letter-spacing: .2px;
+    color:#0f172a;
+}
+
+.page-sub{
+    margin:6px 0 0;
+    font-size: 14px;
+    color:#667085;
+}
+
+/* Primary button (Create Booking) */
+.btn-primary{
+    background: linear-gradient(135deg, #071f4a, #2a4485);
+    color:#fff;
+    border:0;
+    padding:10px 14px;
+    border-radius: 12px;
+    cursor:pointer;
+    font-size: 13px;
+    font-weight: 800;
+    box-shadow: 0 10px 22px rgba(7,31,74,0.18);
+    transition: transform .15s ease, opacity .15s ease;
+    white-space: nowrap;
+}
+.btn-primary:hover{
+    opacity:.95;
+    transform: translateY(-1px);
+}
+
+/* Ghost button (Cancel) */
+.btn-ghost{
+    background:#f2f4f7;
+    color:#111827;
+    border:1px solid #e4e7ec;
+    padding:10px 14px;
+    border-radius: 12px;
+    cursor:pointer;
+    font-size: 13px;
+    font-weight: 800;
+    transition: transform .15s ease, opacity .15s ease;
+}
+.btn-ghost:hover{
+    opacity:.95;
+    transform: translateY(-1px);
+}
+
+/* ================= ALERTS ================= */
+.alert{
+    margin: 0 0 14px;
+    padding: 12px 14px;
+    border-radius: 12px;
+    font-size: 14px;
+    border: 1px solid transparent;
+}
+.alert-success{
+    background: #e6f4ea;
+    color: #1e7e34;
+    border-color: #c3e6cb;
+}
+.alert-error{
+    background: #fdecea;
+    color: #b71c1c;
+    border-color: #f5c6cb;
+}
+
+/* ================= TABLE CARD ================= */
+.table-card{
+    background:#fff;
+    border-radius: 14px;
+    border: 1px solid #eef2f6;
+    box-shadow: 0 10px 25px rgba(16, 24, 40, 0.08);
+    overflow:hidden;
+}
+
+.table-card-head{
+    padding: 14px 16px;
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    gap: 10px;
+    border-bottom:1px solid #eef2f6;
+    background: linear-gradient(135deg, #071f4a, #2a4485);
+    color:#fff;
+}
+.table-card-head h2{
+    margin:0;
+    font-size: 18px;
+    font-weight: 900;
+}
+.muted{
+    color: rgba(255,255,255,0.85);
+    font-size: 13px;
+    font-weight: 600;
+}
+
+/* wrapper for horizontal scroll on small screens */
+.table-wrap{
+    overflow-x:auto;
+}
+
+/* Table */
+.booking-table{
+    width:100%;
+    border-collapse:collapse;
+    min-width: 760px;
+}
+
+.booking-table thead{
+    background:#243f7d;
+    color:#fff;
+}
+
+.booking-table th,
+.booking-table td{
+    padding: 12px 12px;
+    font-size: 14px;
+    text-align:left;
+    border-bottom: 1px solid #eef2f6;
+    white-space: nowrap;
+}
+
+.booking-table tbody tr:nth-child(even){
+    background:#f8fafc;
+}
+.booking-table tbody tr:hover{
+    background:#eef3ff;
+}
+
+.empty{
+    text-align:center;
+    font-weight: 800;
+    color:#667085;
+    padding: 18px !important;
+}
+
+/* ================= STATUS BADGES ================= */
+.status-badge{
+    display:inline-block;
+    padding: 5px 10px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 900;
+    border: 1px solid transparent;
+}
+
+.st-completed{ background:#e6f4ea; color:#1e7e34; border-color:#c3e6cb; }
+.st-cancelled{ background:#fdecea; color:#b71c1c; border-color:#f5c6cb; }
+.st-pending{ background:#fff4e5; color:#a15c00; border-color:#ffd8a8; }
+.st-approved{ background:#e8f0fe; color:#1e3a8a; border-color:#c7d2fe; }
+.st-ongoing{ background:#e0f2fe; color:#075985; border-color:#bae6fd; }
+.st-invoiced{ background:#f3e8ff; color:#6b21a8; border-color:#e9d5ff; }
+.st-default{ background:#f2f4f7; color:#344054; border-color:#eaecf0; }
+
+/* ================= MODAL ================= */
+.modal{
+    display:none;
+    position:fixed;
+    inset:0;
+    background: rgba(0,0,0,0.55);
+    z-index: 1000;
+    justify-content:center;
+    align-items:center;
+    padding: 18px;
+}
+
+.modal-content{
+    background:#fff;
+    width: 520px;
+    max-width: 100%;
+    border-radius: 16px;
+    box-shadow: 0 20px 45px rgba(0,0,0,0.25);
+    animation: modalPop .25s ease;
+    overflow:hidden;
+}
+
+/* modal header */
+.modal-header{
+    padding: 14px 16px;
+    display:flex;
+    justify-content:space-between;
+    align-items:flex-start;
+    gap: 10px;
+    border-bottom: 1px solid #eef2f6;
+    background: linear-gradient(135deg, #071f4a, #2a4485);
+    color:#fff;
+}
+.modal-header h3{
+    margin:0;
+    font-size: 18px;
+    font-weight: 900;
+}
+.modal-header .muted{
+    margin-top: 6px;
+    color: rgba(255,255,255,0.85);
+    font-size: 13px;
+}
+
+.icon-close{
+    background: rgba(255,255,255,0.15);
+    color:#fff;
+    border:0;
+    width: 36px;
+    height: 36px;
+    border-radius: 12px;
+    cursor:pointer;
+    font-size: 22px;
+    line-height: 1;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    transition: opacity .15s ease;
+}
+.icon-close:hover{ opacity: .9; }
+
+.modal-content form{
+    padding: 14px 16px 16px;
+}
+
+.form-grid{
+    display:grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+}
+
+@media (max-width: 560px){
+    .form-grid{ grid-template-columns: 1fr; }
+}
+
+.modal-content label{
+    display:block;
+    margin-bottom: 6px;
+    font-size: 13px;
+    font-weight: 900;
+    color:#1f2937;
+}
+
+.req{ color:#ef4444; }
+
+.modal-content input,
+.modal-content select,
+.modal-content textarea{
+    width:100%;
+    padding: 11px 12px;
+    border-radius: 12px;
+    border: 1px solid #d0d5dd;
+    font-size: 14px;
+    outline:none;
+    transition: box-shadow .15s ease, border-color .15s ease;
+}
+
+.modal-content textarea{
+    min-height: 90px;
+    resize: vertical;
+}
+
+.modal-content input:focus,
+.modal-content select:focus,
+.modal-content textarea:focus{
+    border-color:#254a91;
+    box-shadow: 0 0 0 3px rgba(37,74,145,0.15);
+}
+
+.hint{
+    display:block;
+    margin-top: 6px;
+    font-size: 12px;
+    color:#667085;
+}
+
+.modal-actions{
+    display:flex;
+    justify-content:flex-end;
+    gap: 10px;
+    margin-top: 14px;
+    padding-top: 14px;
+    border-top: 1px solid #eef2f6;
+}
+
+@keyframes modalPop{
+    from{ transform: scale(.96); opacity:0; }
+    to{ transform: scale(1); opacity:1; }
+}
