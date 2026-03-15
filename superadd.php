@@ -9,10 +9,24 @@ if (isset($_POST['createTenant'])) {
     $email = $_POST['email'];
     $contactNumber = $_POST['contactNumber'];
 
-    $query = "INSERT INTO owners
-(ownerName, shopName, email, contactNumber, shopAddress)
-VALUES
-('$ownerName','$shopName','$email','$contactNumber','$shopAddress')";
+    // GET LAST TENANT ID
+    $getID = mysqli_query($conn, "SELECT tenantID FROM owners ORDER BY tenantID DESC LIMIT 1");
+
+    if (mysqli_num_rows($getID) > 0) {
+        $row = mysqli_fetch_assoc($getID);
+        $lastID = (int) $row['tenantID'];
+        $newID = $lastID + 1;
+    } else {
+        $newID = 1;
+    }
+
+    // FORMAT TO 001,002,003
+    $tenantID = str_pad($newID, 3, "0", STR_PAD_LEFT);
+
+    $query = "INSERT INTO owners 
+    (tenantID, ownerName, shopName, email, contactNumber, shopAddress)
+    VALUES 
+    ('$tenantID','$ownerName','$shopName','$email','$contactNumber','$shopAddress')";
 
     mysqli_query($conn, $query);
 
@@ -218,44 +232,120 @@ VALUES
 
     <!-- CREATE TENANT MODAL -->
 
-    <div id="tenantModal" class="hidden fixed inset-0 bg-black/60 flex items-center justify-center z-50">
+    <!-- CREATE TENANT MODAL -->
 
-        <div class="bg-white w-full max-w-xl rounded-xl p-8">
+    <div id="tenantModal"
+        class="hidden fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
 
-            <div class="flex justify-between mb-6">
+        <div class="bg-white w-full max-w-xl rounded-xl shadow-2xl border flex flex-col overflow-hidden">
 
-                <h2 class="text-xl font-bold">Create New Tenant</h2>
+            <!-- HEADER -->
 
-                <button onclick="closeModal()">
+            <div class="px-8 py-6 border-b flex justify-between items-center">
+
+                <div>
+
+                    <h2 class="text-xl font-bold">Create New Tenant</h2>
+
+                    <p class="text-sm text-gray-500">
+                        Onboard a new vendor to your platform
+                    </p>
+
+                </div>
+
+                <button onclick="closeModal()" class="text-gray-400 hover:text-black">
                     <span class="material-symbols-outlined">close</span>
                 </button>
 
             </div>
 
-            <form method="POST">
+            <!-- FORM -->
 
-                <div class="grid grid-cols-2 gap-4">
+            <form method="POST" class="p-8 flex flex-col gap-6">
 
-                    <input name="shopName" class="border p-3 rounded-lg" placeholder="Shop Name" required>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
 
-                    <input name="shopAddress" class="border p-3 rounded-lg" placeholder="Shop Address" required>
+                    <div class="flex flex-col gap-2">
 
-                    <input name="ownerName" class="border p-3 rounded-lg" placeholder="Owner Name" required>
+                        <label class="text-xs font-bold uppercase text-gray-500">
+                            Shop Name
+                        </label>
 
-                    <input name="email" type="email" class="border p-3 rounded-lg" placeholder="Email" required>
+                        <input name="shopName" class="border rounded-lg p-3" placeholder="Modern Boutique" required>
 
-                    <input name="contactNumber" class="border p-3 rounded-lg col-span-2" placeholder="Contact Number">
+                    </div>
+
+                    <div class="flex flex-col gap-2">
+
+                        <label class="text-xs font-bold uppercase text-gray-500">
+                            Shop Address
+                        </label>
+
+                        <input name="shopAddress" class="border rounded-lg p-3" placeholder="123 Main Street" required>
+
+                    </div>
+
+                    <div class="flex flex-col gap-2">
+
+                        <label class="text-xs font-bold uppercase text-gray-500">
+                            Owner Name
+                        </label>
+
+                        <input name="ownerName" class="border rounded-lg p-3" placeholder="Juan Dela Cruz" required>
+
+                    </div>
+
+                    <div class="flex flex-col gap-2">
+
+                        <label class="text-xs font-bold uppercase text-gray-500">
+                            Email
+                        </label>
+
+                        <input name="email" type="email" class="border rounded-lg p-3" placeholder="owner@email.com"
+                            required>
+
+                    </div>
+
+                    <div class="flex flex-col gap-2 md:col-span-2">
+
+                        <label class="text-xs font-bold uppercase text-gray-500">
+                            Contact Number
+                        </label>
+
+                        <input name="contactNumber" class="border rounded-lg p-3" placeholder="09123456789">
+
+                    </div>
 
                 </div>
 
-                <div class="flex gap-4 mt-6">
+                <!-- LOGIN URL PREVIEW -->
+
+                <div class="bg-slate-50 border rounded-lg p-4 flex items-center gap-2">
+
+                    <span class="material-symbols-outlined text-primary">
+                        link
+                    </span>
+
+                    <span class="text-sm text-gray-500 italic">
+                        Login URL will be generated automatically
+                    </span>
+
+                </div>
+
+                <!-- BUTTONS -->
+
+                <div class="flex gap-4">
 
                     <button type="button" onclick="closeModal()" class="flex-1 border rounded-lg py-3">
+
                         Cancel
+
                     </button>
 
                     <button name="createTenant" class="flex-1 bg-primary text-white rounded-lg py-3">
+
                         Create Tenant
+
                     </button>
 
                 </div>
