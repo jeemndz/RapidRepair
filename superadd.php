@@ -1,3 +1,32 @@
+<?php
+// superadd.php
+session_start();
+require_once "db.php";
+
+// Redirect if not logged in
+if (!isset($_SESSION['superadmin_id'])) {
+    header("Location: superaddlogin.php");
+    exit();
+}
+
+// Get superadmin info
+$superadmin_id = $_SESSION['superadmin_id'];
+$stmt = $conn->prepare("SELECT fullName, email FROM superadmin WHERE superadmin_id = ?");
+$stmt->bind_param("i", $superadmin_id);
+$stmt->execute();
+$result = $stmt->get_result();
+$superadmin = $result->fetch_assoc();
+
+// Metrics
+$totalTenants = $conn->query("SELECT COUNT(*) as total FROM owners")->fetch_assoc()['total'];
+$activeShops = $totalTenants; // Assuming all tenants are active shops
+$pendingApprovals = rand(0, 50); // Example: random pending, replace with real logic
+
+// Recent Activity (last 5 owners)
+$recentOwners = $conn->query("SELECT ownerName, created_at FROM owners ORDER BY created_at DESC LIMIT 5");
+?>
+
+
 <!DOCTYPE html>
 
 <html lang="en">
