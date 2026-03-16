@@ -1,32 +1,48 @@
 <?php
-
 header("Content-Type: application/json");
 include "db.php";
 
-$email = $_POST['email'];
-$password = $_POST['password'];
+$data = json_decode(file_get_contents("php://input"), true);
 
-$query = "SELECT * FROM users WHERE email=?";
+$email = trim($data['email'] ?? '');
+$password = trim($data['password'] ?? '');
+
+if(empty($email) || empty($password)){
+    echo json_encode([
+        "status" => "error",
+        "message" => "Email and password required"
+    ]);
+    exit;
+}
+
+// Query email
+$query = "SELECT user_id, fullName, password FROM users WHERE email=?";
 $stmt = $conn->prepare($query);
-$stmt->bind_param("s",$email);
+$stmt->bind_param("s", $email);
 $stmt->execute();
-
 $result = $stmt->get_result();
 
 if($row = $result->fetch_assoc()){
-
-    if(password_verify($password,$row['password'])){
+    // Plain text comparison
+    if($password === $row['password']){
         echo json_encode([
-            "status"=>"success",
-            "user_id"=>$row['user_id'],
-            "name"=>$row['name']
+            "status" => "success",
+            "user_id" => $row['user_id'],
+            "name" => $row['fullName']
         ]);
-    }else{
-        echo json_encode(["status"=>"error","message"=>"Invalid password"]);
+    } else {
+        echo json_encode([
+            "status" => "error",
+            "message" => "Invalid password"
+        ]);
     }
-
 }else{
-    echo json_encode(["status"=>"error","message"=>"User not found"]);
+    echo json_encode([
+        "status" => "error",
+        "message" => "User not found"
+    ]);
 }
 
+$stmt->close();
+$conn->close();
 ?>
