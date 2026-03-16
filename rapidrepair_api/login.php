@@ -1,19 +1,22 @@
 <?php
-// login.php
+// Start output buffering
+ob_start();
 
-// Show errors for debugging (do NOT use on production)
+// Show all errors (for debugging)
 ini_set('display_errors', 1);
-ini_set('display_startup_errors', 1);
 error_reporting(E_ALL);
 
-// Allow Android app requests (CORS)
+// Allow Android app requests
 header("Access-Control-Allow-Origin: *");
 header("Access-Control-Allow-Methods: POST");
 header("Access-Control-Allow-Headers: Content-Type");
 header("Content-Type: application/json");
 
-// Include database connection
+// Include DB
 include "db.php";
+
+// Clear buffer to prevent stray whitespace
+ob_clean();
 
 // Get POST data safely
 $email = isset($_POST['email']) ? trim($_POST['email']) : '';
@@ -28,7 +31,7 @@ if (empty($email) || empty($password)) {
     exit;
 }
 
-// Prepare SQL statement to prevent SQL injection
+// Prepare SQL statement
 $query = "SELECT * FROM users WHERE email = ?";
 $stmt = $conn->prepare($query);
 
@@ -44,11 +47,9 @@ $stmt->bind_param("s", $email);
 $stmt->execute();
 $result = $stmt->get_result();
 
-// Check if user exists
+// Check user and password
 if ($row = $result->fetch_assoc()) {
-
-    // Plain text password check
-    if ($password === $row['password']) {
+    if ($password === $row['password']) { // plain password check
         echo json_encode([
             "status" => "success",
             "name" => $row['name']
@@ -59,7 +60,6 @@ if ($row = $result->fetch_assoc()) {
             "message" => "Invalid password"
         ]);
     }
-
 } else {
     echo json_encode([
         "status" => "error",
@@ -67,7 +67,6 @@ if ($row = $result->fetch_assoc()) {
     ]);
 }
 
-// Close statement and connection
 $stmt->close();
 $conn->close();
 ?>
