@@ -1,8 +1,10 @@
 <?php
 // login.php
 
-// Suppress PHP warnings/notices (for clean JSON output)
-error_reporting(0);
+// Show errors for debugging (do NOT use on production)
+ini_set('display_errors', 1);
+ini_set('display_startup_errors', 1);
+error_reporting(E_ALL);
 
 // Allow Android app requests (CORS)
 header("Access-Control-Allow-Origin: *");
@@ -29,10 +31,11 @@ if (empty($email) || empty($password)) {
 // Prepare SQL statement to prevent SQL injection
 $query = "SELECT * FROM users WHERE email = ?";
 $stmt = $conn->prepare($query);
-if(!$stmt){
+
+if (!$stmt) {
     echo json_encode([
         "status" => "error",
-        "message" => "Database error"
+        "message" => "Database error: " . $conn->error
     ]);
     exit;
 }
@@ -43,11 +46,11 @@ $result = $stmt->get_result();
 
 // Check if user exists
 if ($row = $result->fetch_assoc()) {
-    // Verify hashed password
-    if (password_verify($password, $row['password'])) {
+
+    // Plain text password check
+    if ($password === $row['password']) {
         echo json_encode([
             "status" => "success",
-            "user_id" => (int)$row['user_id'],
             "name" => $row['name']
         ]);
     } else {
@@ -56,6 +59,7 @@ if ($row = $result->fetch_assoc()) {
             "message" => "Invalid password"
         ]);
     }
+
 } else {
     echo json_encode([
         "status" => "error",
