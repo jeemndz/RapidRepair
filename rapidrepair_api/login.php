@@ -1,30 +1,69 @@
 <?php
+// login.php
+
+// Suppress PHP warnings/notices (for clean JSON output)
+error_reporting(0);
+
+// Allow Android app requests (CORS)
+header("Access-Control-Allow-Origin: *");
+header("Access-Control-Allow-Methods: POST");
+header("Access-Control-Allow-Headers: Content-Type");
 header("Content-Type: application/json");
+
+// Include database connection
 include "db.php";
 
-$email = $_POST['email'];
-$password = $_POST['password'];
+// Get POST data safely
+$email = isset($_POST['email']) ? trim($_POST['email']) : '';
+$password = isset($_POST['password']) ? $_POST['password'] : '';
 
+// Check if fields are empty
+if (empty($email) || empty($password)) {
+    echo json_encode([
+        "status" => "error",
+        "message" => "Email and password are required"
+    ]);
+    exit;
+}
+
+// Prepare SQL statement to prevent SQL injection
 $query = "SELECT * FROM users WHERE email = ?";
 $stmt = $conn->prepare($query);
-$stmt->bind_param("s",$email);
-$stmt->execute();
+if(!$stmt){
+    echo json_encode([
+        "status" => "error",
+        "message" => "Database error"
+    ]);
+    exit;
+}
 
+$stmt->bind_param("s", $email);
+$stmt->execute();
 $result = $stmt->get_result();
 
-if($row = $result->fetch_assoc()){
-
-    if(password_verify($password,$row['password'])){
+// Check if user exists
+if ($row = $result->fetch_assoc()) {
+    // Verify hashed password
+    if (password_verify($password, $row['password'])) {
         echo json_encode([
             "status" => "success",
-            "user_id" => $row['user_id'],
+            "user_id" => (int)$row['user_id'],
             "name" => $row['name']
         ]);
     } else {
-        echo json_encode(["status"=>"error","message"=>"Invalid password"]);
+        echo json_encode([
+            "status" => "error",
+            "message" => "Invalid password"
+        ]);
     }
-
-}else{
-    echo json_encode(["status"=>"error","message"=>"User not found"]);
+} else {
+    echo json_encode([
+        "status" => "error",
+        "message" => "User not found"
+    ]);
 }
+
+// Close statement and connection
+$stmt->close();
+$conn->close();
 ?>
