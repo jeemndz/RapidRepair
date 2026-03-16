@@ -21,7 +21,7 @@ if (isset($_POST['login'])) {
                 $_SESSION['shopName'] = $user['shopName'];
 
                 // Redirect to temporary password change page changetemppass.php
-                header("Location: dashboardadmin.php");
+                header("Location: changetemppass.php");
                 exit;
             } else {
                 $error = "Incorrect password.";

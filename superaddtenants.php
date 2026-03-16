@@ -32,7 +32,7 @@ if (isset($_POST['createTenant'])) {
     $insert = mysqli_query($conn, "INSERT INTO owners (tenantID, ownerName, shopName, email, contactNumber, shopAddress, password, first_login, status) 
         VALUES ('$tenantID','$ownerName','$shopName','$email','$contactNumber','$shopAddress','$tempPassword', 1, 'Pending')");
 
-    if($insert) {
+    if ($insert) {
         // Prepare the subdomain link
         $subdomainLink = "https://" . strtolower(str_replace(' ', '', $shopName)) . ".yourdomain.com";
 
@@ -221,7 +221,8 @@ if (isset($_POST['createTenant'])) {
                                 ?>
                                 <tr class="hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors">
                                     <td class="px-6 py-4"><?php echo $row['shopName']; ?> (ID:
-                                        <?php echo $row['tenantID']; ?>)</td>
+                                        <?php echo $row['tenantID']; ?>)
+                                    </td>
                                     <td class="px-6 py-4"><?php echo $row['ownerName']; ?><br><span
                                             class="text-xs text-slate-500"><?php echo $row['email']; ?></span></td>
                                     <td class="px-6 py-4">
@@ -298,9 +299,44 @@ if (isset($_POST['createTenant'])) {
                 </div>
             </div>
 
+            <!-- Success Notification -->
+            <div id="successNotification"
+                class="fixed bottom-6 right-6 bg-emerald-500 text-white px-6 py-4 rounded-lg shadow-lg flex items-center gap-3 transform translate-y-20 opacity-0 transition-all duration-500">
+                <span class="material-symbols-outlined">check_circle</span>
+                <div>
+                    <p class="font-semibold">Tenant Created!</p>
+                    <p class="text-sm">Email was sent successfully.</p>
+                </div>
+                <button onclick="closeNotification()" class="ml-4 text-white hover:text-gray-200">
+                    <span class="material-symbols-outlined">close</span>
+                </button>
+            </div>
+
             <script>
                 function openModal() { document.getElementById("tenantModal").classList.remove("hidden"); }
                 function closeModal() { document.getElementById("tenantModal").classList.add("hidden"); }
+            </script>
+
+            <script>
+                function showNotification() {
+                    const notif = document.getElementById('successNotification');
+                    notif.classList.remove('translate-y-20', 'opacity-0');
+                    notif.classList.add('translate-y-0', 'opacity-100');
+
+                    // Auto-hide after 5 seconds
+                    setTimeout(() => closeNotification(), 5000);
+                }
+
+                function closeNotification() {
+                    const notif = document.getElementById('successNotification');
+                    notif.classList.add('translate-y-20', 'opacity-0');
+                    notif.classList.remove('translate-y-0', 'opacity-100');
+                }
+
+    // Show notification if PHP $success is true
+    <?php if (isset($success) && $success): ?>
+                        window.onload = function() { showNotification(); }
+    <?php endif; ?>
             </script>
 </body>
 
