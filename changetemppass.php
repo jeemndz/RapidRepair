@@ -54,7 +54,7 @@ if (isset($_POST['submit'])) {
             $mail->Port       = 465;
 
             // Recipients
-            $mail->setFrom('yourgmail@gmail.com', $shopName);
+            $mail->setFrom('ekalamaosus224@gmail.com', $shopName);
             $mail->addAddress($email, $shopName);
 
             // Content
