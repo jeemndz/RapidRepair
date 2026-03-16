@@ -20,8 +20,8 @@ if (isset($_POST['login'])) {
                 $_SESSION['tenantID'] = $user['tenantID'];
                 $_SESSION['shopName'] = $user['shopName'];
 
-                // Redirect to temporary password change page
-                header("Location: changetemppass.php");
+                // Redirect to temporary password change page changetemppass.php
+                header("Location: dashboardadmin.php");
                 exit;
             } else {
                 $error = "Incorrect password.";
