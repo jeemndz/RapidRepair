@@ -49,12 +49,12 @@ if (isset($_POST['submit'])) {
             $mail->Host       = 'smtp.gmail.com';
             $mail->SMTPAuth   = true;
             $mail->Username   = 'ekalamaosus224@gmail.com'; // replace with your Gmail
-            $mail->Password   = 'gppg pfex llqm cxox'; // app password
+            $mail->Password   = 'jjht zbdg gtzx rryy'; // app password
             $mail->SMTPSecure = PHPMailer::ENCRYPTION_SMTPS;
             $mail->Port       = 465;
 
             // Recipients
-            $mail->setFrom('yourgmail@gmail.com', 'AutoFix Portal');
+            $mail->setFrom('yourgmail@gmail.com', $shopName);
             $mail->addAddress($email, $shopName);
 
             // Content
