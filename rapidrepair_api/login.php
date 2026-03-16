@@ -1,5 +1,4 @@
 <?php
-error_reporting(0); // suppress warnings/notices
 header("Content-Type: application/json");
 include "db.php";
 
