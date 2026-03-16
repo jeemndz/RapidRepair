@@ -1,6 +1,13 @@
 <?php
 include "db.php";
 
+use PHPMailer\PHPMailer\PHPMailer;
+use PHPMailer\PHPMailer\Exception;
+
+require 'PHPMailer/src/PHPMailer.php';
+require 'PHPMailer/src/SMTP.php';
+require 'PHPMailer/src/Exception.php';
+
 // Handle create tenant
 if (isset($_POST['createTenant'])) {
     $shopName = $_POST['shopName'];
@@ -21,9 +28,47 @@ if (isset($_POST['createTenant'])) {
     }
     $tenantID = str_pad($newID, 3, "0", STR_PAD_LEFT);
 
-    // Insert into database with plain temporary password and first_login flag
-    mysqli_query($conn, "INSERT INTO owners (tenantID, ownerName, shopName, email, contactNumber, shopAddress, password, first_login, status) 
+    // Insert into database
+    $insert = mysqli_query($conn, "INSERT INTO owners (tenantID, ownerName, shopName, email, contactNumber, shopAddress, password, first_login, status) 
         VALUES ('$tenantID','$ownerName','$shopName','$email','$contactNumber','$shopAddress','$tempPassword', 1, 'Pending')");
+
+    if($insert) {
+        // Prepare the subdomain link
+        $subdomainLink = "https://" . strtolower(str_replace(' ', '', $shopName)) . ".yourdomain.com";
+
+        // Send email
+        $mail = new PHPMailer(true);
+        try {
+            // Server settings
+            $mail->isSMTP();
+            $mail->Host = 'smtp.gmail.com'; // e.g., Gmail SMTP
+            $mail->SMTPAuth = true;
+            $mail->Username = 'ekalamaosus224@gmail.com'; // Your SMTP email
+            $mail->Password = 'zepa ulgt ihei iphw';  // SMTP password / App password
+            $mail->SMTPSecure = 'tls';
+            $mail->Port = 587;
+
+            // Recipients
+            $mail->setFrom('ekalamaosus224@gmail.com', 'Rapid Repair Admin');
+            $mail->addAddress($email, $ownerName);
+
+            // Content
+            $mail->isHTML(true);
+            $mail->Subject = 'Your Tenant Account Details';
+            $mail->Body = "
+                <h2>Welcome to Rapid Repair!</h2>
+                <p>Your account has been created and is pending approval.</p>
+                <p><strong>Email:</strong> {$email}</p>
+                <p><strong>Temporary Password:</strong> {$tempPassword}</p>
+                <p>Access your dashboard here: <a href='{$subdomainLink}'>{$subdomainLink}</a></p>
+                <p>Please log in and change your password upon first login.</p>
+            ";
+
+            $mail->send();
+        } catch (Exception $e) {
+            error_log("Mailer Error: " . $mail->ErrorInfo);
+        }
+    }
 
     header("Location: superaddtenants.php");
     exit;
