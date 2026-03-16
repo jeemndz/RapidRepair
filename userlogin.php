@@ -23,8 +23,8 @@ $stmt->execute();
 $result = $stmt->get_result();
 
 if($row = $result->fetch_assoc()){
-    // Plain text comparison
-    if($password === $row['password']){
+    // Compare password with hash
+    if(password_verify($password, $row['password'])){
         echo json_encode([
             "status" => "success",
             "user_id" => $row['user_id'],
