@@ -3,11 +3,37 @@
 session_start();
 require_once "db.php";
 
+if (isset($_POST['logout_superadmin'])) {
+    $_SESSION = [];
+
+    if (ini_get('session.use_cookies')) {
+        $params = session_get_cookie_params();
+        setcookie(
+            session_name(),
+            '',
+            time() - 42000,
+            $params['path'],
+            $params['domain'],
+            $params['secure'],
+            $params['httponly']
+        );
+    }
+
+    session_destroy();
+    header("Location: superaddlogin.php");
+    exit();
+}
+
 // Redirect if not logged in
 if (!isset($_SESSION['superadmin_id'])) {
     header("Location: superaddlogin.php");
     exit();
 }
+
+header("Cache-Control: no-store, no-cache, must-revalidate, max-age=0");
+header("Cache-Control: post-check=0, pre-check=0", false);
+header("Pragma: no-cache");
+header("Expires: Thu, 01 Jan 1970 00:00:00 GMT");
 
 // Get superadmin info
 $superadmin_id = $_SESSION['superadmin_id'];
@@ -127,11 +153,13 @@ $recentOwners = $conn->query("SELECT ownerName, created_at FROM owners ORDER BY 
                 </a>
 
                 <!-- Logout -->
-                <a href="#"
-                    class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-red-500 hover:bg-red-50 dark:hover:bg-red-900/10 transition-colors cursor-pointer">
-                    <span class="material-symbols-outlined">logout</span>
-                    <p class="text-sm font-medium">Logout</p>
-                </a>
+                <form method="POST" class="w-full">
+                    <button type="submit" name="logout_superadmin"
+                        class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-red-500 hover:bg-red-50 dark:hover:bg-red-900/10 transition-colors cursor-pointer text-left">
+                        <span class="material-symbols-outlined">logout</span>
+                        <p class="text-sm font-medium">Logout</p>
+                    </button>
+                </form>
             </div>
         </aside>
         <!-- Main Content Area -->

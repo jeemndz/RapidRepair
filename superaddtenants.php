@@ -1,4 +1,16 @@
 <?php
+session_start();
+
+if (!isset($_SESSION['superadmin_id'])) {
+    header("Location: superaddlogin.php");
+    exit();
+}
+
+header("Cache-Control: no-store, no-cache, must-revalidate, max-age=0");
+header("Cache-Control: post-check=0, pre-check=0", false);
+header("Pragma: no-cache");
+header("Expires: Thu, 01 Jan 1970 00:00:00 GMT");
+
 include "db.php";
 
 use PHPMailer\PHPMailer\PHPMailer;
@@ -35,6 +47,28 @@ switch ($notice) {
         break;
 }
 
+function ownersColumnExists($conn, $columnName) {
+    $safeColumn = mysqli_real_escape_string($conn, $columnName);
+    $checkSql = "SHOW COLUMNS FROM owners LIKE '$safeColumn'";
+    $check = mysqli_query($conn, $checkSql);
+    return $check && mysqli_num_rows($check) > 0;
+}
+
+function subscriptionPricingConfig() {
+    return [
+        'monthly_plan_prices' => [
+            'basic' => 999,
+            'standard' => 1999,
+            'premium' => 3499
+        ],
+        'cycle_months' => [
+            'monthly' => 1,
+            'quarterly' => 3,
+            'yearly' => 12
+        ]
+    ];
+}
+
 // ✅ Generate unique login slug
 function generateSlug($conn, $shopName) {
     $slug = strtolower(trim($shopName));
@@ -63,6 +97,30 @@ if (isset($_POST['createTenant'])) {
     $email = trim($_POST['email']);
     $contactNumber = mysqli_real_escape_string($conn, $_POST['contactNumber']);
     $tempPassword = $_POST['tempPassword'];
+    $subscriptionPlan = $_POST['subscriptionPlan'] ?? 'basic';
+    $billingCycle = $_POST['billingCycle'] ?? 'monthly';
+
+    $allowedPlans = ['basic', 'standard', 'premium'];
+    $allowedCycles = ['monthly', 'quarterly', 'yearly'];
+
+    if (!in_array($subscriptionPlan, $allowedPlans, true)) {
+        $subscriptionPlan = 'basic';
+    }
+
+    if (!in_array($billingCycle, $allowedCycles, true)) {
+        $billingCycle = 'monthly';
+    }
+
+    $pricingConfig = subscriptionPricingConfig();
+    $monthlyPlanPrices = $pricingConfig['monthly_plan_prices'];
+    $cycleMonths = $pricingConfig['cycle_months'];
+
+    $planMonthlyPrice = $monthlyPlanPrices[$subscriptionPlan];
+    $planTotalPrice = $planMonthlyPrice * $cycleMonths[$billingCycle];
+
+    $subscriptionStart = date('Y-m-d');
+    $subscriptionEnd = date('Y-m-d', strtotime('+' . $cycleMonths[$billingCycle] . ' months'));
+    $nextBillingDate = $subscriptionEnd;
 
     // ✅ VALIDATE EMAIL (VERY IMPORTANT)
     if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
@@ -87,13 +145,56 @@ if (isset($_POST['createTenant'])) {
     // ✅ Generate slug
     $login_slug = generateSlug($conn, $shopName);
 
-    // ✅ INSERT
-    $insert = mysqli_query($conn, "
-        INSERT INTO owners 
-        (tenantID, ownerName, shopName, login_slug, email, contactNumber, shopAddress, password, first_login, status) 
-        VALUES 
-        ('$tenantID','$ownerName','$shopName','$login_slug','$email','$contactNumber','$shopAddress','$hashedPassword',1,'Pending')
-    ");
+    // ✅ INSERT (includes subscription fields if columns exist in owners table)
+    $insertColumns = [
+        'tenantID', 'ownerName', 'shopName', 'login_slug', 'email', 'contactNumber', 'shopAddress', 'password', 'first_login', 'status'
+    ];
+
+    $insertValues = [
+        "'" . mysqli_real_escape_string($conn, $tenantID) . "'",
+        "'" . mysqli_real_escape_string($conn, $ownerName) . "'",
+        "'" . mysqli_real_escape_string($conn, $shopName) . "'",
+        "'" . mysqli_real_escape_string($conn, $login_slug) . "'",
+        "'" . mysqli_real_escape_string($conn, $email) . "'",
+        "'" . mysqli_real_escape_string($conn, $contactNumber) . "'",
+        "'" . mysqli_real_escape_string($conn, $shopAddress) . "'",
+        "'" . mysqli_real_escape_string($conn, $hashedPassword) . "'",
+        "1",
+        "'Pending'"
+    ];
+
+    if (ownersColumnExists($conn, 'subscription_plan')) {
+        $insertColumns[] = 'subscription_plan';
+        $insertValues[] = "'" . mysqli_real_escape_string($conn, $subscriptionPlan) . "'";
+    }
+
+    if (ownersColumnExists($conn, 'billing_cycle')) {
+        $insertColumns[] = 'billing_cycle';
+        $insertValues[] = "'" . mysqli_real_escape_string($conn, $billingCycle) . "'";
+    }
+
+    if (ownersColumnExists($conn, 'subscription_start')) {
+        $insertColumns[] = 'subscription_start';
+        $insertValues[] = "'" . mysqli_real_escape_string($conn, $subscriptionStart) . "'";
+    }
+
+    if (ownersColumnExists($conn, 'subscription_end')) {
+        $insertColumns[] = 'subscription_end';
+        $insertValues[] = "'" . mysqli_real_escape_string($conn, $subscriptionEnd) . "'";
+    }
+
+    if (ownersColumnExists($conn, 'plan_price')) {
+        $insertColumns[] = 'plan_price';
+        $insertValues[] = "'" . mysqli_real_escape_string($conn, (string)$planTotalPrice) . "'";
+    }
+
+    if (ownersColumnExists($conn, 'next_billing_date')) {
+        $insertColumns[] = 'next_billing_date';
+        $insertValues[] = "'" . mysqli_real_escape_string($conn, $nextBillingDate) . "'";
+    }
+
+    $insertSql = "INSERT INTO owners (" . implode(', ', $insertColumns) . ") VALUES (" . implode(', ', $insertValues) . ")";
+    $insert = mysqli_query($conn, $insertSql);
 
     $emailSent = false;
 
@@ -145,6 +246,10 @@ if (isset($_POST['createTenant'])) {
                 <p><strong>Shop Name:</strong> {$shopName}</p>
                 <p><strong>Email:</strong> {$email}</p>
                 <p><strong>Temporary Password:</strong> {$tempPassword}</p>
+                <p><strong>Subscription Plan:</strong> " . ucfirst($subscriptionPlan) . "</p>
+                <p><strong>Billing Cycle:</strong> " . ucfirst($billingCycle) . "</p>
+                <p><strong>Plan Price:</strong> PHP " . number_format($planTotalPrice, 2) . "</p>
+                <p><strong>Next Billing Date:</strong> " . date('M d, Y', strtotime($nextBillingDate)) . "</p>
 
                 <p><strong>Login Here:</strong><br>
                 <a href='{$loginLink}'>{$loginLink}</a></p>
@@ -269,7 +374,7 @@ if (isset($_POST['createTenant'])) {
                 </a>
 
                 <!-- Logout -->
-                <a href="#"
+                <a href="logout.php?redirect=superaddlogin.php"
                     class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-red-500 hover:bg-red-50 dark:hover:bg-red-900/10 transition-colors cursor-pointer">
                     <span class="material-symbols-outlined">logout</span>
                     <p class="text-sm font-medium">Logout</p>
@@ -302,6 +407,7 @@ if (isset($_POST['createTenant'])) {
                                 class="bg-slate-50 dark:bg-slate-800/50 text-slate-500 dark:text-slate-400 text-xs font-semibold uppercase tracking-wider">
                                 <th class="px-6 py-4">Shop Name</th>
                                 <th class="px-6 py-4">Owner</th>
+                                <th class="px-6 py-4">Subscription</th>
                                 <th class="px-6 py-4">Status</th>
                                 <th class="px-6 py-4">Created Date</th>
                                 <th class="px-6 py-4 text-right">Actions</th>
@@ -317,6 +423,46 @@ if (isset($_POST['createTenant'])) {
                                     $statusColor = "red";
                                 if (strtolower($row['status']) == "pending")
                                     $statusColor = "amber";
+
+                                $tenantPlan = isset($row['subscription_plan']) && $row['subscription_plan'] !== ''
+                                    ? ucfirst($row['subscription_plan'])
+                                    : 'Basic';
+                                $tenantCycle = isset($row['billing_cycle']) && $row['billing_cycle'] !== ''
+                                    ? ucfirst($row['billing_cycle'])
+                                    : 'Monthly';
+
+                                $pricingConfig = subscriptionPricingConfig();
+                                $monthlyPlanPrices = $pricingConfig['monthly_plan_prices'];
+                                $cycleMonths = $pricingConfig['cycle_months'];
+
+                                $tenantPlanKey = strtolower(isset($row['subscription_plan']) ? $row['subscription_plan'] : 'basic');
+                                $tenantCycleKey = strtolower(isset($row['billing_cycle']) ? $row['billing_cycle'] : 'monthly');
+
+                                if (!isset($monthlyPlanPrices[$tenantPlanKey])) {
+                                    $tenantPlanKey = 'basic';
+                                }
+
+                                if (!isset($cycleMonths[$tenantCycleKey])) {
+                                    $tenantCycleKey = 'monthly';
+                                }
+
+                                $calculatedPlanPrice = $monthlyPlanPrices[$tenantPlanKey] * $cycleMonths[$tenantCycleKey];
+                                $tenantPrice = isset($row['plan_price']) && is_numeric($row['plan_price'])
+                                    ? (float)$row['plan_price']
+                                    : (float)$calculatedPlanPrice;
+
+                                $tenantNextBillingRaw = '';
+                                if (isset($row['next_billing_date']) && $row['next_billing_date'] !== '') {
+                                    $tenantNextBillingRaw = $row['next_billing_date'];
+                                } elseif (isset($row['subscription_end']) && $row['subscription_end'] !== '') {
+                                    $tenantNextBillingRaw = $row['subscription_end'];
+                                } elseif (isset($row['created_at']) && $row['created_at'] !== '') {
+                                    $tenantNextBillingRaw = date('Y-m-d', strtotime($row['created_at'] . ' +' . $cycleMonths[$tenantCycleKey] . ' months'));
+                                }
+
+                                $tenantNextBilling = $tenantNextBillingRaw !== ''
+                                    ? date('M d, Y', strtotime($tenantNextBillingRaw))
+                                    : 'N/A';
                                 ?>
                                 <tr class="hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors">
                                     <td class="px-6 py-4"><?php echo $row['shopName']; ?> (ID:
@@ -324,6 +470,14 @@ if (isset($_POST['createTenant'])) {
                                     </td>
                                     <td class="px-6 py-4"><?php echo $row['ownerName']; ?><br><span
                                             class="text-xs text-slate-500"><?php echo $row['email']; ?></span></td>
+                                    <td class="px-6 py-4">
+                                        <span class="text-sm font-semibold text-slate-700 dark:text-slate-200"><?php echo htmlspecialchars($tenantPlan); ?></span><br>
+                                        <span class="text-xs text-slate-500 dark:text-slate-400"><?php echo htmlspecialchars($tenantCycle); ?></span>
+                                        <br>
+                                        <span class="text-xs text-slate-500 dark:text-slate-400">PHP <?php echo number_format($tenantPrice, 2); ?></span>
+                                        <br>
+                                        <span class="text-xs text-slate-500 dark:text-slate-400">Next Billing: <?php echo htmlspecialchars($tenantNextBilling); ?></span>
+                                    </td>
                                     <td class="px-6 py-4">
                                         <span
                                             class="px-2 py-1 text-xs font-semibold bg-<?php echo $statusColor; ?>-100 dark:bg-<?php echo $statusColor; ?>-900/30 text-<?php echo $statusColor; ?>-700 dark:text-<?php echo $statusColor; ?>-400 rounded-full">
@@ -381,6 +535,22 @@ if (isset($_POST['createTenant'])) {
                             <div class="flex flex-col gap-2 md:col-span-2">
                                 <label class="text-xs font-bold uppercase text-gray-500">Contact Number</label>
                                 <input name="contactNumber" class="border rounded-lg p-3" placeholder="09123456789">
+                            </div>
+                            <div class="flex flex-col gap-2">
+                                <label class="text-xs font-bold uppercase text-gray-500">Subscription Plan</label>
+                                <select name="subscriptionPlan" class="border rounded-lg p-3" required>
+                                    <option value="basic">Basic - PHP 999 / month</option>
+                                    <option value="standard">Standard - PHP 1,999 / month</option>
+                                    <option value="premium">Premium - PHP 3,499 / month</option>
+                                </select>
+                            </div>
+                            <div class="flex flex-col gap-2">
+                                <label class="text-xs font-bold uppercase text-gray-500">Billing Cycle</label>
+                                <select name="billingCycle" class="border rounded-lg p-3" required>
+                                    <option value="monthly">Monthly</option>
+                                    <option value="quarterly">Quarterly</option>
+                                    <option value="yearly">Yearly</option>
+                                </select>
                             </div>
                             <div class="flex flex-col gap-2 md:col-span-2">
                                 <label class="text-xs font-bold uppercase text-gray-500">Temporary Password</label>
