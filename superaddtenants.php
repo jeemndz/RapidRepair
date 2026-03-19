@@ -8,7 +8,7 @@ require __DIR__ . '/PHPMailer/src/PHPMailer.php';
 require __DIR__ . '/PHPMailer/src/SMTP.php';
 require __DIR__ . '/PHPMailer/src/Exception.php';
 
-$notice = isset($_GET['notice']) ? $_GET['notice'] : '';
+$notice = $_GET['notice'] ?? '';
 $noticeTypeClass = '';
 $noticeIcon = '';
 $noticeTitle = '';
@@ -46,9 +46,7 @@ function generateSlug($conn, $shopName) {
 
     while (true) {
         $check = mysqli_query($conn, "SELECT tenantID FROM owners WHERE login_slug='$slug'");
-        if (mysqli_num_rows($check) == 0) {
-            break;
-        }
+        if (mysqli_num_rows($check) == 0) break;
         $slug = $originalSlug . '-' . $counter;
         $counter++;
     }
@@ -56,17 +54,22 @@ function generateSlug($conn, $shopName) {
     return $slug;
 }
 
-// Handle create tenant
+// HANDLE CREATE TENANT
 if (isset($_POST['createTenant'])) {
 
     $shopName = mysqli_real_escape_string($conn, $_POST['shopName']);
     $shopAddress = mysqli_real_escape_string($conn, $_POST['shopAddress']);
     $ownerName = mysqli_real_escape_string($conn, $_POST['ownerName']);
-    $email = mysqli_real_escape_string($conn, $_POST['email']);
+    $email = trim($_POST['email']);
     $contactNumber = mysqli_real_escape_string($conn, $_POST['contactNumber']);
     $tempPassword = $_POST['tempPassword'];
 
-    // ✅ HASH PASSWORD (IMPORTANT)
+    // ✅ VALIDATE EMAIL (VERY IMPORTANT)
+    if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        die("Invalid email address.");
+    }
+
+    // ✅ HASH PASSWORD
     $hashedPassword = password_hash($tempPassword, PASSWORD_DEFAULT);
 
     // ✅ Generate tenant ID
@@ -81,7 +84,7 @@ if (isset($_POST['createTenant'])) {
 
     $tenantID = str_pad($newID, 3, "0", STR_PAD_LEFT);
 
-    // ✅ Generate login slug
+    // ✅ Generate slug
     $login_slug = generateSlug($conn, $shopName);
 
     // ✅ INSERT
@@ -96,25 +99,22 @@ if (isset($_POST['createTenant'])) {
 
     if ($insert) {
 
-        // ✅ AUTO GENERATED LOGIN LINK (CLEAN URL)
+        // ✅ LOGIN LINK
         $baseURL = "https://rapidrepair-gygpcbczgyg0czek.southeastasia-01.azurewebsites.net";
         $loginLink = $baseURL . "/tenantlogin.php?shop=" . urlencode($login_slug);
 
         $mail = new PHPMailer(true);
 
         try {
-            $mail->SMTPDebug = 0;
-
-            // ✅ SMTP CONFIG
             $mail->isSMTP();
             $mail->Host = 'smtp.gmail.com';
             $mail->SMTPAuth = true;
             $mail->Username = 'ekalamosus224@gmail.com';
-            $mail->Password = 'zepa ulgt ihei iphw'; // Gmail App Password
+            $mail->Password = 'zepa ulgt ihei iphw';
             $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
             $mail->Port = 587;
 
-            // ✅ Fix Azure SSL issues
+            // ✅ FIX SSL (Azure)
             $mail->SMTPOptions = [
                 'ssl' => [
                     'verify_peer' => false,
@@ -123,13 +123,18 @@ if (isset($_POST['createTenant'])) {
                 ]
             ];
 
-            // ✅ Sender
+            // ✅ CLEAR ANY PREVIOUS RECIPIENTS
+            $mail->clearAddresses();
+
+            // ✅ SENDER
             $mail->setFrom('ekalamosus224@gmail.com', 'Rapid Repair Admin');
 
-            // ✅ Receiver
+            // 🔥 DEBUG (REMOVE AFTER TESTING)
+            error_log("Sending email to: " . $email);
+
+            // ✅ RECEIVER (THIS IS THE FIX)
             $mail->addAddress($email, $ownerName);
 
-            // ✅ Email Content
             $mail->isHTML(true);
             $mail->Subject = 'Your Tenant Account - Rapid Repair';
 
@@ -141,10 +146,8 @@ if (isset($_POST['createTenant'])) {
                 <p><strong>Email:</strong> {$email}</p>
                 <p><strong>Temporary Password:</strong> {$tempPassword}</p>
 
-                <p>
-                    <strong>Login Here:</strong><br>
-                    <a href='{$loginLink}'>{$loginLink}</a>
-                </p>
+                <p><strong>Login Here:</strong><br>
+                <a href='{$loginLink}'>{$loginLink}</a></p>
 
                 <p>Status: Pending Approval</p>
                 <p>Please log in and change your password immediately.</p>
@@ -158,7 +161,7 @@ if (isset($_POST['createTenant'])) {
         }
     }
 
-    // ✅ Redirect
+    // ✅ REDIRECT
     if ($insert && $emailSent) {
         header("Location: superaddtenants.php?notice=tenant_created_email_sent");
     } elseif ($insert) {
