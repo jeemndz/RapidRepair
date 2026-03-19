@@ -4,73 +4,169 @@ include "db.php";
 use PHPMailer\PHPMailer\PHPMailer;
 use PHPMailer\PHPMailer\Exception;
 
-require 'PHPMailer/src/PHPMailer.php';
-require 'PHPMailer/src/SMTP.php';
-require 'PHPMailer/src/Exception.php';
+require __DIR__ . '/PHPMailer/src/PHPMailer.php';
+require __DIR__ . '/PHPMailer/src/SMTP.php';
+require __DIR__ . '/PHPMailer/src/Exception.php';
+
+$notice = isset($_GET['notice']) ? $_GET['notice'] : '';
+$noticeTypeClass = '';
+$noticeIcon = '';
+$noticeTitle = '';
+$noticeMessage = '';
+
+switch ($notice) {
+    case 'tenant_created_email_sent':
+        $noticeTypeClass = 'bg-emerald-500';
+        $noticeIcon = 'check_circle';
+        $noticeTitle = 'Tenant Created';
+        $noticeMessage = 'Tenant was created and email was sent successfully.';
+        break;
+    case 'tenant_created_email_failed':
+        $noticeTypeClass = 'bg-amber-500';
+        $noticeIcon = 'warning';
+        $noticeTitle = 'Tenant Created';
+        $noticeMessage = 'Tenant was created, but the email could not be sent.';
+        break;
+    case 'tenant_create_failed':
+        $noticeTypeClass = 'bg-red-500';
+        $noticeIcon = 'error';
+        $noticeTitle = 'Creation Failed';
+        $noticeMessage = 'Could not create tenant. Please try again.';
+        break;
+}
+
+// ✅ Generate unique login slug
+function generateSlug($conn, $shopName) {
+    $slug = strtolower(trim($shopName));
+    $slug = preg_replace('/[^a-z0-9]+/', '-', $slug);
+    $slug = trim($slug, '-');
+
+    $originalSlug = $slug;
+    $counter = 1;
+
+    while (true) {
+        $check = mysqli_query($conn, "SELECT tenantID FROM owners WHERE login_slug='$slug'");
+        if (mysqli_num_rows($check) == 0) {
+            break;
+        }
+        $slug = $originalSlug . '-' . $counter;
+        $counter++;
+    }
+
+    return $slug;
+}
 
 // Handle create tenant
 if (isset($_POST['createTenant'])) {
-    $shopName = $_POST['shopName'];
-    $shopAddress = $_POST['shopAddress'];
-    $ownerName = $_POST['ownerName'];
-    $email = $_POST['email'];
-    $contactNumber = $_POST['contactNumber'];
+
+    $shopName = mysqli_real_escape_string($conn, $_POST['shopName']);
+    $shopAddress = mysqli_real_escape_string($conn, $_POST['shopAddress']);
+    $ownerName = mysqli_real_escape_string($conn, $_POST['ownerName']);
+    $email = mysqli_real_escape_string($conn, $_POST['email']);
+    $contactNumber = mysqli_real_escape_string($conn, $_POST['contactNumber']);
     $tempPassword = $_POST['tempPassword'];
 
-    // Get last tenantID
+    // ✅ HASH PASSWORD (IMPORTANT)
+    $hashedPassword = password_hash($tempPassword, PASSWORD_DEFAULT);
+
+    // ✅ Generate tenant ID
     $getID = mysqli_query($conn, "SELECT tenantID FROM owners ORDER BY tenantID DESC LIMIT 1");
+
     if (mysqli_num_rows($getID) > 0) {
         $row = mysqli_fetch_assoc($getID);
-        $lastID = (int) $row['tenantID'];
-        $newID = $lastID + 1;
+        $newID = (int)$row['tenantID'] + 1;
     } else {
         $newID = 1;
     }
+
     $tenantID = str_pad($newID, 3, "0", STR_PAD_LEFT);
 
-    // Insert into database
-    $insert = mysqli_query($conn, "INSERT INTO owners (tenantID, ownerName, shopName, email, contactNumber, shopAddress, password, first_login, status) 
-        VALUES ('$tenantID','$ownerName','$shopName','$email','$contactNumber','$shopAddress','$tempPassword', 1, 'Pending')");
+    // ✅ Generate login slug
+    $login_slug = generateSlug($conn, $shopName);
+
+    // ✅ INSERT
+    $insert = mysqli_query($conn, "
+        INSERT INTO owners 
+        (tenantID, ownerName, shopName, login_slug, email, contactNumber, shopAddress, password, first_login, status) 
+        VALUES 
+        ('$tenantID','$ownerName','$shopName','$login_slug','$email','$contactNumber','$shopAddress','$hashedPassword',1,'Pending')
+    ");
+
+    $emailSent = false;
 
     if ($insert) {
-        // Prepare the subdomain link
-        $subdomainLink = "https://" . strtolower(str_replace(' ', '', $shopName)) . ".yourdomain.com";
 
-        // Send email
+        // ✅ AUTO GENERATED LOGIN LINK (CLEAN URL)
+        $baseURL = "https://rapidrepair-gygpcbczgyg0czek.southeastasia-01.azurewebsites.net";
+        $loginLink = $baseURL . "/tenantlogin.php?shop=" . urlencode($login_slug);
+
         $mail = new PHPMailer(true);
+
         try {
-            // Server settings
+            $mail->SMTPDebug = 0;
+
+            // ✅ SMTP CONFIG
             $mail->isSMTP();
-            $mail->Host = 'smtp.gmail.com'; // e.g., Gmail SMTP
+            $mail->Host = 'smtp.gmail.com';
             $mail->SMTPAuth = true;
-            $mail->Username = 'ekalamaosus224@gmail.com'; // Your SMTP email
-            $mail->Password = 'zepa ulgt ihei iphw';  // SMTP password / App password
-            $mail->SMTPSecure = 'tls';
+            $mail->Username = 'ekalamosus224@gmail.com';
+            $mail->Password = 'zepa ulgt ihei iphw'; // Gmail App Password
+            $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
             $mail->Port = 587;
 
-            // Recipients
-            $mail->setFrom('ekalamaosus224@gmail.com', 'Rapid Repair Admin');
+            // ✅ Fix Azure SSL issues
+            $mail->SMTPOptions = [
+                'ssl' => [
+                    'verify_peer' => false,
+                    'verify_peer_name' => false,
+                    'allow_self_signed' => true
+                ]
+            ];
+
+            // ✅ Sender
+            $mail->setFrom('ekalamosus224@gmail.com', 'Rapid Repair Admin');
+
+            // ✅ Receiver
             $mail->addAddress($email, $ownerName);
 
-            // Content
+            // ✅ Email Content
             $mail->isHTML(true);
-            $mail->Subject = 'Your Tenant Account Details';
+            $mail->Subject = 'Your Tenant Account - Rapid Repair';
+
             $mail->Body = "
-                <h2>Welcome to Rapid Repair!</h2>
-                <p>Your account has been created and is pending approval.</p>
+                <h2>Welcome to Rapid Repair 🚗</h2>
+                <p>Your tenant account has been created and is pending approval.</p>
+
+                <p><strong>Shop Name:</strong> {$shopName}</p>
                 <p><strong>Email:</strong> {$email}</p>
                 <p><strong>Temporary Password:</strong> {$tempPassword}</p>
-                <p>Access your dashboard here: <a href='{$subdomainLink}'>{$subdomainLink}</a></p>
-                <p>Please log in and change your password upon first login.</p>
+
+                <p>
+                    <strong>Login Here:</strong><br>
+                    <a href='{$loginLink}'>{$loginLink}</a>
+                </p>
+
+                <p>Status: Pending Approval</p>
+                <p>Please log in and change your password immediately.</p>
             ";
 
             $mail->send();
+            $emailSent = true;
+
         } catch (Exception $e) {
             error_log("Mailer Error: " . $mail->ErrorInfo);
         }
     }
 
-    header("Location: superaddtenants.php");
+    // ✅ Redirect
+    if ($insert && $emailSent) {
+        header("Location: superaddtenants.php?notice=tenant_created_email_sent");
+    } elseif ($insert) {
+        header("Location: superaddtenants.php?notice=tenant_created_email_failed");
+    } else {
+        header("Location: superaddtenants.php?notice=tenant_create_failed");
+    }
+
     exit;
 }
 ?>
@@ -164,7 +260,7 @@ if (isset($_POST['createTenant'])) {
                         style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuAA7ZvS0RT24pYl7zsQUKsnC9inrzmoUQVQC8PvdcW5_q4FtMWEC8ZD9Ke8mBa8iRwi4vfG0NbuLhEY9U_mYTQt3gBMRoNS0jNV_aJYQ-QCLtauVwWdyP53SHmFLjb5bQvwjbvvF24yHFp3moy4K6rJ0tVvtMIzdIUNohESEbLUilTPScnQYQQutAW0bzWhFZkGsX1GwwAl_2_9yXjauFnRNg0uTHfeR3lnfDRxLlk9Jo_hIr7N64rr5SWZq57QEfMdbFLkygzUgb-A')">
                     </div>
                     <div class="flex flex-col min-w-0">
-                        <h3 class="text-sm font-semibold truncate">Alex Rivera</h3>
+                        <h3 class="text-sm font-semibold truncate">Sup</h3>
                         <p class="text-xs text-slate-500 dark:text-slate-400 truncate">Superadmin</p>
                     </div>
                 </a>
@@ -299,18 +395,19 @@ if (isset($_POST['createTenant'])) {
                 </div>
             </div>
 
-            <!-- Success Notification -->
-            <div id="successNotification"
-                class="fixed bottom-6 right-6 bg-emerald-500 text-white px-6 py-4 rounded-lg shadow-lg flex items-center gap-3 transform translate-y-20 opacity-0 transition-all duration-500">
-                <span class="material-symbols-outlined">check_circle</span>
-                <div>
-                    <p class="font-semibold">Tenant Created!</p>
-                    <p class="text-sm">Email was sent successfully.</p>
+            <?php if ($noticeTitle !== ''): ?>
+                <div id="statusNotification"
+                    class="fixed bottom-6 right-6 <?php echo $noticeTypeClass; ?> text-white px-6 py-4 rounded-lg shadow-lg flex items-center gap-3 transform translate-y-20 opacity-0 transition-all duration-500 z-50">
+                    <span class="material-symbols-outlined"><?php echo htmlspecialchars($noticeIcon); ?></span>
+                    <div>
+                        <p class="font-semibold"><?php echo htmlspecialchars($noticeTitle); ?></p>
+                        <p class="text-sm"><?php echo htmlspecialchars($noticeMessage); ?></p>
+                    </div>
+                    <button onclick="closeNotification()" class="ml-4 text-white hover:text-gray-200">
+                        <span class="material-symbols-outlined">close</span>
+                    </button>
                 </div>
-                <button onclick="closeNotification()" class="ml-4 text-white hover:text-gray-200">
-                    <span class="material-symbols-outlined">close</span>
-                </button>
-            </div>
+            <?php endif; ?>
 
             <script>
                 function openModal() { document.getElementById("tenantModal").classList.remove("hidden"); }
@@ -319,7 +416,8 @@ if (isset($_POST['createTenant'])) {
 
             <script>
                 function showNotification() {
-                    const notif = document.getElementById('successNotification');
+                    const notif = document.getElementById('statusNotification');
+                    if (!notif) return;
                     notif.classList.remove('translate-y-20', 'opacity-0');
                     notif.classList.add('translate-y-0', 'opacity-100');
 
@@ -328,15 +426,15 @@ if (isset($_POST['createTenant'])) {
                 }
 
                 function closeNotification() {
-                    const notif = document.getElementById('successNotification');
+                    const notif = document.getElementById('statusNotification');
+                    if (!notif) return;
                     notif.classList.add('translate-y-20', 'opacity-0');
                     notif.classList.remove('translate-y-0', 'opacity-100');
                 }
 
-    // Show notification if PHP $success is true
-    <?php if (isset($success) && $success): ?>
-                        window.onload = function() { showNotification(); }
-    <?php endif; ?>
+                <?php if ($noticeTitle !== ''): ?>
+                    window.onload = function() { showNotification(); }
+                <?php endif; ?>
             </script>
 </body>
 
