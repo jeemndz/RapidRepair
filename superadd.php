@@ -95,6 +95,7 @@ $recentOwners = $conn->query("SELECT ownerName, created_at FROM owners ORDER BY 
         <!-- Side Navigation -->
         <aside
             class="w-72 flex flex-col bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 shrink-0">
+            <!-- Brand Header -->
             <div class="p-6 flex items-center gap-3">
                 <div class="bg-primary rounded-lg p-2 text-white">
                     <span class="material-symbols-outlined block text-2xl">directions_car</span>
@@ -103,40 +104,49 @@ $recentOwners = $conn->query("SELECT ownerName, created_at FROM owners ORDER BY 
                     RapidRepair <span class="text-primary">SuperAdmin</span>
                 </h2>
             </div>
-            <nav class="flex-1 px-4 py-4 space-y-1">
-                <!-- Dashboard -->
-                <a href="superadd.php"
-                    class="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-primary/10 text-primary font-semibold cursor-pointer hover:bg-primary/20 transition-colors">
-                    <span class="material-symbols-outlined">dashboard</span>
-                    <p class="text-sm">Dashboard</p>
+            <!-- Navigation Links -->
+            <nav class="flex-1 px-4 space-y-1 mt-4">
+                <a class="flex items-center gap-3 px-3 py-2.5 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400 font-bold border-r-4 border-blue-700 dark:border-blue-500 rounded-lg active:scale-95"
+                    href="superadd.php">
+                    <span class="material-symbols-outlined" data-icon="dashboard">dashboard</span>
+                    <span class="text-sm">Dashboard</span>
                 </a>
-
-                <!-- Tenants -->
-                <a href="superaddtenants.php"
-                    class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors cursor-pointer">
-                    <span class="material-symbols-outlined">group</span>
-                    <p class="text-sm font-medium">Tenants</p>
+                <a class="flex items-center gap-3 px-3 py-2.5 text-slate-600 dark:text-slate-400 font-medium hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors rounded-lg active:scale-95"
+                    href="superaddtenants.php">
+                    <span class="material-symbols-outlined" data-icon="groups">groups</span>
+                    <span class="text-sm">Tenants</span>
                 </a>
-
-                <!-- System Health -->
-                <a href="#"
-                    class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
-                    <span class="material-symbols-outlined">analytics</span>
-                    <p class="text-sm font-medium">System Health</p>
+                <a class="flex items-center gap-3 px-3 py-2.5 text-slate-600 dark:text-slate-400 font-medium hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors rounded-lg active:scale-95"
+                    href="superhealth.php">
+                    <span class="material-symbols-outlined" data-icon="health_and_safety">health_and_safety</span>
+                    <span class="text-sm">System Health</span>
                 </a>
-
-                <!-- Subscriptions -->
-                <a href="#"
-                    class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
-                    <span class="material-symbols-outlined">payments</span>
-                    <p class="text-sm font-medium">Subscriptions</p>
+                <a class="flex items-center gap-3 px-3 py-2.5 text-slate-600 dark:text-slate-400 font-medium hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors rounded-lg active:scale-95"
+                    href="subscriptionmanage.php">
+                    <span class="material-symbols-outlined" data-icon="subscriptions">subscriptions</span>
+                    <span class="text-sm">Subscriptions</span>
                 </a>
-
-                <!-- Settings -->
-                <a href="#"
-                    class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
-                    <span class="material-symbols-outlined">settings</span>
-                    <p class="text-sm font-medium">Settings</p>
+                <a class="flex items-center gap-3 px-3 py-2.5 text-slate-600 dark:text-slate-400 font-medium hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors rounded-lg active:scale-95"
+                    href="supersalesreports.php">
+                    <span class="material-symbols-outlined" data-icon="bar_chart">bar_chart</span>
+                    <span class="text-sm">Sales Reports</span>
+                </a>
+                <a class="flex items-center gap-3 px-3 py-2.5 text-slate-600 dark:text-slate-400 font-medium hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors rounded-lg active:scale-95"
+                    href="superauditlogs.php">
+                    <span class="material-symbols-outlined" data-icon="assignment">assignment</span>
+                    <span class="text-sm">Audit Logs</span>
+                </a>
+                <a class="flex items-center gap-3 px-3 py-2.5 text-slate-600 dark:text-slate-400 font-medium hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors rounded-lg active:scale-95"
+                    href="supersettings.php">
+                    <span class="material-symbols-outlined" data-icon="settings">settings</span>
+                    <span class="text-sm">Settings</span>
+                </a>
+                <!-- Active State Applied for System Backup -->
+                <a class="flex items-center gap-3 px-3 py-2.5 text-slate-600 dark:text-slate-400 font-medium hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors rounded-lg active:scale-95"
+                    href="superbackup.php">
+                    <span class="material-symbols-outlined" data-icon="backup"
+                        style="font-variation-settings: 'FILL' 1;">backup</span>
+                    <span class="text-sm">System Backup</span>
                 </a>
             </nav>
             <div class="p-4 border-t border-slate-100 dark:border-slate-800 space-y-2">

@@ -2,6 +2,22 @@
 session_start();
 include "db.php";
 
+function buildTenantDashboardUrl($loginSlug)
+{
+    $loginSlug = trim((string) $loginSlug);
+    if ($loginSlug === '') {
+        return 'dashboardadmin.php';
+    }
+
+    $baseDomain = trim((string) (getenv('TENANT_BASE_DOMAIN') ?: ''));
+    if ($baseDomain !== '') {
+        $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+        return $scheme . '://' . $loginSlug . '.' . $baseDomain . '/dashboardadmin.php';
+    }
+
+    return 'dashboardadmin.php?shop=' . urlencode($loginSlug);
+}
+
 // Check if tenant is logged in and temp password exists
 if (!isset($_SESSION['tenantID']) || !isset($_SESSION['temp_pass']) || !isset($_SESSION['verification_code'])) {
     header("Location: tenantlogin.php");
@@ -10,12 +26,27 @@ if (!isset($_SESSION['tenantID']) || !isset($_SESSION['temp_pass']) || !isset($_
 
 $tenantID = $_SESSION['tenantID'];
 $error = "";
+$loginSlug = isset($_SESSION['login_slug']) ? (string) $_SESSION['login_slug'] : '';
+
+if ($loginSlug === '') {
+    $tenantQuery = mysqli_query($conn, "SELECT login_slug FROM owners WHERE tenantID='" . mysqli_real_escape_string($conn, (string) $tenantID) . "' LIMIT 1");
+    if ($tenantQuery && ($tenantRow = mysqli_fetch_assoc($tenantQuery))) {
+        $loginSlug = trim((string) ($tenantRow['login_slug'] ?? ''));
+        if ($loginSlug !== '') {
+            $_SESSION['login_slug'] = $loginSlug;
+        }
+    }
+}
 
 // Handle code verification
 if (isset($_POST['verify'])) {
-    $input_code = $_POST['verification_code'];
+    $input_code = preg_replace('/\D/', '', (string) ($_POST['verification_code'] ?? ''));
+    $expected_code = str_pad((string) $_SESSION['verification_code'], 6, '0', STR_PAD_LEFT);
 
-    if ($input_code == $_SESSION['verification_code']) {
+    if (strlen($input_code) !== 6) {
+        $error = "Please enter the 6-digit verification code.";
+    } elseif ($input_code === $expected_code) {
+
         // Code is correct, update password in database
         $hashed_password = $_SESSION['temp_pass'];
         $update = mysqli_query($conn, "UPDATE owners SET password='$hashed_password', first_login=0 WHERE tenantID='$tenantID'");
@@ -25,8 +56,8 @@ if (isset($_POST['verify'])) {
             unset($_SESSION['temp_pass']);
             unset($_SESSION['verification_code']);
 
-            // Redirect to dashboard
-            header("Location: dashboardadmin.php");
+            // Redirect to tenant-specific dashboard URL context
+            header("Location: " . buildTenantDashboardUrl($loginSlug));
             exit;
         } else {
             $error = "Failed to update password. Try again.";
@@ -97,9 +128,18 @@ if (isset($_POST['verify'])) {
                         <!-- Verification Code -->
                         <div class="flex flex-col gap-2">
                             <label class="text-sm font-semibold text-slate-700 dark:text-slate-300">Verification Code</label>
-                            <div class="relative flex items-center">
-                                <span class="absolute left-4 material-symbols-outlined text-slate-400">confirmation_number</span>
-                                <input type="text" name="verification_code" placeholder="Enter the code" class="w-full pl-12 pr-4 h-12 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-all" required/>
+                            <div>
+                                <input type="hidden" id="verification_code" name="verification_code" required />
+                                <div class="flex items-center gap-2 sm:gap-3">
+                                    <input type="text" inputmode="numeric" pattern="[0-9]*" maxlength="1" class="code-digit w-11 h-12 sm:w-12 sm:h-14 text-center text-lg font-bold rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none" />
+                                    <input type="text" inputmode="numeric" pattern="[0-9]*" maxlength="1" class="code-digit w-11 h-12 sm:w-12 sm:h-14 text-center text-lg font-bold rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none" />
+                                    <input type="text" inputmode="numeric" pattern="[0-9]*" maxlength="1" class="code-digit w-11 h-12 sm:w-12 sm:h-14 text-center text-lg font-bold rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none" />
+                                    <span class="text-slate-400 font-bold px-0.5">-</span>
+                                    <input type="text" inputmode="numeric" pattern="[0-9]*" maxlength="1" class="code-digit w-11 h-12 sm:w-12 sm:h-14 text-center text-lg font-bold rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none" />
+                                    <input type="text" inputmode="numeric" pattern="[0-9]*" maxlength="1" class="code-digit w-11 h-12 sm:w-12 sm:h-14 text-center text-lg font-bold rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none" />
+                                    <input type="text" inputmode="numeric" pattern="[0-9]*" maxlength="1" class="code-digit w-11 h-12 sm:w-12 sm:h-14 text-center text-lg font-bold rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none" />
+                                </div>
+                                <p class="mt-2 text-xs text-slate-500">Enter the 6-digit code sent to your email.</p>
                             </div>
                         </div>
 
@@ -117,5 +157,67 @@ if (isset($_POST['verify'])) {
             </div>
         </main>
     </div>
+
+    <script>
+        (function () {
+            const digitInputs = Array.from(document.querySelectorAll('.code-digit'));
+            const hiddenCodeInput = document.getElementById('verification_code');
+            const verifyForm = document.querySelector('form[method="POST"]');
+
+            function syncCode() {
+                hiddenCodeInput.value = digitInputs.map(function (el) {
+                    return (el.value || '').replace(/\D/g, '').slice(0, 1);
+                }).join('');
+            }
+
+            digitInputs.forEach(function (input, index) {
+                input.addEventListener('input', function () {
+                    input.value = input.value.replace(/\D/g, '').slice(0, 1);
+                    syncCode();
+
+                    if (input.value !== '' && index < digitInputs.length - 1) {
+                        digitInputs[index + 1].focus();
+                    }
+                });
+
+                input.addEventListener('keydown', function (event) {
+                    if (event.key === 'Backspace' && input.value === '' && index > 0) {
+                        digitInputs[index - 1].focus();
+                    }
+                });
+
+                input.addEventListener('paste', function (event) {
+                    const pasted = (event.clipboardData || window.clipboardData).getData('text') || '';
+                    const digits = pasted.replace(/\D/g, '').slice(0, 6).split('');
+                    if (digits.length === 0) {
+                        return;
+                    }
+
+                    event.preventDefault();
+                    digitInputs.forEach(function (el, i) {
+                        el.value = digits[i] || '';
+                    });
+                    syncCode();
+
+                    const targetIndex = Math.min(digits.length, digitInputs.length) - 1;
+                    if (targetIndex >= 0) {
+                        digitInputs[targetIndex].focus();
+                    }
+                });
+            });
+
+            if (digitInputs.length > 0) {
+                digitInputs[0].focus();
+            }
+
+            verifyForm.addEventListener('submit', function (event) {
+                syncCode();
+                if (hiddenCodeInput.value.length !== 6) {
+                    event.preventDefault();
+                    alert('Please enter the complete 6-digit code.');
+                }
+            });
+        })();
+    </script>
 </body>
 </html>

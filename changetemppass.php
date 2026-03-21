@@ -8,6 +8,20 @@ require 'PHPMailer/src/PHPMailer.php';
 require 'PHPMailer/src/SMTP.php';
 require 'PHPMailer/src/Exception.php';
 
+if (file_exists(__DIR__ . '/.env')) {
+    $envLines = file(__DIR__ . '/.env', FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+    foreach ($envLines as $line) {
+        if (strpos($line, '=') !== false && strpos($line, '#') !== 0) {
+            list($key, $value) = explode('=', $line, 2);
+            $key = trim($key);
+            $value = trim($value, " \"'");
+            if (!getenv($key)) {
+                putenv($key . '=' . $value);
+            }
+        }
+    }
+}
+
 // Check if tenant is logged in
 if (!isset($_SESSION['tenantID'])) {
     header("Location: tenantlogin.php");
@@ -45,16 +59,26 @@ if (isset($_POST['submit'])) {
         $mail = new PHPMailer(true);
 
         try {
+            $smtpHost = getenv('SMTP_HOST') ?: 'smtp.gmail.com';
+            $smtpPort = (int) (getenv('SMTP_PORT') ?: 587);
+            $smtpEncryption = strtolower((string) (getenv('SMTP_ENCRYPTION') ?: 'tls'));
+            $smtpUsername = getenv('SMTP_USERNAME') ?: 'rapidrepair224@gmail.com';
+            $smtpPassword = getenv('SMTP_PASSWORD') ?: 'gabd xcqy gbgq rtwj';
+            $mailFromAddress = getenv('MAIL_FROM_ADDRESS') ?: $smtpUsername;
+            $mailFromName = getenv('MAIL_FROM_NAME') ?: 'Rapid Repair Portal';
+
             $mail->isSMTP();
             $mail->SMTPDebug = 0; // change to 2 for debugging
-            $mail->Host = 'smtp.gmail.com';
+            $mail->Host = $smtpHost;
             $mail->SMTPAuth = true;
-            $mail->Username = 'ekalamaosus224@gmail.com';
-            $mail->Password = 'zepa ulgt ihei iphw'; // App Password
-            $mail->SMTPSecure = PHPMailer::ENCRYPTION_SMTPS;
-            $mail->Port = 465;
+            $mail->Username = $smtpUsername;
+            $mail->Password = $smtpPassword;
+            $mail->SMTPSecure = ($smtpEncryption === 'ssl')
+                ? PHPMailer::ENCRYPTION_SMTPS
+                : PHPMailer::ENCRYPTION_STARTTLS;
+            $mail->Port = $smtpPort;
 
-            $mail->setFrom('ekalamaosus224@gmail.com', 'Rapid Repair Portal'); // must match Gmail account
+            $mail->setFrom($mailFromAddress, $mailFromName);
             $mail->addAddress($email, $shopName);
 
             $mail->isHTML(false);

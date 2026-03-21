@@ -14,11 +14,13 @@ if (isset($_POST['login'])) {
 
     if ($user) {
 
-        // Check if this is the first login (password is plaintext)
+        // Check if this is the first login
         if (isset($user['first_login']) && $user['first_login'] == 1) {
+            // First login: compare plain text password
             if ($password === $user['password']) {
                 $_SESSION['tenantID'] = $user['tenantID'];
                 $_SESSION['shopName'] = $user['shopName'];
+                $_SESSION['login_slug'] = isset($user['login_slug']) ? $user['login_slug'] : '';
 
                 // Redirect to temporary password change page changetemppass.php
                 header("Location: changetemppass.php");
@@ -27,10 +29,11 @@ if (isset($_POST['login'])) {
                 $error = "Incorrect password.";
             }
         } else {
-            // Password already hashed after first login
+            // Subsequent logins: use hashed password verification
             if (password_verify($password, $user['password'])) {
                 $_SESSION['tenantID'] = $user['tenantID'];
                 $_SESSION['shopName'] = $user['shopName'];
+                $_SESSION['login_slug'] = isset($user['login_slug']) ? $user['login_slug'] : '';
 
                 // Redirect to dashboard
                 header("Location: dashboardadmin.php");
