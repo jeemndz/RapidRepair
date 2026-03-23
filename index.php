@@ -1,4 +1,4 @@
 <?php
-header("Location: superaddlogin.php");
+header("Location: /Superadmin/superaddlogin.php");
 exit;
 ?>
