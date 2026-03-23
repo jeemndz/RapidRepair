@@ -4,8 +4,31 @@ include __DIR__ . "/../db.php";
 
 $error = "";
 
-// Get the requested shop from URL parameter
+// Get the requested shop from URL parameter or POST data
 $requestedShop = isset($_GET['shop']) ? trim($_GET['shop']) : '';
+if (!$requestedShop && isset($_POST['shop'])) {
+    $requestedShop = trim($_POST['shop']);
+}
+
+// Load customization data if shop is provided
+$customization = null;
+if ($requestedShop) {
+    $stmt = mysqli_prepare($conn, "SELECT tc.* FROM tenant_customizations tc 
+                                    INNER JOIN owners o ON tc.tenantID = o.tenantID 
+                                    WHERE o.login_slug = ? LIMIT 1");
+    mysqli_stmt_bind_param($stmt, "s", $requestedShop);
+    mysqli_stmt_execute($stmt);
+    $result = mysqli_stmt_get_result($stmt);
+    $customization = mysqli_fetch_assoc($result);
+}
+
+// Default values
+$shop_name = $customization['shop_name'] ?? 'RAPIDREPAIR';
+$primary_color = $customization['primary_color'] ?? '#3f75eb';
+$accent_color = $customization['accent_color'] ?? '#3f75eb';
+$welcome_heading = $customization['welcome_heading'] ?? 'Streamline your shop management with precision.';
+$welcome_subtext = $customization['welcome_subtext'] ?? 'The all-in-one platform for modern automotive service centers to manage scheduling, inventory, and customer relations.';
+$hero_image = $customization['hero_image_path'] ? '../pictures/' . $customization['hero_image_path'] : 'https://lh3.googleusercontent.com/aida-public/AB6AXuDSvLJ3cZ6ER79yp4o0Y6WzI13dqdVNHhZHyLZ4Kme87pJYEmODEmNSRjQ0g63jOoVZm4UaDpyBha6ec962kjUuNBIniN-rnrETo8k-FO4-O39ZFYyuu6p97SuzraheAFkzXxwABqt3ur6ZemstwDJC3DK8JRm5f8I_Wg39e4nQFobYSlTPUeKHAi9IREjo2PztGF8l1xTOkR0Thn92ufrXf2K5DCTcgO9BDNrLqPYjloFAqFRHq3Wug_cHDUq7vyyX-0hUWfzOyqxn';
 
 if (isset($_POST['login'])) {
 
@@ -87,7 +110,7 @@ if (isset($_POST['login'])) {
             theme: {
                 extend: {
                     colors: {
-                        primary: "#3f75eb",
+                        primary: "<?php echo $primary_color; ?>",
                         "brand-dark": "#0f172a",
                         "brand-charcoal": "#1e293b",
                         "navy-custom": "#020617",
@@ -109,7 +132,33 @@ if (isset($_POST['login'])) {
 
     <style>
         .primary-glow {
-            box-shadow: 0 0 15px rgba(37, 99, 235, 0.4);
+            box-shadow: 0 0 15px rgba(63, 117, 235, 0.4);
+        }
+        
+        /* Dynamic primary color */
+        :root {
+            --primary-color: <?php echo $primary_color; ?>;
+            --accent-color: <?php echo $accent_color; ?>;
+        }
+        
+        .bg-primary {
+            background-color: var(--primary-color) !important;
+        }
+        
+        .text-primary {
+            color: var(--primary-color) !important;
+        }
+        
+        .border-primary {
+            border-color: var(--primary-color) !important;
+        }
+        
+        .focus-within\\:border-primary:focus-within {
+            border-color: var(--primary-color) !important;
+        }
+        
+        .hover\\:bg-primary\\/90:hover {
+            background-color: color-mix(in srgb, var(--primary-color) 90%, black) !important;
         }
     </style>
 
@@ -125,7 +174,7 @@ if (isset($_POST['login'])) {
             <div class="absolute inset-0 z-10 bg-gradient-to-t from-slate-900/60 via-transparent to-transparent"></div>
 
             <div class="absolute inset-0 bg-cover bg-center transition-transform duration-700 hover:scale-105"
-                style="background-image:url('https://lh3.googleusercontent.com/aida-public/AB6AXuDSvLJ3cZ6ER79yp4o0Y6WzI13dqdVNHhZHyLZ4Kme87pJYEmODEmNSRjQ0g63jOoVZm4UaDpyBha6ec962kjUuNBIniN-rnrETo8k-FO4-O39ZFYyuu6p97SuzraheAFkzXxwABqt3ur6ZemstwDJC3DK8JRm5f8I_Wg39e4nQFobYSlTPUeKHAi9IREjo2PztGF8l1xTOkR0Thn92ufrXf2K5DCTcgO9BDNrLqPYjloFAqFRHq3Wug_cHDUq7vyyX-0hUWfzOyqxn');">
+                style="background-image:url('<?php echo htmlspecialchars($hero_image); ?>');">
             </div>
 
             <div class="relative z-20 flex flex-col justify-end p-16 w-full">
@@ -138,18 +187,17 @@ if (isset($_POST['login'])) {
                         </div>
 
                         <span class="text-2xl font-black tracking-tight text-white">
-                            RAPID<span class="text-primary">REPAIR</span>
+                            <?php echo htmlspecialchars(substr($shop_name, 0, 12)); ?><span class="text-primary"><?php echo htmlspecialchars(substr($shop_name, 12)); ?></span>
                         </span>
 
                     </div>
 
                     <h1 class="text-4xl font-bold text-white mb-4 leading-tight">
-                        Streamline your shop management with precision.
+                        <?php echo htmlspecialchars($welcome_heading); ?>
                     </h1>
 
                     <p class="text-slate-300 text-lg">
-                        The all-in-one platform for modern automotive service centers
-                        to manage scheduling, inventory, and customer relations.
+                        <?php echo htmlspecialchars($welcome_subtext); ?>
                     </p>
 
                 </div>
@@ -168,7 +216,7 @@ if (isset($_POST['login'])) {
                     </div>
 
                     <span class="text-xl font-black tracking-tight text-slate-900">
-                        RAPID<span class="text-primary">REPAIR</span>
+                        <?php echo htmlspecialchars(substr($shop_name, 0, 12)); ?><span class="text-primary"><?php echo htmlspecialchars(substr($shop_name, 12)); ?></span>
                     </span>
 
                 </div>
@@ -176,7 +224,7 @@ if (isset($_POST['login'])) {
                 <div class="mb-8">
 
                     <h2 class="text-3xl font-bold mb-2 text-slate-900">
-                        Partner Login
+                        <?php echo htmlspecialchars($shop_name); ?> Login
                     </h2>
 
                     <p class="text-slate-600">
@@ -194,6 +242,9 @@ if (isset($_POST['login'])) {
                 <?php } ?>
 
                 <form method="POST" class="space-y-5">
+
+                    <!-- Hidden shop parameter to maintain shop validation -->
+                    <input type="hidden" name="shop" value="<?php echo htmlspecialchars($requestedShop); ?>" />
 
                     <!-- EMAIL -->
                     <div class="space-y-2">
