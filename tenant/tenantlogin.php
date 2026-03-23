@@ -4,6 +4,9 @@ include __DIR__ . "/../db.php";
 
 $error = "";
 
+// Get the requested shop from URL parameter
+$requestedShop = isset($_GET['shop']) ? trim($_GET['shop']) : '';
+
 if (isset($_POST['login'])) {
 
     $email = $_POST['email'];
@@ -14,32 +17,40 @@ if (isset($_POST['login'])) {
 
     if ($user) {
 
-        // Check if this is the first login
-        if (isset($user['first_login']) && $user['first_login'] == 1) {
-            // First login: compare plain text password
-            if ($password === $user['password']) {
-                $_SESSION['tenantID'] = $user['tenantID'];
-                $_SESSION['shopName'] = $user['shopName'];
-                $_SESSION['login_slug'] = isset($user['login_slug']) ? $user['login_slug'] : '';
-
-                // Redirect to temporary password change page changetemppass.php
-                header("Location: changetemppass.php");
-                exit;
-            } else {
-                $error = "Incorrect password.";
-            }
+        // Verify user belongs to the requested shop
+        $userShop = isset($user['login_slug']) ? trim($user['login_slug']) : '';
+        
+        // Shop parameter is required and must match user's shop
+        if (!$requestedShop || $userShop !== $requestedShop) {
+            $error = "You are not authorized to log in through this link. Please use your shop's login page.";
         } else {
-            // Subsequent logins: use hashed password verification
-            if (password_verify($password, $user['password'])) {
-                $_SESSION['tenantID'] = $user['tenantID'];
-                $_SESSION['shopName'] = $user['shopName'];
-                $_SESSION['login_slug'] = isset($user['login_slug']) ? $user['login_slug'] : '';
+            // Check if this is the first login
+            if (isset($user['first_login']) && $user['first_login'] == 1) {
+                // First login: compare plain text password
+                if ($password === $user['password']) {
+                    $_SESSION['tenantID'] = $user['tenantID'];
+                    $_SESSION['shopName'] = $user['shopName'];
+                    $_SESSION['login_slug'] = isset($user['login_slug']) ? $user['login_slug'] : '';
 
-                // Redirect to dashboard
-                header("Location: dashboardadmin.php");
-                exit;
+                    // Redirect to temporary password change page changetemppass.php
+                    header("Location: changetemppass.php");
+                    exit;
+                } else {
+                    $error = "Incorrect password.";
+                }
             } else {
-                $error = "Incorrect password.";
+                // Subsequent logins: use hashed password verification
+                if (password_verify($password, $user['password'])) {
+                    $_SESSION['tenantID'] = $user['tenantID'];
+                    $_SESSION['shopName'] = $user['shopName'];
+                    $_SESSION['login_slug'] = isset($user['login_slug']) ? $user['login_slug'] : '';
+
+                    // Redirect to dashboard
+                    header("Location: dashboardadmin.php");
+                    exit;
+                } else {
+                    $error = "Incorrect password.";
+                }
             }
         }
 
