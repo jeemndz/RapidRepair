@@ -184,7 +184,7 @@ $typesList = $typesRes ? $typesRes->fetch_all(MYSQLI_ASSOC) : [];
             </ul>
 
             <div class="logout">
-                <a href="logout.php">Logout</a>
+                <a href="logout/logout.php">Logout</a>
             </div>
         </aside>
 

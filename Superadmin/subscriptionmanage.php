@@ -6,7 +6,7 @@ if (!isset($_SESSION['superadmin_id'])) {
     exit();
 }
 
-include "db.php";
+include __DIR__ . "/../db.php";
 
 function subscriptionsColumnExists($conn, $columnName)
 {
@@ -58,6 +58,25 @@ function getPlanFeaturesJsonFromPost()
     }
 
     return json_encode(array_values($cleanFeatures));
+}
+
+function getBillingCycleDivisor($billingCycle)
+{
+    $cycle = strtolower(trim((string) $billingCycle));
+
+    if ($cycle === 'quarterly' || $cycle === 'quarter') {
+        return 3;
+    }
+
+    if ($cycle === 'semiannual' || $cycle === 'semi-annual' || $cycle === 'biannual') {
+        return 6;
+    }
+
+    if ($cycle === 'annual' || $cycle === 'annually' || $cycle === 'yearly') {
+        return 12;
+    }
+
+    return 1;
 }
 
 $hasPlanIdColumn = subscriptionsColumnExists($conn, 'plan_id');
@@ -252,6 +271,44 @@ $pricingConfig = [
     'premium' => ['monthly' => 3499, 'name' => 'Premium', 'emoji' => '💎']
 ];
 
+$planPricingLookup = [];
+
+foreach ($pricingConfig as $planKey => $planConfig) {
+    $normalizedPlanKey = preg_replace('/[^a-z0-9]+/', '', strtolower((string) $planKey));
+    $planNameValue = (string) ($planConfig['name'] ?? ucfirst((string) $planKey));
+    $monthlyValue = (float) ($planConfig['monthly'] ?? 0);
+
+    if ($normalizedPlanKey !== '') {
+        $planPricingLookup[$normalizedPlanKey] = ['name' => $planNameValue, 'monthly' => $monthlyValue];
+        $planPricingLookup[$normalizedPlanKey . 'plan'] = ['name' => $planNameValue, 'monthly' => $monthlyValue];
+    }
+
+    $normalizedNameKey = preg_replace('/[^a-z0-9]+/', '', strtolower($planNameValue));
+    if ($normalizedNameKey !== '') {
+        $planPricingLookup[$normalizedNameKey] = ['name' => $planNameValue, 'monthly' => $monthlyValue];
+    }
+}
+
+foreach ($savedPlans as $savedPlan) {
+    $savedPlanName = trim((string) ($savedPlan['plan_name'] ?? ''));
+    $savedMonthly = (float) ($savedPlan['monthly_price'] ?? 0);
+
+    if ($savedPlanName !== '' && $savedMonthly > 0) {
+        $normalizedSavedName = preg_replace('/[^a-z0-9]+/', '', strtolower($savedPlanName));
+        if ($normalizedSavedName !== '') {
+            $planPricingLookup[$normalizedSavedName] = ['name' => $savedPlanName, 'monthly' => $savedMonthly];
+        }
+    }
+
+    if (isset($savedPlan['plan_code'])) {
+        $savedPlanCode = trim((string) $savedPlan['plan_code']);
+        $normalizedSavedCode = preg_replace('/[^a-z0-9]+/', '', strtolower($savedPlanCode));
+        if ($normalizedSavedCode !== '' && $savedMonthly > 0) {
+            $planPricingLookup[$normalizedSavedCode] = ['name' => $savedPlanName !== '' ? $savedPlanName : $savedPlanCode, 'monthly' => $savedMonthly];
+        }
+    }
+}
+
 // Get subscription statistics
 $stats = [
     'total_mrr' => 0,
@@ -261,25 +318,38 @@ $stats = [
     'plans' => []
 ];
 
-// Count active tenants by subscription plan
-$activeTenantsQuery = "SELECT subscription_plan, COUNT(*) as count, SUM(plan_price) as total_revenue 
-                       FROM owners 
-                       WHERE status = 'Active' AND subscription_plan IS NOT NULL 
-                       GROUP BY subscription_plan";
+// Count active tenants by subscription plan and convert totals into monthly equivalent revenue.
+$activeTenantsQuery = "SELECT subscription_plan, billing_cycle, plan_price
+                       FROM owners
+                       WHERE status = 'Active' AND subscription_plan IS NOT NULL";
 $result = mysqli_query($conn, $activeTenantsQuery);
 
 while ($row = mysqli_fetch_assoc($result)) {
-    $plan = strtolower($row['subscription_plan']);
+    $rawPlanName = (string) ($row['subscription_plan'] ?? '');
+    $plan = preg_replace('/[^a-z0-9]+/', '', strtolower($rawPlanName));
+    $matchedPlan = ($plan !== '' && isset($planPricingLookup[$plan])) ? $planPricingLookup[$plan] : null;
+    $planDisplayName = $matchedPlan['name'] ?? ucfirst($rawPlanName);
+
+    $billingDivisor = getBillingCycleDivisor($row['billing_cycle'] ?? 'monthly');
+    $storedAmount = (float) ($row['plan_price'] ?? 0);
+    $monthlyEquivalent = 0;
+
+    if ($storedAmount > 0) {
+        $monthlyEquivalent = $storedAmount / $billingDivisor;
+    } elseif (isset($matchedPlan['monthly'])) {
+        $monthlyEquivalent = (float) $matchedPlan['monthly'];
+    }
+
     if (!isset($stats['plans'][$plan])) {
         $stats['plans'][$plan] = [
             'count' => 0,
             'revenue' => 0,
-            'name' => $pricingConfig[$plan]['name'] ?? 'Unknown'
+            'name' => $planDisplayName
         ];
     }
-    $stats['plans'][$plan]['count'] = $row['count'];
-    $stats['plans'][$plan]['revenue'] = $row['total_revenue'] ?? 0;
-    $stats['total_mrr'] += $row['total_revenue'] ?? 0;
+    $stats['plans'][$plan]['count'] += 1;
+    $stats['plans'][$plan]['revenue'] += $monthlyEquivalent;
+    $stats['total_mrr'] += $monthlyEquivalent;
 }
 
 // Get total active subscriptions
@@ -423,9 +493,9 @@ if ($stats['active_subscriptions'] > 0) {
                 <span class="text-sm">Tenants</span>
             </a>
             <a class="flex items-center gap-3 px-3 py-2.5 text-slate-600 dark:text-slate-400 font-medium hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors rounded-lg active:scale-95"
-                href="superhealth.php">
-                <span class="material-symbols-outlined" data-icon="health_and_safety">health_and_safety</span>
-                <span class="text-sm">System Health</span>
+                href="superreports.php">
+                <span class="material-symbols-outlined" data-icon="bar_chart">bar_chart</span>
+                <span class="text-sm">Reports</span>
             </a>
             <a class="flex items-center gap-3 px-3 py-2.5 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400 font-bold border-r-4 border-blue-700 dark:border-blue-500 rounded-lg active:scale-95"
                 href="subscriptionmanage.php">
@@ -434,7 +504,7 @@ if ($stats['active_subscriptions'] > 0) {
             </a>
             <a class="flex items-center gap-3 px-3 py-2.5 text-slate-600 dark:text-slate-400 font-medium hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors rounded-lg active:scale-95"
                 href="supersalesreport.php">
-                <span class="material-symbols-outlined" data-icon="bar_chart">bar_chart</span>
+                <span class="material-symbols-outlined" data-icon="monitoring">monitoring</span>
                 <span class="text-sm">Sales Reports</span>
             </a>
             <a class="flex items-center gap-3 px-3 py-2.5 text-slate-600 dark:text-slate-400 font-medium hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors rounded-lg active:scale-95"
@@ -470,7 +540,7 @@ if ($stats['active_subscriptions'] > 0) {
             <div
                 class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-red-500 hover:bg-red-50 dark:hover:bg-red-900/10 transition-colors cursor-pointer">
                 <span class="material-symbols-outlined">logout</span>
-                <a href="logout.php" class="text-sm font-medium">Logout</a>
+                <a href="../logout/logout.php" class="text-sm font-medium">Logout</a>
             </div>
         </div>
     </aside>
@@ -482,15 +552,26 @@ if ($stats['active_subscriptions'] > 0) {
                 <span class="absolute inset-y-0 left-0 flex items-center pl-3 text-on-surface-variant">
                     <span class="material-symbols-outlined text-lg" data-icon="search">search</span>
                 </span>
-                <input
+                <input id="globalSearchInput"
                     class="pl-10 pr-4 py-1.5 bg-surface-variant border-none text-sm rounded-lg focus:ring-2 focus:ring-primary w-64 transition-all"
                     placeholder="Search tenants or plans..." type="text" />
+            </div>
+            <div class="flex items-center gap-2" id="searchScopeFilters">
+                <button type="button" data-scope="all"
+                    class="search-scope-btn px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wide bg-primary text-white">All</button>
+                <button type="button" data-scope="plans"
+                    class="search-scope-btn px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wide bg-slate-100 text-slate-600 hover:bg-slate-200">Plans</button>
+                <button type="button" data-scope="subscriptions"
+                    class="search-scope-btn px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wide bg-slate-100 text-slate-600 hover:bg-slate-200">Active
+                    Subs</button>
             </div>
         </div>
         <div class="flex items-center gap-6">
             <div class="flex items-center gap-4">
-                <button class="text-slate-500 hover:text-blue-700 transition-all duration-200">
+                <button class="relative text-slate-500 hover:text-blue-700 transition-all duration-200">
                     <span class="material-symbols-outlined" data-icon="notifications">notifications</span>
+                    <span
+                        class="absolute right-0.5 top-0.5 h-2 w-2 rounded-full bg-red-500 ring-2 ring-white dark:ring-slate-900"></span>
                 </button>
                 <button class="text-slate-500 hover:text-blue-700 transition-all duration-200">
                     <span class="material-symbols-outlined" data-icon="help_outline">help_outline</span>
@@ -511,7 +592,8 @@ if ($stats['active_subscriptions'] > 0) {
     <main class="ml-64 p-8">
         <?php if ($planNotice !== ''): ?>
             <?php $isSuccessNotice = in_array($planNotice, ['created', 'updated', 'activated', 'deactivated'], true); ?>
-            <div class="mb-6 rounded-lg px-4 py-3 text-sm font-medium <?php echo $isSuccessNotice ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-800'; ?>">
+            <div
+                class="mb-6 rounded-lg px-4 py-3 text-sm font-medium <?php echo $isSuccessNotice ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-800'; ?>">
                 <?php if ($planNotice === 'created'): ?>
                     Subscription plan created successfully.
                 <?php elseif ($planNotice === 'updated'): ?>
@@ -551,9 +633,12 @@ if ($stats['active_subscriptions'] > 0) {
 
         <?php if ($hasIsActiveColumn): ?>
             <div class="mb-6 flex items-center gap-2">
-                <a href="subscriptionmanage.php?plan_filter=all" class="px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wide <?php echo $planFilter === 'all' ? 'bg-primary text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'; ?>">All</a>
-                <a href="subscriptionmanage.php?plan_filter=active" class="px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wide <?php echo $planFilter === 'active' ? 'bg-emerald-600 text-white' : 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200'; ?>">Active</a>
-                <a href="subscriptionmanage.php?plan_filter=inactive" class="px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wide <?php echo $planFilter === 'inactive' ? 'bg-amber-600 text-white' : 'bg-amber-100 text-amber-700 hover:bg-amber-200'; ?>">Inactive</a>
+                <a href="subscriptionmanage.php?plan_filter=all"
+                    class="px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wide <?php echo $planFilter === 'all' ? 'bg-primary text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'; ?>">All</a>
+                <a href="subscriptionmanage.php?plan_filter=active"
+                    class="px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wide <?php echo $planFilter === 'active' ? 'bg-emerald-600 text-white' : 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200'; ?>">Active</a>
+                <a href="subscriptionmanage.php?plan_filter=inactive"
+                    class="px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wide <?php echo $planFilter === 'inactive' ? 'bg-amber-600 text-white' : 'bg-amber-100 text-amber-700 hover:bg-amber-200'; ?>">Inactive</a>
             </div>
         <?php endif; ?>
 
@@ -564,14 +649,16 @@ if ($stats['active_subscriptions'] > 0) {
                     <span class="material-symbols-outlined text-primary text-3xl">add</span>
                 </div>
                 <h3 class="text-xl font-black text-on-surface">No Custom Plans Yet</h3>
-                <p class="text-sm text-on-surface-variant mt-2 max-w-md mx-auto">Start by creating your first subscription plan. Configure monthly price and included features in the modal.</p>
-                <button type="button" onclick="openCreatePlanModal()" class="mt-6 inline-flex items-center gap-2 px-5 py-2.5 bg-primary text-white text-sm font-bold rounded-lg shadow-sm active:scale-95 transition-transform">
+                <p class="text-sm text-on-surface-variant mt-2 max-w-md mx-auto">Start by creating your first subscription
+                    plan. Configure monthly price and included features in the modal.</p>
+                <button type="button" onclick="openCreatePlanModal()"
+                    class="mt-6 inline-flex items-center gap-2 px-5 py-2.5 bg-primary text-white text-sm font-bold rounded-lg shadow-sm active:scale-95 transition-transform">
                     <span class="material-symbols-outlined text-[20px]">add</span>
                     Create New Plan
                 </button>
             </div>
         <?php else: ?>
-            <section class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+            <section id="plansGrid" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
                 <?php foreach ($savedPlans as $plan): ?>
                     <?php
                     $features = [];
@@ -589,33 +676,38 @@ if ($stats['active_subscriptions'] > 0) {
                             }
                         }
                     }
+                    $planSearchHaystack = strtolower(trim((string) ($plan['plan_name'] ?? '') . ' ' . $planCodeValue . ' ' . ($isActive ? 'active' : 'inactive') . ' ' . implode(' ', $features)));
                     ?>
-                    <article class="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+                    <article class="searchable-plan rounded-xl border border-slate-200 bg-white p-6 shadow-sm"
+                        data-search="<?php echo htmlspecialchars($planSearchHaystack, ENT_QUOTES, 'UTF-8'); ?>">
                         <div class="flex items-start justify-between gap-3">
                             <div>
-                                <h3 class="text-lg font-black text-on-surface"><?php echo htmlspecialchars($plan['plan_name']); ?></h3>
+                                <h3 class="text-lg font-black text-on-surface">
+                                    <?php echo htmlspecialchars($plan['plan_name']); ?></h3>
                                 <p class="text-xs text-slate-500 uppercase tracking-wide mt-1">Monthly Price</p>
                             </div>
                             <?php if (isset($plan['plan_code']) && $plan['plan_code'] !== ''): ?>
-                                <span class="px-2.5 py-1 rounded bg-primary/10 text-primary text-[10px] font-bold uppercase tracking-wide"><?php echo htmlspecialchars($plan['plan_code']); ?></span>
+                                <span
+                                    class="px-2.5 py-1 rounded bg-primary/10 text-primary text-[10px] font-bold uppercase tracking-wide"><?php echo htmlspecialchars($plan['plan_code']); ?></span>
                             <?php endif; ?>
                         </div>
-                        <div class="mt-4 text-3xl font-black text-on-surface">₱<?php echo number_format((float) $plan['monthly_price'], 2); ?><span class="text-sm font-semibold text-slate-500"> / month</span></div>
+                        <div class="mt-4 text-3xl font-black text-on-surface">
+                            ₱<?php echo number_format((float) $plan['monthly_price'], 2); ?><span
+                                class="text-sm font-semibold text-slate-500"> / month</span></div>
 
                         <div class="mt-3 flex items-center justify-between gap-2">
-                            <span class="px-2.5 py-1 rounded text-[10px] font-bold uppercase tracking-wide <?php echo $isActive ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-600'; ?>">
+                            <span
+                                class="px-2.5 py-1 rounded text-[10px] font-bold uppercase tracking-wide <?php echo $isActive ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-600'; ?>">
                                 <?php echo $isActive ? 'Active' : 'Inactive'; ?>
                             </span>
                             <div class="flex items-center gap-2">
-                                <button
-                                    type="button"
+                                <button type="button"
                                     class="edit-plan-btn px-3 py-1.5 rounded border border-slate-200 text-slate-700 text-xs font-bold hover:bg-slate-50"
                                     data-plan-id="<?php echo $planRecordId; ?>"
                                     data-plan-code="<?php echo htmlspecialchars($planCodeValue, ENT_QUOTES, 'UTF-8'); ?>"
                                     data-plan-name="<?php echo htmlspecialchars((string) $plan['plan_name'], ENT_QUOTES, 'UTF-8'); ?>"
                                     data-plan-price="<?php echo htmlspecialchars((string) $plan['monthly_price'], ENT_QUOTES, 'UTF-8'); ?>"
-                                    data-plan-features="<?php echo htmlspecialchars(json_encode($features), ENT_QUOTES, 'UTF-8'); ?>"
-                                >
+                                    data-plan-features="<?php echo htmlspecialchars(json_encode($features), ENT_QUOTES, 'UTF-8'); ?>">
                                     Edit
                                 </button>
                                 <?php if ($hasIsActiveColumn): ?>
@@ -624,10 +716,12 @@ if ($stats['active_subscriptions'] > 0) {
                                             <input type="hidden" name="plan_id" value="<?php echo $planRecordId; ?>" />
                                         <?php endif; ?>
                                         <?php if ($hasPlanCodeColumn): ?>
-                                            <input type="hidden" name="plan_code" value="<?php echo htmlspecialchars($planCodeValue, ENT_QUOTES, 'UTF-8'); ?>" />
+                                            <input type="hidden" name="plan_code"
+                                                value="<?php echo htmlspecialchars($planCodeValue, ENT_QUOTES, 'UTF-8'); ?>" />
                                         <?php endif; ?>
                                         <input type="hidden" name="status_value" value="<?php echo $isActive ? '0' : '1'; ?>" />
-                                        <button type="submit" name="togglePlanStatus" value="1" class="px-3 py-1.5 rounded text-xs font-bold <?php echo $isActive ? 'bg-amber-100 text-amber-700 hover:bg-amber-200' : 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200'; ?>">
+                                        <button type="submit" name="togglePlanStatus" value="1"
+                                            class="px-3 py-1.5 rounded text-xs font-bold <?php echo $isActive ? 'bg-amber-100 text-amber-700 hover:bg-amber-200' : 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200'; ?>">
                                             <?php echo $isActive ? 'Set Inactive' : 'Set Active'; ?>
                                         </button>
                                     </form>
@@ -639,7 +733,8 @@ if ($stats['active_subscriptions'] > 0) {
                             <ul class="mt-5 space-y-2">
                                 <?php foreach ($features as $feature): ?>
                                     <li class="flex items-start gap-2 text-sm text-slate-700">
-                                        <span class="material-symbols-outlined text-emerald-500 text-[18px] mt-[1px]">check_circle</span>
+                                        <span
+                                            class="material-symbols-outlined text-emerald-500 text-[18px] mt-[1px]">check_circle</span>
                                         <span><?php echo htmlspecialchars($feature); ?></span>
                                     </li>
                                 <?php endforeach; ?>
@@ -650,6 +745,7 @@ if ($stats['active_subscriptions'] > 0) {
                     </article>
                 <?php endforeach; ?>
             </section>
+            <p id="plansSearchEmpty" class="hidden mt-4 text-sm font-medium text-slate-500">No plans match your search.</p>
         <?php endif; ?>
         <!-- Recent Activity / Comparative Chart Placeholder -->
         <section class="mt-8">
@@ -754,7 +850,7 @@ if ($stats['active_subscriptions'] > 0) {
                                 </th>
                             </tr>
                         </thead>
-                        <tbody>
+                        <tbody id="activeSubscriptionsBody">
                             <?php
                             $subscriptionsQuery = "SELECT tenantID, shopName, subscription_plan, billing_cycle, plan_price, 
                                                  subscription_start, next_billing_date, status
@@ -765,15 +861,31 @@ if ($stats['active_subscriptions'] > 0) {
 
                             if (mysqli_num_rows($subResult) > 0) {
                                 while ($sub = mysqli_fetch_assoc($subResult)) {
-                                    $planKey = strtolower($sub['subscription_plan']);
-                                    $planName = $pricingConfig[$planKey]['name'] ?? ucfirst($sub['subscription_plan']);
-                                    $monthlyRate = $pricingConfig[$planKey]['monthly'] ?? 0;
+                                    $rawPlanName = (string) ($sub['subscription_plan'] ?? '');
+                                    $planKey = preg_replace('/[^a-z0-9]+/', '', strtolower($rawPlanName));
+                                    $matchedPlan = ($planKey !== '' && isset($planPricingLookup[$planKey])) ? $planPricingLookup[$planKey] : null;
+
+                                    $planName = $matchedPlan['name'] ?? ucfirst($rawPlanName);
+                                    $monthlyRate = isset($matchedPlan['monthly']) ? (float) $matchedPlan['monthly'] : 0;
+
+                                    $totalBillingAmount = (float) ($sub['plan_price'] ?? 0);
+                                    $billingDivisor = getBillingCycleDivisor($sub['billing_cycle'] ?? 'monthly');
+
+                                    if ($monthlyRate <= 0 && $totalBillingAmount > 0) {
+                                        $monthlyRate = $totalBillingAmount / $billingDivisor;
+                                    }
+
+                                    if ($totalBillingAmount <= 0 && $monthlyRate > 0) {
+                                        $totalBillingAmount = $monthlyRate * $billingDivisor;
+                                    }
+
                                     $startDate = date('M d, Y', strtotime($sub['subscription_start']));
                                     $nextBilling = date('M d, Y', strtotime($sub['next_billing_date']));
                                     $billingCycle = ucfirst($sub['billing_cycle']);
-                                    $totalBillingAmount = $sub['plan_price'];
+                                    $subscriptionSearchHaystack = strtolower(trim((string) ($sub['shopName'] ?? '') . ' ' . $planName . ' ' . $billingCycle . ' ' . $nextBilling));
                                     ?>
-                                    <tr class="border-b border-slate-100 hover:bg-slate-50 transition-colors">
+                                    <tr class="searchable-subscription border-b border-slate-100 hover:bg-slate-50 transition-colors"
+                                        data-search="<?php echo htmlspecialchars($subscriptionSearchHaystack, ENT_QUOTES, 'UTF-8'); ?>">
                                         <td class="px-6 py-4 font-medium text-slate-900">
                                             <?php echo htmlspecialchars($sub['shopName']); ?>
                                         </td>
@@ -817,6 +929,15 @@ if ($stats['active_subscriptions'] > 0) {
                                 <?php
                             }
                             ?>
+                            <tr id="subscriptionsSearchEmpty" class="hidden">
+                                <td colspan="7" class="px-6 py-8 text-center text-slate-500">
+                                    <div class="flex flex-col items-center gap-2">
+                                        <span
+                                            class="material-symbols-outlined text-4xl text-slate-300">search_off</span>
+                                        <p class="font-medium">No active subscriptions match your search</p>
+                                    </div>
+                                </td>
+                            </tr>
                         </tbody>
                     </table>
                 </div>
@@ -824,14 +945,17 @@ if ($stats['active_subscriptions'] > 0) {
         </section>
 
         <!-- Edit Plan Modal -->
-        <div id="editPlanModal" class="hidden fixed inset-0 z-[110] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
+        <div id="editPlanModal"
+            class="hidden fixed inset-0 z-[110] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
             <div class="bg-white w-full max-w-xl rounded-lg shadow-2xl border border-slate-200 overflow-hidden">
                 <div class="px-8 py-6 border-b border-slate-100 flex items-center justify-between bg-white">
                     <div>
                         <h2 class="text-xl font-black text-on-surface tracking-tight">Edit Plan</h2>
-                        <p class="text-xs text-on-surface-variant font-medium mt-1">Update pricing and plan features.</p>
+                        <p class="text-xs text-on-surface-variant font-medium mt-1">Update pricing and plan features.
+                        </p>
                     </div>
-                    <button type="button" onclick="closeEditPlanModal()" class="text-slate-400 hover:text-on-surface transition-colors">
+                    <button type="button" onclick="closeEditPlanModal()"
+                        class="text-slate-400 hover:text-on-surface transition-colors">
                         <span class="material-symbols-outlined">close</span>
                     </button>
                 </div>
@@ -847,43 +971,58 @@ if ($stats['active_subscriptions'] > 0) {
 
                     <div class="grid grid-cols-2 gap-6">
                         <div class="col-span-2 md:col-span-1">
-                            <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Plan Name</label>
-                            <input id="editPlanNameInput" name="plan_name" class="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-2.5 text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all" type="text" />
+                            <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Plan
+                                Name</label>
+                            <input id="editPlanNameInput" name="plan_name"
+                                class="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-2.5 text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all"
+                                type="text" />
                         </div>
                         <div class="col-span-2 md:col-span-1">
-                            <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Monthly Price</label>
+                            <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Monthly
+                                Price</label>
                             <div class="relative">
-                                <span class="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-sm">₱</span>
-                                <input id="editPlanPriceInput" name="monthly_price" class="w-full bg-slate-50 border border-slate-200 rounded-lg pl-8 pr-4 py-2.5 text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all" type="number" min="0" step="0.01" />
+                                <span
+                                    class="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-sm">₱</span>
+                                <input id="editPlanPriceInput" name="monthly_price"
+                                    class="w-full bg-slate-50 border border-slate-200 rounded-lg pl-8 pr-4 py-2.5 text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all"
+                                    type="number" min="0" step="0.01" />
                             </div>
                         </div>
                     </div>
 
                     <div>
-                        <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-4 flex justify-between">
+                        <label
+                            class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-4 flex justify-between">
                             <span>Included Features</span>
-                            <button id="editAddFeatureBtn" type="button" class="text-primary cursor-pointer hover:underline">+ Add Feature</button>
+                            <button id="editAddFeatureBtn" type="button"
+                                class="text-primary cursor-pointer hover:underline">+ Add Feature</button>
                         </label>
                         <div id="editFeatureList" class="space-y-3"></div>
                     </div>
 
                     <div class="pt-2 flex gap-4">
-                        <button type="button" onclick="closeEditPlanModal()" class="flex-1 py-3 border border-slate-200 text-slate-600 font-bold text-sm rounded-lg hover:bg-slate-50">Cancel</button>
-                        <button type="submit" name="updatePlan" value="1" class="flex-1 py-3 bg-primary text-white font-bold text-sm rounded-lg hover:opacity-90">Save Changes</button>
+                        <button type="button" onclick="closeEditPlanModal()"
+                            class="flex-1 py-3 border border-slate-200 text-slate-600 font-bold text-sm rounded-lg hover:bg-slate-50">Cancel</button>
+                        <button type="submit" name="updatePlan" value="1"
+                            class="flex-1 py-3 bg-primary text-white font-bold text-sm rounded-lg hover:opacity-90">Save
+                            Changes</button>
                     </div>
                 </form>
             </div>
         </div>
 
         <!-- Create Plan Modal -->
-        <div id="createPlanModal" class="hidden fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
+        <div id="createPlanModal"
+            class="hidden fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
             <div class="bg-white w-full max-w-xl rounded-lg shadow-2xl border border-slate-200 overflow-hidden">
                 <div class="px-8 py-6 border-b border-slate-100 flex items-center justify-between bg-white">
                     <div>
                         <h2 class="text-xl font-black text-on-surface tracking-tight">Create New Plan</h2>
-                        <p class="text-xs text-on-surface-variant font-medium mt-1">Define pricing and features for a new subscription tier.</p>
+                        <p class="text-xs text-on-surface-variant font-medium mt-1">Define pricing and features for a
+                            new subscription tier.</p>
                     </div>
-                    <button type="button" onclick="closeCreatePlanModal()" class="text-slate-400 hover:text-on-surface transition-colors">
+                    <button type="button" onclick="closeCreatePlanModal()"
+                        class="text-slate-400 hover:text-on-surface transition-colors">
                         <span class="material-symbols-outlined">close</span>
                     </button>
                 </div>
@@ -891,51 +1030,72 @@ if ($stats['active_subscriptions'] > 0) {
                 <form id="createPlanForm" method="POST" class="px-8 py-8 space-y-6">
                     <div class="grid grid-cols-2 gap-6">
                         <div class="col-span-2 md:col-span-1">
-                            <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Plan Name</label>
-                            <input id="planNameInput" name="plan_name" class="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-2.5 text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all" placeholder="e.g. Enterprise" type="text" />
+                            <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Plan
+                                Name</label>
+                            <input id="planNameInput" name="plan_name"
+                                class="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-2.5 text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all"
+                                placeholder="e.g. Enterprise" type="text" />
                         </div>
                         <div class="col-span-2 md:col-span-1">
-                            <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Monthly Price (USD)</label>
+                            <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Monthly
+                                Price (USD)</label>
                             <div class="relative">
-                                <span class="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-sm">$</span>
-                                <input id="planPriceInput" name="monthly_price" class="w-full bg-slate-50 border border-slate-200 rounded-lg pl-8 pr-4 py-2.5 text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all" placeholder="0.00" type="number" min="0" step="0.01" />
+                                <span
+                                    class="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-sm">$</span>
+                                <input id="planPriceInput" name="monthly_price"
+                                    class="w-full bg-slate-50 border border-slate-200 rounded-lg pl-8 pr-4 py-2.5 text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all"
+                                    placeholder="0.00" type="number" min="0" step="0.01" />
                             </div>
                         </div>
                     </div>
                     <input type="hidden" id="planFeaturesInput" name="plan_features" value="[]" />
 
                     <div>
-                        <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-4 flex justify-between">
+                        <label
+                            class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-4 flex justify-between">
                             <span>Included Features</span>
-                            <button id="addFeatureBtn" type="button" class="text-primary cursor-pointer hover:underline">+ Add Feature</button>
+                            <button id="addFeatureBtn" type="button"
+                                class="text-primary cursor-pointer hover:underline">+ Add Feature</button>
                         </label>
                         <div id="featureList" class="space-y-3">
                             <div class="flex items-center gap-3 feature-row">
                                 <div class="flex-1 relative">
-                                    <span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-emerald-500 text-lg">check_circle</span>
-                                    <input class="w-full bg-white border border-slate-200 rounded-lg pl-10 pr-4 py-2 text-sm" type="text" value="Unlimited user accounts" />
+                                    <span
+                                        class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-emerald-500 text-lg">check_circle</span>
+                                    <input
+                                        class="w-full bg-white border border-slate-200 rounded-lg pl-10 pr-4 py-2 text-sm"
+                                        type="text" value="Unlimited user accounts" />
                                 </div>
-                                <button type="button" class="remove-feature-btn text-slate-300 hover:text-error transition-colors">
+                                <button type="button"
+                                    class="remove-feature-btn text-slate-300 hover:text-error transition-colors">
                                     <span class="material-symbols-outlined">delete</span>
                                 </button>
                             </div>
 
                             <div class="flex items-center gap-3 feature-row">
                                 <div class="flex-1 relative">
-                                    <span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-emerald-500 text-lg">check_circle</span>
-                                    <input class="w-full bg-white border border-slate-200 rounded-lg pl-10 pr-4 py-2 text-sm" type="text" value="24/7 technical support" />
+                                    <span
+                                        class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-emerald-500 text-lg">check_circle</span>
+                                    <input
+                                        class="w-full bg-white border border-slate-200 rounded-lg pl-10 pr-4 py-2 text-sm"
+                                        type="text" value="24/7 technical support" />
                                 </div>
-                                <button type="button" class="remove-feature-btn text-slate-300 hover:text-error transition-colors">
+                                <button type="button"
+                                    class="remove-feature-btn text-slate-300 hover:text-error transition-colors">
                                     <span class="material-symbols-outlined">delete</span>
                                 </button>
                             </div>
 
                             <div class="flex items-center gap-3 feature-row">
                                 <div class="flex-1 relative">
-                                    <span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-emerald-500 text-lg">check_circle</span>
-                                    <input class="w-full bg-white border border-slate-100 rounded-lg pl-10 pr-4 py-2 text-sm" placeholder="Add a feature description..." type="text" />
+                                    <span
+                                        class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-emerald-500 text-lg">check_circle</span>
+                                    <input
+                                        class="w-full bg-white border border-slate-100 rounded-lg pl-10 pr-4 py-2 text-sm"
+                                        placeholder="Add a feature description..." type="text" />
                                 </div>
-                                <button type="button" class="remove-feature-btn text-slate-300 hover:text-error transition-colors">
+                                <button type="button"
+                                    class="remove-feature-btn text-slate-300 hover:text-error transition-colors">
                                     <span class="material-symbols-outlined">delete</span>
                                 </button>
                             </div>
@@ -943,23 +1103,107 @@ if ($stats['active_subscriptions'] > 0) {
                     </div>
 
                     <div class="pt-4 flex gap-4">
-                        <button id="saveDraftBtn" class="flex-1 py-3 border border-slate-200 text-slate-600 font-bold text-sm rounded-lg hover:bg-slate-50 active:scale-[0.99] transition-all" type="button">
+                        <button id="saveDraftBtn"
+                            class="flex-1 py-3 border border-slate-200 text-slate-600 font-bold text-sm rounded-lg hover:bg-slate-50 active:scale-[0.99] transition-all"
+                            type="button">
                             Save as Draft
                         </button>
-                        <button id="publishPlanBtn" name="publishPlan" value="1" class="flex-1 py-3 bg-primary text-white font-bold text-sm rounded-lg hover:opacity-90 active:scale-[0.99] transition-all" type="submit">
+                        <button id="publishPlanBtn" name="publishPlan" value="1"
+                            class="flex-1 py-3 bg-primary text-white font-bold text-sm rounded-lg hover:opacity-90 active:scale-[0.99] transition-all"
+                            type="submit">
                             Publish Plan
                         </button>
                     </div>
                 </form>
 
                 <div class="px-8 py-4 bg-slate-50 border-t border-slate-100 flex justify-center">
-                    <p class="text-[10px] text-slate-400 font-medium uppercase tracking-[0.1em]">Changes will be applied to all new sign-ups immediately</p>
+                    <p class="text-[10px] text-slate-400 font-medium uppercase tracking-[0.1em]">Changes will be applied
+                        to all new sign-ups immediately</p>
                 </div>
             </div>
         </div>
     </main>
 
     <script>
+            (function setupGlobalSearchFilters() {
+                const searchInput = document.getElementById('globalSearchInput');
+                const scopeButtons = Array.from(document.querySelectorAll('.search-scope-btn'));
+                const planCards = Array.from(document.querySelectorAll('.searchable-plan'));
+                const subscriptionRows = Array.from(document.querySelectorAll('.searchable-subscription'));
+                const plansEmpty = document.getElementById('plansSearchEmpty');
+                const subscriptionsEmpty = document.getElementById('subscriptionsSearchEmpty');
+
+                if (!searchInput || scopeButtons.length === 0) {
+                    return;
+                }
+
+                let currentScope = 'all';
+
+                function updateScopeButtonStyles() {
+                    scopeButtons.forEach(function (button) {
+                        const isActive = (button.dataset.scope || 'all') === currentScope;
+                        button.className = isActive
+                            ? 'search-scope-btn px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wide bg-primary text-white'
+                            : 'search-scope-btn px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wide bg-slate-100 text-slate-600 hover:bg-slate-200';
+                    });
+                }
+
+                function applySearch() {
+                    const query = searchInput.value.trim().toLowerCase();
+                    let visiblePlanCount = 0;
+                    let visibleSubscriptionCount = 0;
+
+                    planCards.forEach(function (card) {
+                        const shouldSearchPlans = currentScope === 'all' || currentScope === 'plans';
+                        const matches = query === '' || (card.dataset.search || '').includes(query);
+                        const visible = shouldSearchPlans ? matches : true;
+                        card.classList.toggle('hidden', !visible);
+                        if (visible) {
+                            visiblePlanCount++;
+                        }
+                    });
+
+                    subscriptionRows.forEach(function (row) {
+                        const shouldSearchSubscriptions = currentScope === 'all' || currentScope === 'subscriptions';
+                        const matches = query === '' || (row.dataset.search || '').includes(query);
+                        const visible = shouldSearchSubscriptions ? matches : true;
+                        row.classList.toggle('hidden', !visible);
+                        if (visible) {
+                            visibleSubscriptionCount++;
+                        }
+                    });
+
+                    if (plansEmpty) {
+                        const shouldShow = query !== ''
+                            && (currentScope === 'all' || currentScope === 'plans')
+                            && planCards.length > 0
+                            && visiblePlanCount === 0;
+                        plansEmpty.classList.toggle('hidden', !shouldShow);
+                    }
+
+                    if (subscriptionsEmpty) {
+                        const shouldShow = query !== ''
+                            && (currentScope === 'all' || currentScope === 'subscriptions')
+                            && subscriptionRows.length > 0
+                            && visibleSubscriptionCount === 0;
+                        subscriptionsEmpty.classList.toggle('hidden', !shouldShow);
+                    }
+                }
+
+                scopeButtons.forEach(function (button) {
+                    button.addEventListener('click', function () {
+                        currentScope = button.dataset.scope || 'all';
+                        updateScopeButtonStyles();
+                        applySearch();
+                    });
+                });
+
+                searchInput.addEventListener('input', applySearch);
+
+                updateScopeButtonStyles();
+                applySearch();
+            })();
+
         function createFeatureRowMarkup(value) {
             const safeValue = String(value || '').replace(/"/g, '&quot;');
             return "<div class=\"flex items-center gap-3 feature-row\"><div class=\"flex-1 relative\"><span class=\"material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-emerald-500 text-lg\">check_circle</span><input class=\"w-full bg-white border border-slate-100 rounded-lg pl-10 pr-4 py-2 text-sm\" placeholder=\"Add a feature description...\" type=\"text\" value=\"" + safeValue + "\" /></div><button type=\"button\" class=\"remove-feature-btn text-slate-300 hover:text-error transition-colors\"><span class=\"material-symbols-outlined\">delete</span></button></div>";

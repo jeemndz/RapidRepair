@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <meta content="width=device-width, initial-scale=1.0" name="viewport" />
+    <title>Rapid Repair Co. - Create Account</title>
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&amp;display=swap"
+        rel="stylesheet" />
+    <link
+        href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap"
+        rel="stylesheet" />
+    <link
+        href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap"
+        rel="stylesheet" />
+    <style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f6f6f8;
+        }
+
+        .architectural-grid {
+            background-image: radial-gradient(#cbd5e1 0.5px, transparent 0.5px);
+            background-size: 24px 24px;
+        }
+    </style>
+    <script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "secondary-fixed": "#e2e8f0",
+                        "on-primary-container": "#1152d4",
+                        "surface-variant": "#f1f5f9",
+                        "outline-variant": "#cbd5e1",
+                        "secondary-fixed-dim": "#cbd5e1",
+                        "surface-container-low": "#ffffff",
+                        "on-surface-variant": "#64748b",
+                        "inverse-primary": "#b4c5ff",
+                        "inverse-surface": "#1e293b",
+                        "error-container": "#fee2e2",
+                        "tertiary-container": "#fef3c7",
+                        "primary-fixed-dim": "#bfdbfe",
+                        "on-error": "#ffffff",
+                        "tertiary-fixed": "#ffedd5",
+                        "outline": "#e2e8f0",
+                        "on-secondary-fixed-variant": "#334155",
+                        "surface-container-highest": "#ffffff",
+                        "surface": "#f6f6f8",
+                        "on-secondary": "#ffffff",
+                        "on-tertiary": "#ffffff",
+                        "secondary-container": "#f1f5f9",
+                        "surface-container": "#ffffff",
+                        "primary-container": "#eef2ff",
+                        "on-error-container": "#991b1b",
+                        "on-secondary-fixed": "#0f172a",
+                        "background": "#f6f6f8",
+                        "tertiary-fixed-dim": "#fed7aa",
+                        "surface-container-high": "#ffffff",
+                        "on-background": "#0f172a",
+                        "surface-dim": "#d9d9e4",
+                        "error": "#ef4444",
+                        "on-tertiary-fixed-variant": "#9a3412",
+                        "on-tertiary-fixed": "#7c2d12",
+                        "on-secondary-container": "#1e293b",
+                        "tertiary": "#f59e0b",
+                        "on-primary": "#ffffff",
+                        "on-primary-fixed-variant": "#1d4ed8",
+                        "surface-container-lowest": "#ffffff",
+                        "surface-bright": "#ffffff",
+                        "secondary": "#475569",
+                        "primary-fixed": "#dbeafe",
+                        "primary": "#1152d4",
+                        "surface-tint": "#1152d4",
+                        "on-tertiary-container": "#92400e",
+                        "on-primary-fixed": "#1e3a8a",
+                        "on-surface": "#0f172a",
+                        "inverse-on-surface": "#f8fafc"
+                    },
+                    fontFamily: {
+                        "headline": ["Inter"],
+                        "body": ["Inter"],
+                        "label": ["Inter"]
+                    },
+                    borderRadius: { "DEFAULT": "0.125rem", "lg": "0.25rem", "xl": "0.5rem", "full": "0.75rem" },
+                },
+            },
+        }
+    </script>
+</head>
+
+<body class="bg-background text-on-surface min-h-screen flex flex-col">
+    <!-- TopNavBar -->
+    <nav
+        class="fixed top-0 w-full z-50 flex justify-between items-center px-8 h-16 bg-white dark:bg-slate-900 shadow-sm dark:shadow-none border-b border-slate-200 dark:border-slate-800 font-['Inter'] antialiased tracking-tight">
+        <div class="text-[20px] font-black text-[#1152d4] dark:text-blue-500 uppercase tracking-tighter">
+            Rapid Repair Co.
+        </div>
+        <button
+            class="bg-primary text-on-primary px-4 py-2 rounded-lg text-[14px] font-bold active:opacity-80 transition-all">
+            Partner Login
+        </button>
+    </nav>
+    <!-- Main Registration Content -->
+    <main class="flex-grow flex items-stretch pt-16">
+        <!-- Left: Branding & Visual (Architectural North Star) -->
+        <div
+            class="hidden lg:flex w-1/2 bg-on-background relative overflow-hidden flex-col justify-center px-20 architectural-grid">
+            <div class="absolute inset-0 bg-gradient-to-br from-primary/20 to-transparent"></div>
+            <div class="relative z-10">
+                <div
+                    class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primary/10 border border-primary/20 text-primary-fixed-dim text-[12px] font-bold tracking-widest uppercase mb-6">
+                    Partner Registration
+                </div>
+                <h1 class="text-[48px] font-black text-white leading-[1.1] tracking-tight mb-6">
+                    Join the Future of Shop Management
+                </h1>
+                <p class="text-[18px] text-slate-400 max-w-lg leading-relaxed mb-12">
+                    Cobalt Precision provides the high-fidelity operational tools required for top-tier repair networks.
+                    Secure your position in the architectural standard of vehicle maintenance.
+                </p>
+                <div class="grid grid-cols-1 gap-8">
+                    <div class="flex items-start gap-4">
+                        <div
+                            class="w-10 h-10 rounded-lg bg-primary/20 flex items-center justify-center text-primary-fixed-dim border border-primary/30">
+                            <span class="material-symbols-outlined">architecture</span>
+                        </div>
+                        <div>
+                            <h3 class="text-white font-bold">Rigor and Precision</h3>
+                            <p class="text-slate-500 text-sm">Engineered for high-stakes professional environments.</p>
+                        </div>
+                    </div>
+                    <div class="flex items-start gap-4">
+                        <div
+                            class="w-10 h-10 rounded-lg bg-primary/20 flex items-center justify-center text-primary-fixed-dim border border-primary/30">
+                            <span class="material-symbols-outlined">network_node</span>
+                        </div>
+                        <div>
+                            <h3 class="text-white font-bold">Unified Ecosystem</h3>
+                            <p class="text-slate-500 text-sm">Connect seamlessly with the global Cobalt vehicle repair
+                                grid.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <!-- Abstract UI Decoration -->
+            <div class="absolute bottom-[-100px] right-[-50px] w-96 h-96 opacity-20 pointer-events-none">
+                <div class="w-full h-full border border-primary-fixed-dim/30 rounded-xl transform rotate-12"></div>
+                <div
+                    class="absolute top-10 left-10 w-full h-full border border-primary-fixed-dim/20 rounded-xl transform rotate-6">
+                </div>
+            </div>
+        </div>
+        <!-- Right: Registration Form -->
+        <div class="w-full lg:w-1/2 flex items-center justify-center p-8 md:p-12 lg:p-24 bg-surface">
+            <div class="w-full max-w-md">
+                <div class="mb-10 lg:hidden">
+                    <div class="text-[20px] font-black text-[#1152d4] uppercase tracking-tighter mb-2">Cobalt Network
+                    </div>
+                    <h2 class="text-[24px] font-bold tracking-tight">Join the Future of Shop Management</h2>
+                </div>
+                <div class="bg-white p-8 md:p-10 rounded-lg border border-slate-200 shadow-sm">
+                    <div class="mb-8">
+                        <h2 class="text-[20px] font-bold text-on-surface mb-2 tracking-tight">Create Account</h2>
+                        <p class="text-on-surface-variant text-[14px]">Enter your shop details to begin the onboarding
+                            process.</p>
+                    </div>
+                    <form class="space-y-5">
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div class="space-y-1.5">
+                                <label class="text-[12px] font-bold text-on-surface-variant uppercase tracking-wider">First Name</label>
+                                <input
+                                    class="w-full h-11 bg-surface-container-highest border border-outline px-4 rounded-lg focus:ring-1 focus:ring-primary focus:border-primary text-[14px] outline-none transition-all"
+                                    placeholder="First Name" type="text" />
+                            </div>
+                            <div class="space-y-1.5">
+                                <label class="text-[12px] font-bold text-on-surface-variant uppercase tracking-wider">Last Name</label>
+                                <input
+                                    class="w-full h-11 bg-surface-container-highest border border-outline px-4 rounded-lg focus:ring-1 focus:ring-primary focus:border-primary text-[14px] outline-none transition-all"
+                                    placeholder="Last Name" type="text" />
+                            </div>
+                        </div>
+                        <div class="space-y-1.5">
+                            <label
+                                class="text-[12px] font-bold text-on-surface-variant uppercase tracking-wider">
+                                Email Address</label>
+                            <input
+                                class="w-full h-11 bg-surface-container-highest border border-outline px-4 rounded-lg focus:ring-1 focus:ring-primary focus:border-primary text-[14px] outline-none transition-all"
+                                placeholder="manager@shop.com" type="email" />
+                        </div>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div class="space-y-1.5">
+                                <label
+                                    class="text-[12px] font-bold text-on-surface-variant uppercase tracking-wider">Create
+                                    Password</label>
+                                <input
+                                    class="w-full h-11 bg-surface-container-highest border border-outline px-4 rounded-lg focus:ring-1 focus:ring-primary focus:border-primary text-[14px] outline-none transition-all"
+                                    placeholder="••••••••" type="password" />
+                            </div>
+                            <div class="space-y-1.5">
+                                <label
+                                    class="text-[12px] font-bold text-on-surface-variant uppercase tracking-wider">Confirm
+                                    Password</label>
+                                <input
+                                    class="w-full h-11 bg-surface-container-highest border border-outline px-4 rounded-lg focus:ring-1 focus:ring-primary focus:border-primary text-[14px] outline-none transition-all"
+                                    placeholder="••••••••" type="password" />
+                            </div>
+                        </div>
+                        <div class="flex items-center gap-2 pt-2">
+                            <input class="w-4 h-4 text-primary border-outline rounded focus:ring-primary" id="terms"
+                                type="checkbox" />
+                            <label class="text-[12px] text-on-surface-variant leading-none" for="terms">I agree to the
+                                <a class="text-primary font-bold" href="#">Terms of Service</a> and <a
+                                    class="text-primary font-bold" href="#">Privacy Policy</a>.</label>
+                        </div>
+                        <div class="pt-4 space-y-4">
+                            <button
+                                class="w-full h-12 bg-primary text-white font-bold rounded-lg hover:opacity-90 active:scale-[0.98] transition-all tracking-tight shadow-sm"
+                                type="submit">
+                                Create Account
+                            </button>
+                            <div class="text-center">
+                                <span class="text-[14px] text-on-surface-variant">Already have an account? </span>
+                                <a class="text-[14px] text-primary font-bold hover:underline" href="#">Login</a>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+                <p class="mt-8 text-center text-[12px] text-on-surface-variant">
+                    Security verified by Rapid Repair Auth Services.
+                </p>
+            </div>
+        </div>
+    </main>
+    <!-- Footer -->
+    <footer
+        class="w-full py-12 px-8 flex flex-col md:flex-row justify-between items-center gap-4 bg-slate-50 dark:bg-slate-950 border-t border-slate-200 dark:border-slate-800 font-['Inter'] text-[14px] leading-relaxed">
+        <div class="text-lg font-bold text-slate-900 dark:text-slate-100">
+            Rapid Repair Co.
+        </div>
+        <div class="text-slate-500 dark:text-slate-400 text-center md:text-left">
+            © 2026 Rapid Repair Co. All rights reserved.
+        </div>
+        <div class="flex gap-6">
+            <a class="text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 transition-colors"
+                href="#">Privacy Policy</a>
+            <a class="text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 transition-colors"
+                href="#">Terms of Service</a>
+            <a class="text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 transition-colors"
+                href="#">Compliance</a>
+            <a class="text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 transition-colors"
+                href="#">Support</a>
+        </div>
+    </footer>
+</body>
+
+</html>

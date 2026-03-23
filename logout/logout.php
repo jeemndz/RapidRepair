@@ -5,16 +5,90 @@ function buildTenantLoginUrl($loginSlug)
 {
 	$loginSlug = trim((string)$loginSlug);
 	if ($loginSlug === '') {
-		return 'tenantlogin.php';
+		return '../tenant/tenantlogin.php';
 	}
 
 	$baseDomain = trim((string)(getenv('TENANT_BASE_DOMAIN') ?: ''));
 	if ($baseDomain !== '') {
 		$scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
-		return $scheme . '://' . $loginSlug . '.' . $baseDomain . '/tenantlogin.php';
+		return $scheme . '://' . $loginSlug . '.' . $baseDomain . '/tenant/tenantlogin.php';
 	}
 
-	return 'tenantlogin.php?shop=' . urlencode($loginSlug);
+	return '../tenant/tenantlogin.php?shop=' . urlencode($loginSlug);
+}
+
+function buildSafeInAppPath($candidate)
+{
+	$candidate = trim((string)$candidate);
+	if ($candidate === '') {
+		return '';
+	}
+
+	$parts = parse_url($candidate);
+	if ($parts === false) {
+		return '';
+	}
+
+	if (isset($parts['scheme']) || isset($parts['host'])) {
+		return '';
+	}
+
+	$path = isset($parts['path']) ? (string)$parts['path'] : '';
+	if ($path === '') {
+		return '';
+	}
+
+	if (strpos($path, '/RapidRepair/') === 0) {
+		$path = substr($path, strlen('/RapidRepair/'));
+	} elseif (strpos($path, '/RapidRepair') === 0) {
+		$path = substr($path, strlen('/RapidRepair'));
+	}
+
+	$path = ltrim($path, '/');
+	if ($path === '') {
+		return '';
+	}
+
+	$segments = explode('/', $path);
+	foreach ($segments as $segment) {
+		if ($segment === '' || $segment === '.' || $segment === '..') {
+			return '';
+		}
+	}
+
+	if (strtolower($path) === 'logout/logout.php') {
+		return '';
+	}
+
+	$query = isset($parts['query']) ? (string)$parts['query'] : '';
+	$fragment = isset($parts['fragment']) ? (string)$parts['fragment'] : '';
+
+	$result = '../' . $path;
+	if ($query !== '') {
+		$result .= '?' . $query;
+	}
+	if ($fragment !== '') {
+		$result .= '#' . $fragment;
+	}
+
+	return $result;
+}
+
+function buildAuthenticatedHomeUrl()
+{
+	if (isset($_SESSION['superadmin_id'])) {
+		return '../Superadmin/subscriptionmanage.php';
+	}
+
+	if (isset($_SESSION['shop_id']) || isset($_SESSION['tenant_id'])) {
+		return '../tenant/dashboardadmin.php';
+	}
+
+	if (isset($_SESSION['email']) || isset($_SESSION['user_id'])) {
+		return '../clientapplication/clientlanding.php';
+	}
+
+	return '../index.php';
 }
 
 $requestRedirectSource = '';
@@ -25,23 +99,45 @@ if (isset($_POST['redirect'])) {
 }
 
 $requestedRedirect = basename($requestRedirectSource);
-$allowedRedirects = ['login.php', 'tenantlogin.php', 'superaddlogin.php', 'userlogin.php'];
+$allowedRedirects = [
+	'tenantlogin.php' => '../tenant/tenantlogin.php',
+	'superaddlogin.php' => '../Superadmin/superaddlogin.php',
+	'clientlogin.php' => '../clientapplication/clientlogin.php',
+	'index.php' => '../index.php'
+];
 
 $tenantLoginSlug = isset($_SESSION['login_slug']) ? (string)$_SESSION['login_slug'] : '';
-$defaultRedirect = buildTenantLoginUrl($tenantLoginSlug);
+$logoutRedirect = buildTenantLoginUrl($tenantLoginSlug);
 if (isset($_SESSION['superadmin_id'])) {
-	$defaultRedirect = 'superaddlogin.php';
+	$logoutRedirect = '../Superadmin/superaddlogin.php';
 } elseif (isset($_SESSION['email']) || isset($_SESSION['user_id'])) {
-	$defaultRedirect = 'login.php';
+	$logoutRedirect = '../clientapplication/clientlogin.php';
 }
 
-$redirectTo = in_array($requestedRedirect, $allowedRedirects, true) ? $requestedRedirect : $defaultRedirect;
+$logoutRedirectTo = isset($allowedRedirects[$requestedRedirect]) ? $allowedRedirects[$requestedRedirect] : $logoutRedirect;
+
+$cancelRedirectTo = '';
+if (isset($_POST['return_to'])) {
+	$cancelRedirectTo = buildSafeInAppPath($_POST['return_to']);
+}
+
+if ($cancelRedirectTo === '' && isset($_GET['return_to'])) {
+	$cancelRedirectTo = buildSafeInAppPath($_GET['return_to']);
+}
+
+if ($cancelRedirectTo === '' && isset($_SERVER['HTTP_REFERER'])) {
+	$cancelRedirectTo = buildSafeInAppPath($_SERVER['HTTP_REFERER']);
+}
+
+if ($cancelRedirectTo === '') {
+	$cancelRedirectTo = buildAuthenticatedHomeUrl();
+}
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 	$action = isset($_POST['action']) ? (string)$_POST['action'] : '';
 
 	if ($action === 'cancel') {
-		header('Location: ' . $redirectTo);
+		header('Location: ' . $cancelRedirectTo);
 		exit;
 	}
 
@@ -62,7 +158,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 		}
 
 		session_destroy();
-		header('Location: ' . $redirectTo);
+		header('Location: ' . $logoutRedirectTo);
 		exit;
 	}
 }
@@ -173,6 +269,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 		<p>You will need to sign in again to continue using your account.</p>
 		<form method="post">
 			<input type="hidden" name="redirect" value="<?php echo htmlspecialchars($requestedRedirect, ENT_QUOTES, 'UTF-8'); ?>">
+			<input type="hidden" name="return_to" value="<?php echo htmlspecialchars($cancelRedirectTo, ENT_QUOTES, 'UTF-8'); ?>">
 			<div class="actions">
 				<button type="submit" name="action" value="cancel">Cancel</button>
 				<button type="submit" name="action" value="confirm">Yes, logout</button>

@@ -1,7 +1,7 @@
 <?php
 // superaddlogin.php
 session_start();
-require_once "db.php"; // your database connection file
+require_once __DIR__ . "/../db.php"; // your database connection file
 
 $message = "";
 
