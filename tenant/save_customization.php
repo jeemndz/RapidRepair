@@ -94,6 +94,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (mysqli_query($conn, $update_query)) {
             $response['success'] = true;
             $response['message'] = 'Customization updated successfully';
+            $response['redirect_url'] = 'dashboardadmin.php';
         } else {
             $response['message'] = 'Database update failed: ' . mysqli_error($conn);
         }
@@ -109,6 +110,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (mysqli_query($conn, $insert_query)) {
             $response['success'] = true;
             $response['message'] = 'Customization saved successfully';
+            $response['redirect_url'] = 'dashboardadmin.php';
         } else {
             $response['message'] = 'Database insert failed: ' . mysqli_error($conn);
         }

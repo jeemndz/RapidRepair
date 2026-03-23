@@ -2,22 +2,6 @@
 session_start();
 include __DIR__ . "/../db.php";
 
-function buildTenantDashboardUrl($loginSlug)
-{
-    $loginSlug = trim((string) $loginSlug);
-    if ($loginSlug === '') {
-        return 'dashboardadmin.php';
-    }
-
-    $baseDomain = trim((string) (getenv('TENANT_BASE_DOMAIN') ?: ''));
-    if ($baseDomain !== '') {
-        $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
-        return $scheme . '://' . $loginSlug . '.' . $baseDomain . '/dashboardadmin.php';
-    }
-
-    return 'dashboardadmin.php?shop=' . urlencode($loginSlug);
-}
-
 // Check if tenant is logged in and temp password exists
 if (!isset($_SESSION['tenantID']) || !isset($_SESSION['temp_pass']) || !isset($_SESSION['verification_code'])) {
     header("Location: tenantlogin.php");
@@ -26,17 +10,6 @@ if (!isset($_SESSION['tenantID']) || !isset($_SESSION['temp_pass']) || !isset($_
 
 $tenantID = $_SESSION['tenantID'];
 $error = "";
-$loginSlug = isset($_SESSION['login_slug']) ? (string) $_SESSION['login_slug'] : '';
-
-if ($loginSlug === '') {
-    $tenantQuery = mysqli_query($conn, "SELECT login_slug FROM owners WHERE tenantID='" . mysqli_real_escape_string($conn, (string) $tenantID) . "' LIMIT 1");
-    if ($tenantQuery && ($tenantRow = mysqli_fetch_assoc($tenantQuery))) {
-        $loginSlug = trim((string) ($tenantRow['login_slug'] ?? ''));
-        if ($loginSlug !== '') {
-            $_SESSION['login_slug'] = $loginSlug;
-        }
-    }
-}
 
 // Handle code verification
 if (isset($_POST['verify'])) {
@@ -56,8 +29,9 @@ if (isset($_POST['verify'])) {
             unset($_SESSION['temp_pass']);
             unset($_SESSION['verification_code']);
 
-            // Redirect to tenant-specific dashboard URL context
-            header("Location: " . buildTenantDashboardUrl($loginSlug));
+            // Continue onboarding at customization page before dashboard access
+            $_SESSION['from_temp_verification'] = 1;
+            header("Location: logincustom.php");
             exit;
         } else {
             $error = "Failed to update password. Try again.";

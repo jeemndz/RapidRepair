@@ -1,3 +1,11 @@
+<?php
+session_start();
+
+if (!isset($_SESSION['tenantID'])) {
+    header("Location: tenantlogin.php");
+    exit;
+}
+?>
 <!DOCTYPE html>
 
 <html class="light" lang="en">
@@ -134,8 +142,11 @@
                     alertBox.classList.add('success');
                     alertBox.textContent = data.message;
                     alertBox.style.display = 'block';
-                    // Reload data after successful save
-                    setTimeout(() => loadCustomizationData(), 1000);
+
+                    // On successful onboarding customization, continue to dashboard.
+                    setTimeout(() => {
+                        window.location.href = data.redirect_url || 'dashboardadmin.php';
+                    }, 800);
                 } else {
                     alertBox.classList.add('error');
                     alertBox.textContent = data.message || 'An error occurred';

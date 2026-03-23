@@ -59,7 +59,7 @@ if (isset($_POST['login'])) {
                     $_SESSION['shopName'] = $user['shopName'];
                     $_SESSION['login_slug'] = isset($user['login_slug']) ? $user['login_slug'] : '';
 
-                    // Redirect to temporary password change page changetemppass.php
+                    // First-time owners must update their temporary password
                     header("Location: changetemppass.php");
                     exit;
                 } else {
@@ -72,7 +72,7 @@ if (isset($_POST['login'])) {
                     $_SESSION['shopName'] = $user['shopName'];
                     $_SESSION['login_slug'] = isset($user['login_slug']) ? $user['login_slug'] : '';
 
-                    // Redirect to dashboard
+                    // Returning owners proceed directly to dashboard
                     header("Location: dashboardadmin.php");
                     exit;
                 } else {
