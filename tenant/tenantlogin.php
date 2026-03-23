@@ -9,10 +9,14 @@ $requestedShop = isset($_GET['shop']) ? trim($_GET['shop']) : '';
 
 if (isset($_POST['login'])) {
 
-    $email = $_POST['email'];
-    $password = $_POST['password'];
+    $email = isset($_POST['email']) ? trim($_POST['email']) : '';
+    $password = isset($_POST['password']) ? $_POST['password'] : '';
 
-    $query = mysqli_query($conn, "SELECT * FROM owners WHERE email='$email'");
+    // Use prepared statement to prevent SQL injection
+    $stmt = mysqli_prepare($conn, "SELECT * FROM owners WHERE email = ?");
+    mysqli_stmt_bind_param($stmt, "s", $email);
+    mysqli_stmt_execute($stmt);
+    $query = mysqli_stmt_get_result($stmt);
     $user = mysqli_fetch_assoc($query);
 
     if ($user) {
