@@ -28,29 +28,27 @@ $primary_color = $customization['primary_color'] ?? '#3f75eb';
 $accent_color = $customization['accent_color'] ?? '#3f75eb';
 $welcome_heading = $customization['welcome_heading'] ?? 'Streamline your shop management with precision.';
 $welcome_subtext = $customization['welcome_subtext'] ?? 'The all-in-one platform for modern automotive service centers to manage scheduling, inventory, and customer relations.';
-$hero_image = $customization['hero_image_path'] ? '../pictures/' . $customization['hero_image_path'] : 'https://lh3.googleusercontent.com/aida-public/AB6AXuDSvLJ3cZ6ER79yp4o0Y6WzI13dqdVNHhZHyLZ4Kme87pJYEmODEmNSRjQ0g63jOoVZm4UaDpyBha6ec962kjUuNBIniN-rnrETo8k-FO4-O39ZFYyuu6p97SuzraheAFkzXxwABqt3ur6ZemstwDJC3DK8JRm5f8I_Wg39e4nQFobYSlTPUeKHAi9IREjo2PztGF8l1xTOkR0Thn92ufrXf2K5DCTcgO9BDNrLqPYjloFAqFRHq3Wug_cHDUq7vyyX-0hUWfzOyqxn';
+$hero_image_path = $customization['hero_image_path'] ?? '';
+$hero_image = $hero_image_path !== '' ? '../pictures/' . $hero_image_path : 'https://lh3.googleusercontent.com/aida-public/AB6AXuDSvLJ3cZ6ER79yp4o0Y6WzI13dqdVNHhZHyLZ4Kme87pJYEmODEmNSRjQ0g63jOoVZm4UaDpyBha6ec962kjUuNBIniN-rnrETo8k-FO4-O39ZFYyuu6p97SuzraheAFkzXxwABqt3ur6ZemstwDJC3DK8JRm5f8I_Wg39e4nQFobYSlTPUeKHAi9IREjo2PztGF8l1xTOkR0Thn92ufrXf2K5DCTcgO9BDNrLqPYjloFAqFRHq3Wug_cHDUq7vyyX-0hUWfzOyqxn';
 
 if (isset($_POST['login'])) {
 
     $email = isset($_POST['email']) ? trim($_POST['email']) : '';
     $password = isset($_POST['password']) ? $_POST['password'] : '';
+    $requestedShop = strtolower(trim($requestedShop));
 
-    // Use prepared statement to prevent SQL injection
-    $stmt = mysqli_prepare($conn, "SELECT * FROM owners WHERE email = ?");
-    mysqli_stmt_bind_param($stmt, "s", $email);
-    mysqli_stmt_execute($stmt);
-    $query = mysqli_stmt_get_result($stmt);
-    $user = mysqli_fetch_assoc($query);
+    if ($requestedShop === '') {
+        $error = "Invalid login link. Please use your shop's login page.";
+    } else {
+        // Validate login within the exact shop context to block cross-tenant access.
+        $stmt = mysqli_prepare($conn, "SELECT * FROM owners WHERE email = ? AND login_slug = ? LIMIT 1");
+        mysqli_stmt_bind_param($stmt, "ss", $email, $requestedShop);
+        mysqli_stmt_execute($stmt);
+        $query = mysqli_stmt_get_result($stmt);
+        $user = mysqli_fetch_assoc($query);
 
-    if ($user) {
+        if ($user) {
 
-        // Verify user belongs to the requested shop
-        $userShop = isset($user['login_slug']) ? trim($user['login_slug']) : '';
-        
-        // Shop parameter is required and must match user's shop
-        if (!$requestedShop || $userShop !== $requestedShop) {
-            $error = "You are not authorized to log in through this link. Please use your shop's login page.";
-        } else {
             // Check if this is the first login
             if (isset($user['first_login']) && $user['first_login'] == 1) {
                 // First login: compare plain text password
@@ -79,10 +77,10 @@ if (isset($_POST['login'])) {
                     $error = "Incorrect password.";
                 }
             }
-        }
 
-    } else {
-        $error = "Email not found.";
+        } else {
+            $error = "This email is not authorized for this shop login page.";
+        }
     }
 }
 ?>

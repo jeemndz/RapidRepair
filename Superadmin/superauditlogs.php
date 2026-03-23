@@ -1,3 +1,263 @@
+<?php
+session_start();
+require_once __DIR__ . "/../db.php";
+
+if (isset($_POST['logout_superadmin'])) {
+    $_SESSION = [];
+
+    if (ini_get('session.use_cookies')) {
+        $params = session_get_cookie_params();
+        setcookie(
+            session_name(),
+            '',
+            time() - 42000,
+            $params['path'],
+            $params['domain'],
+            $params['secure'],
+            $params['httponly']
+        );
+    }
+
+    session_destroy();
+    header("Location: superaddlogin.php");
+    exit();
+}
+
+if (!isset($_SESSION['superadmin_id'])) {
+    header("Location: superaddlogin.php");
+    exit();
+}
+
+$superadminName = "Superadmin";
+$superadminStmt = $conn->prepare("SELECT fullName FROM superadmin WHERE superadmin_id = ? LIMIT 1");
+if ($superadminStmt) {
+    $superadminStmt->bind_param("i", $_SESSION['superadmin_id']);
+    $superadminStmt->execute();
+    $superadminRes = $superadminStmt->get_result();
+    if ($superadminRes && $superadminRes->num_rows > 0) {
+        $superadminRow = $superadminRes->fetch_assoc();
+        $superadminName = $superadminRow['fullName'] ?: $superadminName;
+    }
+    $superadminStmt->close();
+}
+
+$q = trim($_GET['q'] ?? '');
+$dateRange = trim($_GET['date_range'] ?? '30d');
+$action = trim($_GET['action'] ?? '');
+$role = trim($_GET['role'] ?? '');
+$entityType = trim($_GET['entity_type'] ?? '');
+
+$page = max(1, (int)($_GET['page'] ?? 1));
+$perPage = 10;
+$offset = ($page - 1) * $perPage;
+
+$where = [];
+$params = [];
+$types = '';
+
+if ($q !== '') {
+    $where[] = "(user_name LIKE ? OR action LIKE ? OR details LIKE ? OR entity_type LIKE ?)";
+    $like = "%{$q}%";
+    $params[] = $like;
+    $params[] = $like;
+    $params[] = $like;
+    $params[] = $like;
+    $types .= 'ssss';
+}
+
+if ($action !== '') {
+    $where[] = "action = ?";
+    $params[] = $action;
+    $types .= 's';
+}
+
+if ($role !== '') {
+    $where[] = "user_role = ?";
+    $params[] = $role;
+    $types .= 's';
+}
+
+if ($entityType !== '') {
+    $where[] = "entity_type = ?";
+    $params[] = $entityType;
+    $types .= 's';
+}
+
+switch ($dateRange) {
+    case '24h':
+        $where[] = "created_at >= DATE_SUB(NOW(), INTERVAL 1 DAY)";
+        break;
+    case '7d':
+        $where[] = "created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)";
+        break;
+    case '30d':
+        $where[] = "created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)";
+        break;
+    case 'all':
+    default:
+        break;
+}
+
+$whereSql = $where ? ('WHERE ' . implode(' AND ', $where)) : '';
+
+$countSql = "SELECT COUNT(*) AS total FROM system_logs $whereSql";
+$countStmt = $conn->prepare($countSql);
+if ($countStmt && !empty($params)) {
+    $countStmt->bind_param($types, ...$params);
+}
+$totalRows = 0;
+if ($countStmt) {
+    $countStmt->execute();
+    $countRes = $countStmt->get_result();
+    $totalRows = (int)($countRes->fetch_assoc()['total'] ?? 0);
+    $countStmt->close();
+}
+
+$totalPages = max(1, (int)ceil($totalRows / $perPage));
+if ($page > $totalPages) {
+    $page = $totalPages;
+    $offset = ($page - 1) * $perPage;
+}
+
+$selectSql = "
+    SELECT log_id, user_name, user_role, action, entity_type, entity_id, details, ip_address, created_at
+    FROM system_logs
+    $whereSql
+    ORDER BY created_at DESC
+    LIMIT ? OFFSET ?
+";
+$selectStmt = $conn->prepare($selectSql);
+$rows = [];
+if ($selectStmt) {
+    $paramsWithPaging = $params;
+    $typesWithPaging = $types . 'ii';
+    $paramsWithPaging[] = $perPage;
+    $paramsWithPaging[] = $offset;
+    $selectStmt->bind_param($typesWithPaging, ...$paramsWithPaging);
+    $selectStmt->execute();
+    $rows = $selectStmt->get_result()->fetch_all(MYSQLI_ASSOC);
+    $selectStmt->close();
+}
+
+$actions = [];
+$actionRes = $conn->query("SELECT DISTINCT action FROM system_logs WHERE action IS NOT NULL AND action <> '' ORDER BY action ASC");
+if ($actionRes) {
+    while ($a = $actionRes->fetch_assoc()) {
+        $actions[] = $a['action'];
+    }
+}
+
+$roles = [];
+$roleRes = $conn->query("SELECT DISTINCT user_role FROM system_logs WHERE user_role IS NOT NULL AND user_role <> '' ORDER BY user_role ASC");
+if ($roleRes) {
+    while ($r = $roleRes->fetch_assoc()) {
+        $roles[] = $r['user_role'];
+    }
+}
+
+$entityTypes = [];
+$entityRes = $conn->query("SELECT DISTINCT entity_type FROM system_logs WHERE entity_type IS NOT NULL AND entity_type <> '' ORDER BY entity_type ASC");
+if ($entityRes) {
+    while ($e = $entityRes->fetch_assoc()) {
+        $entityTypes[] = $e['entity_type'];
+    }
+}
+
+$logsToday = 0;
+$todayRes = $conn->query("SELECT COUNT(*) AS total FROM system_logs WHERE DATE(created_at) = CURDATE()");
+if ($todayRes) {
+    $logsToday = (int)($todayRes->fetch_assoc()['total'] ?? 0);
+}
+
+$activeSessions = 0;
+$activeRes = $conn->query("SELECT COUNT(DISTINCT ip_address) AS total FROM system_logs WHERE created_at >= DATE_SUB(NOW(), INTERVAL 1 DAY) AND action LIKE '%login%' AND ip_address IS NOT NULL AND ip_address <> ''");
+if ($activeRes) {
+    $activeSessions = (int)($activeRes->fetch_assoc()['total'] ?? 0);
+}
+
+$criticalActions = 0;
+$criticalRes = $conn->query("SELECT COUNT(*) AS total FROM system_logs WHERE LOWER(action) REGEXP 'delete|remove|drop|disable|revoke|block|suspend|reset' AND DATE(created_at) = CURDATE()");
+if ($criticalRes) {
+    $criticalActions = (int)($criticalRes->fetch_assoc()['total'] ?? 0);
+}
+
+if (isset($_GET['export']) && $_GET['export'] === 'csv') {
+    $csvSql = "
+        SELECT user_name, user_role, action, entity_type, entity_id, details, ip_address, created_at
+        FROM system_logs
+        $whereSql
+        ORDER BY created_at DESC
+    ";
+    $csvStmt = $conn->prepare($csvSql);
+    if ($csvStmt && !empty($params)) {
+        $csvStmt->bind_param($types, ...$params);
+    }
+
+    $csvRows = [];
+    if ($csvStmt) {
+        $csvStmt->execute();
+        $csvRows = $csvStmt->get_result()->fetch_all(MYSQLI_ASSOC);
+        $csvStmt->close();
+    }
+
+    header('Content-Type: text/csv; charset=utf-8');
+    header('Content-Disposition: attachment; filename="audit_logs_' . date('Ymd_His') . '.csv"');
+    $out = fopen('php://output', 'w');
+    fputcsv($out, ['User', 'Role', 'Action', 'Entity Type', 'Entity ID', 'Details', 'IP Address', 'Timestamp']);
+    foreach ($csvRows as $csvRow) {
+        fputcsv($out, [
+            $csvRow['user_name'] ?? '',
+            $csvRow['user_role'] ?? '',
+            $csvRow['action'] ?? '',
+            $csvRow['entity_type'] ?? '',
+            $csvRow['entity_id'] ?? '',
+            $csvRow['details'] ?? '',
+            $csvRow['ip_address'] ?? '',
+            $csvRow['created_at'] ?? ''
+        ]);
+    }
+    fclose($out);
+    exit();
+}
+
+function initials(?string $name): string
+{
+    $name = trim((string)$name);
+    if ($name === '') {
+        return 'NA';
+    }
+    $parts = preg_split('/\s+/', $name);
+    if (!$parts) {
+        return 'NA';
+    }
+    $first = strtoupper(substr($parts[0], 0, 1));
+    $second = count($parts) > 1 ? strtoupper(substr($parts[count($parts) - 1], 0, 1)) : '';
+    return $first . ($second ?: '');
+}
+
+function actionBadgeClass(string $action): string
+{
+    $value = strtolower(trim($action));
+    if (strpos($value, 'create') !== false || strpos($value, 'add') !== false || strpos($value, 'approve') !== false) {
+        return 'bg-emerald-100 text-emerald-800';
+    }
+    if (strpos($value, 'delete') !== false || strpos($value, 'remove') !== false || strpos($value, 'drop') !== false) {
+        return 'bg-red-100 text-red-800';
+    }
+    if (strpos($value, 'login') !== false || strpos($value, 'auth') !== false || strpos($value, 'signin') !== false) {
+        return 'bg-slate-100 text-slate-700';
+    }
+    return 'bg-blue-100 text-blue-800';
+}
+
+$queryBase = $_GET;
+unset($queryBase['page'], $queryBase['export']);
+$showFrom = $totalRows > 0 ? (($page - 1) * $perPage) + 1 : 0;
+$showTo = min($totalRows, $page * $perPage);
+$prevPage = max(1, $page - 1);
+$nextPage = min($totalPages, $page + 1);
+?>
+
 <!DOCTYPE html>
 
 <html class="light" lang="en">
@@ -148,36 +408,40 @@
         </nav>
         <!-- Footer Actions matching SCREEN_11 -->
         <div class="p-4 border-t border-slate-100 dark:border-slate-800 space-y-2">
-            <div
-                class="flex items-center gap-3 p-2 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer transition-colors">
-                <div class="w-10 h-10 rounded-full bg-slate-200 dark:bg-slate-700 bg-cover bg-center"
-                    data-alt="Alex Rivera headshot professional portrait"
-                    style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuAA7ZvS0RT24pYl7zsQUKsnC9inrzmoUQVQC8PvdcW5_q4FtMWEC8ZD9Ke8mBa8iRwi4vfG0NbuLhEY9U_mYTQt3gBMRoNS0jNV_aJYQ-QCLtauVwWdyP53SHmFLjb5bQvwjbvvF24yHFp3moy4K6rJ0tVvtMIzdIUNohESEbLUilTPScnQYQQutAW0bzWhFZkGsX1GwwAl_2_9yXjauFnRNg0uTHfeR3lnfDRxLlk9Jo_hIr7N64rr5SWZq57QEfMdbFLkygzUgb-A')">
+            <div class="flex items-center gap-3 p-2 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
+                <div class="w-10 h-10 rounded-full bg-primary-container text-primary flex items-center justify-center font-semibold text-sm">
+                    <?= htmlspecialchars(initials($superadminName)) ?>
                 </div>
                 <div class="flex flex-col min-w-0">
-                    <h3 class="text-sm font-semibold truncate text-slate-900 dark:text-white">Alex Rivera</h3>
+                    <h3 class="text-sm font-semibold truncate text-slate-900 dark:text-white"><?= htmlspecialchars($superadminName) ?></h3>
                     <p class="text-xs text-slate-500 dark:text-slate-400 truncate">Superadmin</p>
                 </div>
             </div>
-            <div
-                class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-red-500 hover:bg-red-50 dark:hover:bg-red-900/10 transition-colors cursor-pointer">
-                <span class="material-symbols-outlined">logout</span>
-                <p class="text-sm font-medium">Logout</p>
-            </div>
+            <form method="POST">
+                <button type="submit" name="logout_superadmin"
+                    class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-red-500 hover:bg-red-50 dark:hover:bg-red-900/10 transition-colors">
+                    <span class="material-symbols-outlined">logout</span>
+                    <span class="text-sm font-medium">Logout</span>
+                </button>
+            </form>
         </div>
     </aside>
     <!-- TopNavBar matching SCREEN_11 -->
     <header
         class="flex items-center justify-between px-8 sticky top-0 z-30 ml-64 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md h-16 border-b border-slate-200 dark:border-slate-800">
         <div class="flex items-center gap-4">
-            <div class="relative">
+            <form method="GET" class="relative">
                 <span class="absolute inset-y-0 left-0 flex items-center pl-3 text-on-surface-variant">
                     <span class="material-symbols-outlined text-lg" data-icon="search">search</span>
                 </span>
-                <input
+                <input name="q"
                     class="pl-10 pr-4 py-1.5 bg-slate-100 dark:bg-slate-800 border-none text-sm rounded-lg focus:ring-2 focus:ring-primary w-64 transition-all outline-none"
-                    placeholder="Search audit logs by user, action, or tenant..." type="text" />
-            </div>
+                    placeholder="Search audit logs by user, action, or entity..." type="text" value="<?= htmlspecialchars($q) ?>" />
+                <input type="hidden" name="date_range" value="<?= htmlspecialchars($dateRange) ?>">
+                <input type="hidden" name="action" value="<?= htmlspecialchars($action) ?>">
+                <input type="hidden" name="role" value="<?= htmlspecialchars($role) ?>">
+                <input type="hidden" name="entity_type" value="<?= htmlspecialchars($entityType) ?>">
+            </form>
         </div>
         <div class="flex items-center gap-4">
             <button class="p-2 text-slate-500 hover:text-primary transition-colors">
@@ -199,75 +463,75 @@
                         compliance tracking.</p>
                 </div>
                 <div class="flex items-center gap-3">
-                    <button
+                    <a href="?<?= htmlspecialchars(http_build_query(array_merge($queryBase, ['q' => $q, 'date_range' => $dateRange, 'action' => $action, 'role' => $role, 'entity_type' => $entityType, 'export' => 'csv']))) ?>"
                         class="inline-flex items-center px-4 py-2 bg-white border border-outline hover:bg-slate-50 text-on-surface text-sm font-semibold rounded-lg transition-all shadow-sm">
                         <span class="material-symbols-outlined mr-2 text-lg" data-icon="download">download</span>
                         Export CSV
-                    </button>
-                    <button
+                    </a>
+                    <button onclick="window.print()" type="button"
                         class="inline-flex items-center px-4 py-2 bg-white border border-outline hover:bg-slate-50 text-on-surface text-sm font-semibold rounded-lg transition-all shadow-sm">
-                        <span class="material-symbols-outlined mr-2 text-lg"
-                            data-icon="picture_as_pdf">picture_as_pdf</span>
-                        Export PDF
+                        <span class="material-symbols-outlined mr-2 text-lg" data-icon="picture_as_pdf">picture_as_pdf</span>
+                        Print / PDF
                     </button>
                 </div>
             </div>
             <!-- Filter Bar -->
-            <div class="bg-white rounded-xl border border-slate-200 p-4 mb-6 shadow-sm">
+            <form method="GET" class="bg-white rounded-xl border border-slate-200 p-4 mb-6 shadow-sm">
                 <div class="grid grid-cols-1 md:grid-cols-4 lg:grid-cols-5 gap-4">
                     <div class="space-y-1">
                         <label class="text-[10px] font-bold text-slate-500 uppercase tracking-widest px-1">Date
                             Range</label>
-                        <select
+                        <select name="date_range"
                             class="w-full bg-slate-50 border-slate-200 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 py-2">
-                            <option>Last 24 Hours</option>
-                            <option>Last 7 Days</option>
-                            <option selected="">Last 30 Days</option>
-                            <option>Custom Range</option>
+                            <option value="24h" <?= $dateRange === '24h' ? 'selected' : '' ?>>Last 24 Hours</option>
+                            <option value="7d" <?= $dateRange === '7d' ? 'selected' : '' ?>>Last 7 Days</option>
+                            <option value="30d" <?= $dateRange === '30d' ? 'selected' : '' ?>>Last 30 Days</option>
+                            <option value="all" <?= $dateRange === 'all' ? 'selected' : '' ?>>All Time</option>
                         </select>
                     </div>
                     <div class="space-y-1">
                         <label class="text-[10px] font-bold text-slate-500 uppercase tracking-widest px-1">Action
                             Category</label>
-                        <select
+                        <select name="action"
                             class="w-full bg-slate-50 border-slate-200 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 py-2">
-                            <option>All Actions</option>
-                            <option>Create</option>
-                            <option>Update</option>
-                            <option>Delete</option>
-                            <option>Security/Login</option>
+                            <option value="">All Actions</option>
+                            <?php foreach ($actions as $actionOption): ?>
+                                <option value="<?= htmlspecialchars($actionOption) ?>" <?= $action === $actionOption ? 'selected' : '' ?>><?= htmlspecialchars($actionOption) ?></option>
+                            <?php endforeach; ?>
                         </select>
                     </div>
                     <div class="space-y-1">
                         <label
                             class="text-[10px] font-bold text-slate-500 uppercase tracking-widest px-1">Admin/User</label>
-                        <select
+                        <select name="role"
                             class="w-full bg-slate-50 border-slate-200 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 py-2">
-                            <option>All Users</option>
-                            <option>Superadmins</option>
-                            <option>Tenant Admins</option>
+                            <option value="">All Users</option>
+                            <?php foreach ($roles as $roleOption): ?>
+                                <option value="<?= htmlspecialchars($roleOption) ?>" <?= $role === $roleOption ? 'selected' : '' ?>><?= htmlspecialchars(ucfirst($roleOption)) ?></option>
+                            <?php endforeach; ?>
                         </select>
                     </div>
                     <div class="space-y-1">
                         <label
-                            class="text-[10px] font-bold text-slate-500 uppercase tracking-widest px-1">Tenant</label>
-                        <select
+                            class="text-[10px] font-bold text-slate-500 uppercase tracking-widest px-1">Target Entity</label>
+                        <select name="entity_type"
                             class="w-full bg-slate-50 border-slate-200 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 py-2">
-                            <option>Global System</option>
-                            <option>Acme Corp</option>
-                            <option>Global Industries</option>
-                            <option>TechNova</option>
+                            <option value="">All Entities</option>
+                            <?php foreach ($entityTypes as $entityOption): ?>
+                                <option value="<?= htmlspecialchars($entityOption) ?>" <?= $entityType === $entityOption ? 'selected' : '' ?>><?= htmlspecialchars($entityOption) ?></option>
+                            <?php endforeach; ?>
                         </select>
                     </div>
                     <div class="flex items-end">
-                        <button
+                        <button type="submit"
                             class="w-full bg-blue-700 hover:bg-blue-800 text-white font-bold text-sm py-2 px-4 rounded-lg transition-colors flex items-center justify-center gap-2">
                             <span class="material-symbols-outlined text-lg" data-icon="filter_list">filter_list</span>
                             Apply Filters
                         </button>
                     </div>
                 </div>
-            </div>
+                <input type="hidden" name="q" value="<?= htmlspecialchars($q) ?>">
+            </form>
             <!-- Audit Table -->
             <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
                 <table class="w-full text-left border-collapse">
@@ -289,213 +553,71 @@
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-slate-100">
-                        <!-- Log Entry 1: Create -->
-                        <tr class="hover:bg-slate-50 transition-colors group">
-                            <td class="px-6 py-4">
-                                <div class="flex items-center gap-3">
-                                    <div
-                                        class="h-8 w-8 rounded bg-primary-container text-primary flex items-center justify-center font-bold text-xs">
-                                        AD</div>
-                                    <div>
-                                        <div class="text-sm font-bold text-on-surface">Alex Donovan</div>
-                                        <div class="text-xs text-on-surface-variant">Superadmin</div>
-                                    </div>
-                                </div>
-                            </td>
-                            <td class="px-6 py-4">
-                                <span
-                                    class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 uppercase tracking-wider">
-                                    Create
-                                </span>
-                            </td>
-                            <td class="px-6 py-4">
-                                <div class="text-sm font-medium text-on-surface">Tenant: SolarSystems LLC</div>
-                            </td>
-                            <td class="px-6 py-4">
-                                <div class="text-sm text-on-surface-variant max-w-xs truncate">Provisioned new
-                                    infrastructure cluster for Western region.</div>
-                            </td>
-                            <td class="px-6 py-4">
-                                <div class="text-sm font-medium text-on-surface">Oct 24, 2023</div>
-                                <div class="text-[10px] text-on-surface-variant">14:22:15.034</div>
-                            </td>
-                            <td class="px-6 py-4 text-right">
-                                <button class="text-slate-400 hover:text-blue-600 transition-colors">
-                                    <span class="material-symbols-outlined" data-icon="info">info</span>
-                                </button>
-                            </td>
-                        </tr>
-                        <!-- Log Entry 2: Update -->
-                        <tr class="hover:bg-slate-50 transition-colors">
-                            <td class="px-6 py-4">
-                                <div class="flex items-center gap-3">
-                                    <div
-                                        class="h-8 w-8 rounded bg-slate-100 text-slate-500 flex items-center justify-center font-bold text-xs">
-                                        SK</div>
-                                    <div>
-                                        <div class="text-sm font-bold text-on-surface">Sarah Koppel</div>
-                                        <div class="text-xs text-on-surface-variant">Financial Admin</div>
-                                    </div>
-                                </div>
-                            </td>
-                            <td class="px-6 py-4">
-                                <span
-                                    class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-800 uppercase tracking-wider">
-                                    Update
-                                </span>
-                            </td>
-                            <td class="px-6 py-4">
-                                <div class="text-sm font-medium text-on-surface">Billing Configuration</div>
-                            </td>
-                            <td class="px-6 py-4">
-                                <div class="text-sm text-on-surface-variant max-w-xs truncate">Modified subscription
-                                    tier from 'Pro' to 'Enterprise' for Tenant #882.</div>
-                            </td>
-                            <td class="px-6 py-4">
-                                <div class="text-sm font-medium text-on-surface">Oct 24, 2023</div>
-                                <div class="text-[10px] text-on-surface-variant">13:45:10.992</div>
-                            </td>
-                            <td class="px-6 py-4 text-right">
-                                <button class="text-slate-400 hover:text-blue-600 transition-colors">
-                                    <span class="material-symbols-outlined" data-icon="info">info</span>
-                                </button>
-                            </td>
-                        </tr>
-                        <!-- Log Entry 3: Delete (Critical) -->
-                        <tr class="hover:bg-slate-50 transition-colors">
-                            <td class="px-6 py-4">
-                                <div class="flex items-center gap-3">
-                                    <div
-                                        class="h-8 w-8 rounded bg-red-50 text-red-600 flex items-center justify-center font-bold text-xs">
-                                        JM</div>
-                                    <div>
-                                        <div class="text-sm font-bold text-on-surface">James Miller</div>
-                                        <div class="text-xs text-on-surface-variant">System Architect</div>
-                                    </div>
-                                </div>
-                            </td>
-                            <td class="px-6 py-4">
-                                <span
-                                    class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-100 text-red-800 uppercase tracking-wider">
-                                    Delete
-                                </span>
-                            </td>
-                            <td class="px-6 py-4">
-                                <div class="text-sm font-medium text-on-surface">Legacy API Key</div>
-                            </td>
-                            <td class="px-6 py-4">
-                                <div
-                                    class="text-sm text-on-surface-variant max-w-xs truncate font-mono bg-slate-50 p-1 rounded">
-                                    DEPRECATED_V1_KEY_...</div>
-                            </td>
-                            <td class="px-6 py-4">
-                                <div class="text-sm font-medium text-on-surface">Oct 24, 2023</div>
-                                <div class="text-[10px] text-on-surface-variant">11:12:05.118</div>
-                            </td>
-                            <td class="px-6 py-4 text-right">
-                                <button class="text-slate-400 hover:text-blue-600 transition-colors">
-                                    <span class="material-symbols-outlined" data-icon="info">info</span>
-                                </button>
-                            </td>
-                        </tr>
-                        <!-- Log Entry 4: Login -->
-                        <tr class="hover:bg-slate-50 transition-colors">
-                            <td class="px-6 py-4">
-                                <div class="flex items-center gap-3">
-                                    <div
-                                        class="h-8 w-8 rounded bg-slate-100 text-slate-500 flex items-center justify-center font-bold text-xs">
-                                        MW</div>
-                                    <div>
-                                        <div class="text-sm font-bold text-on-surface">Marcus Wong</div>
-                                        <div class="text-xs text-on-surface-variant">Support Tier 2</div>
-                                    </div>
-                                </div>
-                            </td>
-                            <td class="px-6 py-4">
-                                <span
-                                    class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600 uppercase tracking-wider">
-                                    Login
-                                </span>
-                            </td>
-                            <td class="px-6 py-4">
-                                <div class="text-sm font-medium text-on-surface">System Access</div>
-                            </td>
-                            <td class="px-6 py-4">
-                                <div class="text-sm text-on-surface-variant">Successful authentication from IP
-                                    192.168.1.44 (San Francisco, CA)</div>
-                            </td>
-                            <td class="px-6 py-4">
-                                <div class="text-sm font-medium text-on-surface">Oct 24, 2023</div>
-                                <div class="text-[10px] text-on-surface-variant">09:05:32.441</div>
-                            </td>
-                            <td class="px-6 py-4 text-right">
-                                <button class="text-slate-400 hover:text-blue-600 transition-colors">
-                                    <span class="material-symbols-outlined" data-icon="info">info</span>
-                                </button>
-                            </td>
-                        </tr>
-                        <!-- Log Entry 5: Update -->
-                        <tr class="hover:bg-slate-50 transition-colors">
-                            <td class="px-6 py-4">
-                                <div class="flex items-center gap-3">
-                                    <div
-                                        class="h-8 w-8 rounded bg-primary-container text-primary flex items-center justify-center font-bold text-xs">
-                                        AD</div>
-                                    <div>
-                                        <div class="text-sm font-bold text-on-surface">Alex Donovan</div>
-                                        <div class="text-xs text-on-surface-variant">Superadmin</div>
-                                    </div>
-                                </div>
-                            </td>
-                            <td class="px-6 py-4">
-                                <span
-                                    class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-800 uppercase tracking-wider">
-                                    Update
-                                </span>
-                            </td>
-                            <td class="px-6 py-4">
-                                <div class="text-sm font-medium text-on-surface">System Setting: Backup Frequency</div>
-                            </td>
-                            <td class="px-6 py-4">
-                                <div class="text-sm text-on-surface-variant">Changed global backup frequency from 24h to
-                                    12h.</div>
-                            </td>
-                            <td class="px-6 py-4">
-                                <div class="text-sm font-medium text-on-surface">Oct 23, 2023</div>
-                                <div class="text-[10px] text-on-surface-variant">22:40:01.000</div>
-                            </td>
-                            <td class="px-6 py-4 text-right">
-                                <button class="text-slate-400 hover:text-blue-600 transition-colors">
-                                    <span class="material-symbols-outlined" data-icon="info">info</span>
-                                </button>
-                            </td>
-                        </tr>
+                        <?php if (empty($rows)): ?>
+                            <tr>
+                                <td colspan="6" class="px-6 py-8 text-center text-sm text-slate-500 font-medium">No audit logs found for the selected filters.</td>
+                            </tr>
+                        <?php else: ?>
+                            <?php foreach ($rows as $row): ?>
+                                <?php
+                                    $userName = $row['user_name'] ?: 'Unknown User';
+                                    $userRole = $row['user_role'] ?: 'Unknown Role';
+                                    $entityLabel = 'Global System';
+                                    if (!empty($row['entity_type'])) {
+                                        $entityLabel = $row['entity_type'];
+                                        if (!empty($row['entity_id'])) {
+                                            $entityLabel .= ' #' . (int)$row['entity_id'];
+                                        }
+                                    }
+                                    $timestamp = strtotime((string)$row['created_at']);
+                                ?>
+                                <tr class="hover:bg-slate-50 transition-colors group">
+                                    <td class="px-6 py-4">
+                                        <div class="flex items-center gap-3">
+                                            <div class="h-8 w-8 rounded bg-primary-container text-primary flex items-center justify-center font-bold text-xs">
+                                                <?= htmlspecialchars(initials($userName)) ?>
+                                            </div>
+                                            <div>
+                                                <div class="text-sm font-bold text-on-surface"><?= htmlspecialchars($userName) ?></div>
+                                                <div class="text-xs text-on-surface-variant"><?= htmlspecialchars($userRole) ?></div>
+                                            </div>
+                                        </div>
+                                    </td>
+                                    <td class="px-6 py-4">
+                                        <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider <?= actionBadgeClass((string)$row['action']) ?>">
+                                            <?= htmlspecialchars($row['action'] ?: 'Action') ?>
+                                        </span>
+                                    </td>
+                                    <td class="px-6 py-4"><div class="text-sm font-medium text-on-surface"><?= htmlspecialchars($entityLabel) ?></div></td>
+                                    <td class="px-6 py-4"><div class="text-sm text-on-surface-variant max-w-xs truncate" title="<?= htmlspecialchars($row['details'] ?: '') ?>"><?= htmlspecialchars($row['details'] ?: 'No details available.') ?></div></td>
+                                    <td class="px-6 py-4">
+                                        <div class="text-sm font-medium text-on-surface"><?= htmlspecialchars($timestamp ? date('M d, Y', $timestamp) : '-') ?></div>
+                                        <div class="text-[10px] text-on-surface-variant"><?= htmlspecialchars($timestamp ? date('H:i:s', $timestamp) : '-') ?></div>
+                                    </td>
+                                    <td class="px-6 py-4 text-right">
+                                        <div class="text-xs text-slate-500">#<?= (int)$row['log_id'] ?></div>
+                                        <div class="text-[10px] text-slate-400 truncate max-w-[140px] ml-auto" title="<?= htmlspecialchars($row['ip_address'] ?: '') ?>"><?= htmlspecialchars($row['ip_address'] ?: 'No IP') ?></div>
+                                    </td>
+                                </tr>
+                            <?php endforeach; ?>
+                        <?php endif; ?>
                     </tbody>
                 </table>
                 <!-- Pagination -->
                 <div class="px-6 py-4 bg-slate-50 border-t border-slate-200 flex items-center justify-between">
                     <div class="text-sm text-on-surface-variant">
-                        Showing <span class="font-bold text-on-surface">1 - 5</span> of <span
-                            class="font-bold text-on-surface">1,248</span> logs
+                        Showing <span class="font-bold text-on-surface"><?= (int)$showFrom ?> - <?= (int)$showTo ?></span> of <span class="font-bold text-on-surface"><?= (int)$totalRows ?></span> logs
                     </div>
                     <div class="flex items-center gap-2">
-                        <button
-                            class="p-1 rounded hover:bg-slate-200 text-slate-400 transition-colors disabled:opacity-30"
-                            disabled="">
+                        <a href="?<?= htmlspecialchars(http_build_query(array_merge($queryBase, ['q' => $q, 'date_range' => $dateRange, 'action' => $action, 'role' => $role, 'entity_type' => $entityType, 'page' => $prevPage]))) ?>"
+                            class="p-1 rounded hover:bg-slate-200 text-slate-400 transition-colors <?= $page <= 1 ? 'pointer-events-none opacity-30' : '' ?>">
                             <span class="material-symbols-outlined" data-icon="chevron_left">chevron_left</span>
-                        </button>
-                        <button
-                            class="h-8 w-8 flex items-center justify-center rounded bg-blue-700 text-white text-xs font-bold">1</button>
-                        <button
-                            class="h-8 w-8 flex items-center justify-center rounded hover:bg-slate-200 text-on-surface text-xs font-bold transition-colors">2</button>
-                        <button
-                            class="h-8 w-8 flex items-center justify-center rounded hover:bg-slate-200 text-on-surface text-xs font-bold transition-colors">3</button>
-                        <span class="px-1 text-slate-400">...</span>
-                        <button
-                            class="h-8 w-8 flex items-center justify-center rounded hover:bg-slate-200 text-on-surface text-xs font-bold transition-colors">250</button>
-                        <button class="p-1 rounded hover:bg-slate-200 text-slate-400 transition-colors">
+                        </a>
+                        <span class="h-8 min-w-8 px-2 flex items-center justify-center rounded bg-blue-700 text-white text-xs font-bold"><?= (int)$page ?></span>
+                        <a href="?<?= htmlspecialchars(http_build_query(array_merge($queryBase, ['q' => $q, 'date_range' => $dateRange, 'action' => $action, 'role' => $role, 'entity_type' => $entityType, 'page' => $nextPage]))) ?>"
+                            class="p-1 rounded hover:bg-slate-200 text-slate-400 transition-colors <?= $page >= $totalPages ? 'pointer-events-none opacity-30' : '' ?>">
                             <span class="material-symbols-outlined" data-icon="chevron_right">chevron_right</span>
-                        </button>
+                        </a>
                     </div>
                 </div>
             </div>
@@ -508,7 +630,7 @@
                     <div>
                         <div class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Active Sessions
                         </div>
-                        <div class="text-2xl font-black text-on-surface">142</div>
+                        <div class="text-2xl font-black text-on-surface"><?= (int)$activeSessions ?></div>
                     </div>
                 </div>
                 <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex items-center gap-4">
@@ -517,7 +639,7 @@
                     </div>
                     <div>
                         <div class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Logs Today</div>
-                        <div class="text-2xl font-black text-on-surface">3,892</div>
+                        <div class="text-2xl font-black text-on-surface"><?= (int)$logsToday ?></div>
                     </div>
                 </div>
                 <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex items-center gap-4">
@@ -527,7 +649,7 @@
                     <div>
                         <div class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Critical Actions
                         </div>
-                        <div class="text-2xl font-black text-on-surface">18</div>
+                        <div class="text-2xl font-black text-on-surface"><?= (int)$criticalActions ?></div>
                     </div>
                 </div>
             </div>
