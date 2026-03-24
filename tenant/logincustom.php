@@ -1,10 +1,241 @@
 <?php
 session_start();
+require_once("../db.php");
+
+function jsonResponse($payload, $statusCode = 200)
+{
+    http_response_code($statusCode);
+    header('Content-Type: application/json');
+    echo json_encode($payload);
+    exit();
+}
+
+function getUploadErrorMessage($code)
+{
+    switch ($code) {
+        case UPLOAD_ERR_INI_SIZE:
+        case UPLOAD_ERR_FORM_SIZE:
+            return 'File is too large. Maximum allowed is 2MB.';
+        case UPLOAD_ERR_PARTIAL:
+            return 'File upload was interrupted. Please try again.';
+        case UPLOAD_ERR_NO_FILE:
+            return 'No file selected.';
+        case UPLOAD_ERR_NO_TMP_DIR:
+            return 'Server upload temp directory is missing.';
+        case UPLOAD_ERR_CANT_WRITE:
+            return 'Server failed to write uploaded file.';
+        case UPLOAD_ERR_EXTENSION:
+            return 'Upload blocked by a server extension.';
+        default:
+            return 'Unknown upload error.';
+    }
+}
+
+function handleImageUpload($file, $tenantID, $type, &$errorMessage = null)
+{
+    $allowed_types = ['image/jpeg', 'image/png', 'image/svg+xml', 'image/webp', 'image/gif', 'image/jpg', 'image/pjpeg', 'image/x-png'];
+    $max_size = 2 * 1024 * 1024;
+
+    if (!isset($file['tmp_name']) || !is_uploaded_file($file['tmp_name'])) {
+        $errorMessage = 'Invalid uploaded file.';
+        return false;
+    }
+
+    if ($file['size'] > $max_size) {
+        $errorMessage = 'File is too large. Maximum allowed is 2MB.';
+        return false;
+    }
+
+    $detected_type = mime_content_type($file['tmp_name']);
+    $client_type = isset($file['type']) ? strtolower((string) $file['type']) : '';
+    if (!in_array($detected_type, $allowed_types, true) && !in_array($client_type, $allowed_types, true)) {
+        $errorMessage = 'Invalid image format. Allowed: JPG, PNG, SVG, WEBP, GIF.';
+        return false;
+    }
+
+    $upload_dir = "../pictures/tenant_" . $tenantID;
+    if (!is_dir($upload_dir)) {
+        if (!mkdir($upload_dir, 0755, true)) {
+            $errorMessage = 'Failed to create image directory.';
+            return false;
+        }
+    }
+
+    $extension = pathinfo($file['name'], PATHINFO_EXTENSION);
+    if ($extension === '') {
+        $extension = 'jpg';
+    }
+
+    $filename = $type . "_" . time() . "_" . bin2hex(random_bytes(4)) . "." . strtolower($extension);
+    $filepath = $upload_dir . "/" . $filename;
+
+    if (move_uploaded_file($file['tmp_name'], $filepath)) {
+        return "tenant_" . $tenantID . "/" . $filename;
+    }
+
+    $errorMessage = 'Failed to move uploaded image file.';
+
+    return false;
+}
+
+$action = isset($_GET['action']) ? $_GET['action'] : '';
 
 if (!isset($_SESSION['tenantID'])) {
+    if ($action === 'load' || $action === 'save') {
+        jsonResponse(['success' => false, 'message' => 'Unauthorized'], 401);
+    }
+
     header("Location: tenantlogin.php");
     exit;
 }
+
+$tenantID = (int) $_SESSION['tenantID'];
+
+if ($action === 'load' && $_SERVER['REQUEST_METHOD'] === 'GET') {
+    $stmt = mysqli_prepare($conn, "SELECT * FROM tenant_customizations WHERE tenantID = ? LIMIT 1");
+    mysqli_stmt_bind_param($stmt, "i", $tenantID);
+    mysqli_stmt_execute($stmt);
+    $result = mysqli_stmt_get_result($stmt);
+    $customization = mysqli_fetch_assoc($result);
+
+    jsonResponse([
+        'success' => true,
+        'data' => $customization ?: null
+    ]);
+}
+
+if ($action === 'save' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    $shop_name = trim($_POST['shop_name'] ?? '');
+    $shop_address = trim($_POST['shop_address'] ?? '');
+    $corner_radius = trim($_POST['corner_radius'] ?? 'rounded');
+    $primary_color = trim($_POST['primary_color'] ?? '#1152d4');
+    $accent_color = trim($_POST['accent_color'] ?? '#1152d4');
+    $welcome_heading = trim($_POST['welcome_heading'] ?? '');
+    $welcome_subtext = trim($_POST['welcome_subtext'] ?? '');
+
+    if ($shop_name === '') {
+        jsonResponse(['success' => false, 'message' => 'Shop name is required'], 422);
+    }
+
+    if (!preg_match('/^#[0-9A-Fa-f]{6}$/', $primary_color)) {
+        jsonResponse(['success' => false, 'message' => 'Invalid primary color format'], 422);
+    }
+
+    if (!preg_match('/^#[0-9A-Fa-f]{6}$/', $accent_color)) {
+        jsonResponse(['success' => false, 'message' => 'Invalid accent color format'], 422);
+    }
+
+    $valid_radius = ['sharp', 'rounded', 'pill'];
+    if (!in_array($corner_radius, $valid_radius, true)) {
+        $corner_radius = 'rounded';
+    }
+
+    $logo_path = null;
+    $hero_image_path = null;
+    $uploadError = null;
+
+    if (isset($_FILES['logo']) && $_FILES['logo']['error'] !== UPLOAD_ERR_NO_FILE) {
+        if ($_FILES['logo']['error'] !== UPLOAD_ERR_OK) {
+            jsonResponse(['success' => false, 'message' => 'Logo upload failed: ' . getUploadErrorMessage($_FILES['logo']['error'])], 422);
+        }
+
+        $logo_path = handleImageUpload($_FILES['logo'], $tenantID, 'logo', $uploadError);
+        if ($logo_path === false) {
+            jsonResponse(['success' => false, 'message' => 'Failed to upload logo: ' . ($uploadError ?: 'Unknown error')], 422);
+        }
+    }
+
+    if (isset($_FILES['hero_image']) && $_FILES['hero_image']['error'] !== UPLOAD_ERR_NO_FILE) {
+        if ($_FILES['hero_image']['error'] !== UPLOAD_ERR_OK) {
+            jsonResponse(['success' => false, 'message' => 'Hero image upload failed: ' . getUploadErrorMessage($_FILES['hero_image']['error'])], 422);
+        }
+
+        $hero_image_path = handleImageUpload($_FILES['hero_image'], $tenantID, 'hero', $uploadError);
+        if ($hero_image_path === false) {
+            jsonResponse(['success' => false, 'message' => 'Failed to upload hero image: ' . ($uploadError ?: 'Unknown error')], 422);
+        }
+    }
+
+    $exists_stmt = mysqli_prepare($conn, "SELECT tenantID FROM tenant_customizations WHERE tenantID = ? LIMIT 1");
+    mysqli_stmt_bind_param($exists_stmt, "i", $tenantID);
+    mysqli_stmt_execute($exists_stmt);
+    $exists_result = mysqli_stmt_get_result($exists_stmt);
+    $exists = mysqli_num_rows($exists_result) > 0;
+
+    if ($exists) {
+        $update_sql = "UPDATE tenant_customizations SET
+            shop_name = ?,
+            shop_address = ?,
+            corner_radius = ?,
+            primary_color = ?,
+            accent_color = ?,
+            welcome_heading = ?,
+            welcome_subtext = ?,
+            updated_at = NOW()";
+
+        $params = [$shop_name, $shop_address, $corner_radius, $primary_color, $accent_color, $welcome_heading, $welcome_subtext];
+        $types = "sssssss";
+
+        if ($logo_path !== null) {
+            $update_sql .= ", logo_path = ?";
+            $types .= "s";
+            $params[] = $logo_path;
+        }
+
+        if ($hero_image_path !== null) {
+            $update_sql .= ", hero_image_path = ?";
+            $types .= "s";
+            $params[] = $hero_image_path;
+        }
+
+        $update_sql .= " WHERE tenantID = ?";
+        $types .= "i";
+        $params[] = $tenantID;
+
+        $stmt = mysqli_prepare($conn, $update_sql);
+        mysqli_stmt_bind_param($stmt, $types, ...$params);
+
+        if (!mysqli_stmt_execute($stmt)) {
+            jsonResponse(['success' => false, 'message' => 'Database update failed: ' . mysqli_error($conn)], 500);
+        }
+
+        jsonResponse([
+            'success' => true,
+            'message' => 'Customization updated successfully',
+            'redirect_url' => 'dashboardadmin.php'
+        ]);
+    }
+
+    $insert_sql = "INSERT INTO tenant_customizations
+        (tenantID, shop_name, shop_address, corner_radius, primary_color, accent_color, welcome_heading, welcome_subtext, logo_path, hero_image_path, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())";
+    $stmt = mysqli_prepare($conn, $insert_sql);
+    mysqli_stmt_bind_param(
+        $stmt,
+        "isssssssss",
+        $tenantID,
+        $shop_name,
+        $shop_address,
+        $corner_radius,
+        $primary_color,
+        $accent_color,
+        $welcome_heading,
+        $welcome_subtext,
+        $logo_path,
+        $hero_image_path
+    );
+
+    if (!mysqli_stmt_execute($stmt)) {
+        jsonResponse(['success' => false, 'message' => 'Database insert failed: ' . mysqli_error($conn)], 500);
+    }
+
+    jsonResponse([
+        'success' => true,
+        'message' => 'Customization saved successfully',
+        'redirect_url' => 'dashboardadmin.php'
+    ]);
+}
+
 ?>
 <!DOCTYPE html>
 
@@ -76,13 +307,15 @@ if (!isset($_SESSION['tenantID'])) {
         }
     </style>
     <script>
+        const customizationApi = 'logincustom.php';
+
         // Load customization data on page load
         document.addEventListener('DOMContentLoaded', function() {
             loadCustomizationData();
         });
 
         function loadCustomizationData() {
-            fetch('save_customization.php', {
+            fetch(`${customizationApi}?action=load`, {
                 method: 'GET'
             })
             .then(response => response.json())
@@ -104,6 +337,38 @@ if (!isset($_SESSION['tenantID'])) {
             document.getElementById('accent_color_hex').value = data.accent_color || '#1152d4';
             document.getElementById('welcome_heading').value = data.welcome_heading || '';
             document.getElementById('welcome_subtext').value = data.welcome_subtext || '';
+
+            if (data.logo_path) {
+                document.getElementById('logo_preview').src = `../pictures/${data.logo_path}`;
+                document.getElementById('logo_preview_wrap').classList.remove('hidden');
+            }
+
+            if (data.hero_image_path) {
+                document.getElementById('hero_preview').src = `../pictures/${data.hero_image_path}`;
+            }
+        }
+
+        function attachImagePreview(inputId, previewImgId, optionalWrapId = null) {
+            const input = document.getElementById(inputId);
+            const preview = document.getElementById(previewImgId);
+            const wrap = optionalWrapId ? document.getElementById(optionalWrapId) : null;
+
+            if (!input || !preview) {
+                return;
+            }
+
+            input.addEventListener('change', function() {
+                const file = this.files && this.files[0] ? this.files[0] : null;
+                if (!file) {
+                    return;
+                }
+
+                const objectUrl = URL.createObjectURL(file);
+                preview.src = objectUrl;
+                if (wrap) {
+                    wrap.classList.remove('hidden');
+                }
+            });
         }
 
         function syncColorInput(inputId, hexId) {
@@ -121,16 +386,18 @@ if (!isset($_SESSION['tenantID'])) {
             event.preventDefault();
             
             const form = event.target;
-            const submitBtn = form.querySelector('button[type="submit"]');
+            const submitBtn = document.querySelector('button[type="submit"][form="customization_form"]');
             const alertBox = document.getElementById('alert_box');
             
             // Disable submit button
-            submitBtn.disabled = true;
-            submitBtn.classList.add('loading');
+            if (submitBtn) {
+                submitBtn.disabled = true;
+                submitBtn.classList.add('loading');
+            }
 
             const formData = new FormData(form);
 
-            fetch('save_customization.php', {
+            fetch(`${customizationApi}?action=save`, {
                 method: 'POST',
                 body: formData
             })
@@ -154,8 +421,10 @@ if (!isset($_SESSION['tenantID'])) {
                 }
                 
                 // Re-enable submit button
-                submitBtn.disabled = false;
-                submitBtn.classList.remove('loading');
+                if (submitBtn) {
+                    submitBtn.disabled = false;
+                    submitBtn.classList.remove('loading');
+                }
             })
             .catch(error => {
                 console.error('Error:', error);
@@ -164,8 +433,10 @@ if (!isset($_SESSION['tenantID'])) {
                 alertBox.textContent = 'An error occurred while saving';
                 alertBox.style.display = 'block';
                 
-                submitBtn.disabled = false;
-                submitBtn.classList.remove('loading');
+                if (submitBtn) {
+                    submitBtn.disabled = false;
+                    submitBtn.classList.remove('loading');
+                }
             });
         }
 
@@ -173,6 +444,8 @@ if (!isset($_SESSION['tenantID'])) {
         window.addEventListener('load', function() {
             syncColorInput('primary_color_input', 'primary_color_hex');
             syncColorInput('accent_color_input', 'accent_color_hex');
+            attachImagePreview('logo', 'logo_preview', 'logo_preview_wrap');
+            attachImagePreview('hero_image', 'hero_preview');
         });
     </script>
 </head>
@@ -280,8 +553,9 @@ if (!isset($_SESSION['tenantID'])) {
                                             placeholder="Hex color code" />
                                     </div>
                                 </div>
-                                    <div
-                                        class="flex items-stretch rounded-xl overflow-hidden border border-slate-200 focus-within:border-primary transition-colors bg-white">
+                                <div class="space-y-2 mt-4">
+                                    <label class="block text-sm font-medium text-slate-700 dark:text-slate-300">Shop Address</label>
+                                    <div class="flex items-stretch rounded-xl overflow-hidden border border-slate-200 focus-within:border-primary transition-colors bg-white">
                                         <div
                                             class="flex items-center justify-center bg-slate-100 px-3 border-r border-slate-200">
                                             <span
@@ -330,6 +604,9 @@ if (!isset($_SESSION['tenantID'])) {
                                 <div class="space-y-2">
                                     <label class="block text-sm font-medium text-slate-700 dark:text-slate-300">Shop
                                         Logo</label>
+                                    <div id="logo_preview_wrap" class="hidden mb-2">
+                                        <img id="logo_preview" class="h-16 w-16 rounded-lg object-cover border border-slate-200" src="" alt="Logo preview" />
+                                    </div>
                                     <div class="flex items-center justify-center w-full">
                                         <label
                                             class="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-lg cursor-pointer bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 transition-colors rounded-xl border-slate-200 bg-white">
