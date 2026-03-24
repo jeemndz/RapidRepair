@@ -20,13 +20,13 @@ if (isset($_POST['logout_superadmin'])) {
     }
 
     session_destroy();
-    header("Location: superaddlogin.php");
+    header("Location: /Superadmin/superaddlogin.php");
     exit();
 }
 
 // Redirect if not logged in
 if (!isset($_SESSION['superadmin_id'])) {
-    header("Location: superaddlogin.php");
+    header("Location: /Superadmin/superaddlogin.php");
     exit();
 }
 
