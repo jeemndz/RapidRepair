@@ -1,5 +1,32 @@
 <?php
+session_start();
 require_once __DIR__ . "/../db.php";
+
+if (isset($_POST['logout_superadmin'])) {
+    $_SESSION = [];
+
+    if (ini_get('session.use_cookies')) {
+        $params = session_get_cookie_params();
+        setcookie(
+            session_name(),
+            '',
+            time() - 42000,
+            $params['path'],
+            $params['domain'],
+            $params['secure'],
+            $params['httponly']
+        );
+    }
+
+    session_destroy();
+    header("Location: superaddlogin.php");
+    exit();
+}
+
+if (!isset($_SESSION['superadmin_id'])) {
+    header("Location: superaddlogin.php");
+    exit();
+}
 
 if (isset($conn) && $conn instanceof mysqli) {
     $columnsToEnsure = [
@@ -27,6 +54,36 @@ if (isset($conn) && $conn instanceof mysqli) {
         $checkColumnStmt->close();
     }
 }
+
+$superadminName = "Superadmin";
+$superadminStmt = $conn->prepare("SELECT fullName FROM superadmin WHERE superadmin_id = ? LIMIT 1");
+if ($superadminStmt) {
+    $superadminStmt->bind_param("i", $_SESSION['superadmin_id']);
+    $superadminStmt->execute();
+    $superadminRes = $superadminStmt->get_result();
+    if ($superadminRes && $superadminRes->num_rows > 0) {
+        $superadminRow = $superadminRes->fetch_assoc();
+        $superadminName = $superadminRow['fullName'] ?: $superadminName;
+    }
+    $superadminStmt->close();
+}
+
+function initials($name)
+{
+    $name = trim((string)$name);
+    if ($name === '') {
+        return 'NA';
+    }
+
+    $parts = preg_split('/\s+/', $name);
+    if (!$parts) {
+        return 'NA';
+    }
+
+    $first = strtoupper(substr($parts[0], 0, 1));
+    $second = count($parts) > 1 ? strtoupper(substr($parts[count($parts) - 1], 0, 1)) : '';
+    return $first . ($second ?: '');
+}
 ?>
 
 <!DOCTYPE html>
@@ -48,53 +105,53 @@ if (isset($conn) && $conn instanceof mysqli) {
             theme: {
                 extend: {
                     colors: {
-                        "surface-variant": "#f1f5f9",
-                        "outline-variant": "#cbd5e1",
-                        "surface-container-lowest": "#ffffff",
-                        "secondary-fixed": "#e2e8f0",
-                        "primary-container": "#eef2ff",
-                        "on-tertiary-fixed-variant": "#9a3412",
+                        "secondary-fixed": "#e5e7eb",
                         "on-secondary": "#ffffff",
-                        "outline": "#e2e8f0",
-                        "on-primary-fixed": "#1e3a8a",
-                        "on-primary-container": "#1152d4",
-                        "secondary-container": "#f1f5f9",
+                        "on-secondary-container": "#18181b",
+                        "tertiary": "#f59e0b",
+                        "on-tertiary-fixed-variant": "#9a3412",
+                        "inverse-surface": "#18181b",
+                        "on-tertiary": "#ffffff",
+                        "primary-container": "#fee2e2",
+                        "on-error-container": "#991b1b",
+                        "tertiary-fixed": "#ffedd5",
+                        "tertiary-container": "#fef3c7",
+                        "outline": "#e5e7eb",
+                        "on-secondary-fixed": "#111827",
+                        "on-surface-variant": "#525252",
+                        "surface-container-lowest": "#ffffff",
+                        "error-container": "#fee2e2",
+                        "tertiary-fixed-dim": "#fed7aa",
+                        "surface-bright": "#ffffff",
+                        "secondary-container": "#f5f5f5",
+                        "on-primary-fixed": "#7f1d1d",
+                        "surface-tint": "#b91c1c",
+                        "surface-dim": "#e5e7eb",
+                        "error": "#dc2626",
+                        "on-tertiary-container": "#92400e",
+                        "primary-fixed": "#fee2e2",
+                        "on-secondary-fixed-variant": "#3f3f46",
+                        "surface": "#ffffff",
+                        "background": "#ffffff",
+                        "outline-variant": "#d4d4d8",
+                        "on-primary": "#ffffff",
+                        "inverse-on-surface": "#f8fafc",
                         "on-tertiary-fixed": "#7c2d12",
                         "surface-container": "#ffffff",
-                        "on-tertiary-container": "#92400e",
-                        "on-error-container": "#991b1b",
-                        "inverse-on-surface": "#f8fafc",
-                        "on-error": "#ffffff",
-                        "inverse-surface": "#1e293b",
-                        "on-surface-variant": "#64748b",
-                        "surface-tint": "#1152d4",
-                        "on-background": "#0f172a",
-                        "tertiary-fixed-dim": "#fed7aa",
-                        "inverse-primary": "#b4c5ff",
-                        "secondary": "#475569",
-                        "on-secondary-fixed-variant": "#334155",
-                        "on-secondary-fixed": "#0f172a",
-                        "tertiary-container": "#fef3c7",
+                        "secondary": "#3f3f46",
+                        "primary": "#b91c1c",
+                        "on-primary-container": "#7f1d1d",
                         "surface-container-highest": "#ffffff",
-                        "error-container": "#fee2e2",
+                        "primary-fixed-dim": "#fecaca",
+                        "on-surface": "#111827",
+                        "on-background": "#0a0a0a",
+                        "inverse-primary": "#fecaca",
                         "surface-container-high": "#ffffff",
-                        "primary-fixed-dim": "#bfdbfe",
-                        "on-primary-fixed-variant": "#1d4ed8",
-                        "secondary-fixed-dim": "#cbd5e1",
-                        "on-primary": "#ffffff",
+                        "surface-variant": "#f5f5f5",
+                        "on-primary-fixed-variant": "#991b1b",
+                        "on-error": "#ffffff",
                         "surface-container-low": "#ffffff",
-                        "tertiary-fixed": "#ffedd5",
-                        "on-tertiary": "#ffffff",
-                        "surface-dim": "#d9d9e4",
-                        "surface-bright": "#ffffff",
-                        "primary-fixed": "#dbeafe",
-                        "on-secondary-container": "#1e293b",
-                        "primary": "#1152d4",
-                        "background": "#f6f6f8",
-                        "surface": "#f6f6f8",
-                        "error": "#ef4444",
-                        "tertiary": "#f59e0b",
-                        "on-surface": "#0f172a"
+                        "secondary-fixed-dim": "#d4d4d8"
                     },
                     fontFamily: {
                         "headline": ["Inter"],
@@ -118,77 +175,87 @@ if (isset($conn) && $conn instanceof mysqli) {
     </style>
 </head>
 
-<body class="bg-background text-on-background antialiased selection:bg-primary-fixed selection:text-primary">
-    <!-- SideNavBar Shell -->
-    <aside
-        class="flex flex-col fixed left-0 top-0 h-full z-40 h-screen w-64 border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 font-['Inter'] antialiased tracking-tight shadow-sm dark:shadow-none">
-        <!-- Brand Header -->
-        <div class="p-6 flex flex-col gap-1">
-            <div class="text-xl font-black text-blue-700 dark:text-blue-500 uppercase">Cobalt Precision</div>
-            <div class="text-[10px] font-bold tracking-widest text-slate-400 uppercase">Superadmin Portal</div>
-        </div>
-        <!-- Navigation Links -->
+<body class="bg-background text-on-background antialiased selection:bg-primary-container selection:text-primary">
+    <!-- SideNavBar (Shared Component) -->
+        <aside
+            class="flex flex-col fixed left-0 top-0 h-full z-50 w-64 border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 font-['Inter'] antialiased tracking-tight shadow-sm dark:shadow-none">
+            <div class="p-6 flex items-center gap-3">
+                <div class="bg-primary rounded-lg p-2 text-white">
+                    <span class="material-symbols-outlined block text-2xl">directions_car</span>
+                </div>
+                <h2 class="text-xl font-bold tracking-tight text-slate-900 dark:text-white leading-none">
+                    RapidRepair <span class="text-primary">SuperAdmin</span>
+                </h2>
+            </div>
+           <!-- Navigation Links -->
         <nav class="flex-1 px-4 space-y-1 mt-4">
             <a class="flex items-center gap-3 px-3 py-2.5 text-slate-600 dark:text-slate-400 font-medium hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors rounded-lg active:scale-95"
-                href="#">
+                href="superadd.php">
                 <span class="material-symbols-outlined" data-icon="dashboard">dashboard</span>
                 <span class="text-sm">Dashboard</span>
             </a>
             <a class="flex items-center gap-3 px-3 py-2.5 text-slate-600 dark:text-slate-400 font-medium hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors rounded-lg active:scale-95"
-                href="#">
+                href="superaddtenants.php">
                 <span class="material-symbols-outlined" data-icon="groups">groups</span>
                 <span class="text-sm">Tenants</span>
             </a>
             <a class="flex items-center gap-3 px-3 py-2.5 text-slate-600 dark:text-slate-400 font-medium hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors rounded-lg active:scale-95"
-                href="#">
-                <span class="material-symbols-outlined" data-icon="health_and_safety">health_and_safety</span>
-                <span class="text-sm">System Health</span>
+                href="superreports.php">
+                <span class="material-symbols-outlined" data-icon="bar_chart">bar_chart</span>
+                <span class="text-sm">Reports</span>
             </a>
             <a class="flex items-center gap-3 px-3 py-2.5 text-slate-600 dark:text-slate-400 font-medium hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors rounded-lg active:scale-95"
-                href="#">
+                href="subscriptionmanage.php">
                 <span class="material-symbols-outlined" data-icon="subscriptions">subscriptions</span>
                 <span class="text-sm">Subscriptions</span>
             </a>
             <a class="flex items-center gap-3 px-3 py-2.5 text-slate-600 dark:text-slate-400 font-medium hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors rounded-lg active:scale-95"
-                href="#">
-                <span class="material-symbols-outlined" data-icon="bar_chart">bar_chart</span>
+                href="supersalesreport.php">
+                <span class="material-symbols-outlined" data-icon="monitoring">monitoring</span>
                 <span class="text-sm">Sales Reports</span>
             </a>
             <a class="flex items-center gap-3 px-3 py-2.5 text-slate-600 dark:text-slate-400 font-medium hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors rounded-lg active:scale-95"
-                href="#">
+                href="superauditlogs.php">
                 <span class="material-symbols-outlined" data-icon="assignment">assignment</span>
                 <span class="text-sm">Audit Logs</span>
             </a>
-            <!-- Active State Applied Here -->
-            <a class="flex items-center gap-3 px-3 py-2.5 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400 font-bold border-r-4 border-blue-700 dark:border-blue-500 rounded-lg active:scale-95"
-                href="#">
-                <span class="material-symbols-outlined" data-icon="settings"
-                    style="font-variation-settings: 'FILL' 1;">settings</span>
+
+            <a class="flex items-center gap-3 px-3 py-2.5 text-slate-600 dark:text-slate-400 font-medium hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors rounded-lg active:scale-95"
+                href="superbackup.php">
+                <span class="material-symbols-outlined" data-icon="backup"
+                    style="font-variation-settings: 'FILL' 1;">backup</span>
+                <span class="text-sm">System Backup</span>
+            </a>
+
+            <a class="flex items-center gap-3 px-3 py-2.5 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 font-bold border-r-4 border-red-700 dark:border-red-500 rounded-lg active:scale-95"
+                href="supersettings.php">
+                <span class="material-symbols-outlined" data-icon="settings">settings</span>
                 <span class="text-sm">Settings</span>
             </a>
         </nav>
         <!-- Footer Actions (Exactly as Screen 11) -->
         <div class="p-4 border-t border-slate-100 dark:border-slate-800 space-y-2">
-            <div
-                class="flex items-center gap-3 p-2 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer transition-colors">
-                <div class="w-10 h-10 rounded-full bg-slate-200 dark:bg-slate-700 bg-cover bg-center"
-                    style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuAA7ZvS0RT24pYl7zsQUKsnC9inrzmoUQVQC8PvdcW5_q4FtMWEC8ZD9Ke8mBa8iRwi4vfG0NbuLhEY9U_mYTQt3gBMRoNS0jNV_aJYQ-QCLtauVwWdyP53SHmFLjb5bQvwjbvvF24yHFp3moy4K6rJ0tVvtMIzdIUNohESEbLUilTPScnQYQQutAW0bzWhFZkGsX1GwwAl_2_9yXjauFnRNg0uTHfeR3lnfDRxLlk9Jo_hIr7N64rr5SWZq57QEfMdbFLkygzUgb-A')">
+            <div class="flex items-center gap-3 p-2 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
+                <div class="w-10 h-10 rounded-full bg-primary-container text-primary flex items-center justify-center font-semibold text-sm">
+                    <?php echo htmlspecialchars(initials($superadminName)); ?>
                 </div>
                 <div class="flex flex-col min-w-0">
-                    <h3 class="text-sm font-semibold truncate text-slate-900 dark:text-white">Alex Rivera</h3>
+                    <h3 class="text-sm font-semibold truncate text-slate-900 dark:text-white"><?php echo htmlspecialchars($superadminName); ?></h3>
                     <p class="text-xs text-slate-500 dark:text-slate-400 truncate">Superadmin</p>
                 </div>
             </div>
-            <div
-                class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-red-500 hover:bg-red-50 dark:hover:bg-red-900/10 transition-colors cursor-pointer">
-                <span class="material-symbols-outlined">logout</span>
-                <p class="text-sm font-medium">Logout</p>
-            </div>
+            <form method="POST" class="w-full">
+                <button type="submit" name="logout_superadmin"
+                    class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-red-500 hover:bg-red-50 dark:hover:bg-red-900/10 transition-colors cursor-pointer text-left">
+                    <span class="material-symbols-outlined">logout</span>
+                    <p class="text-sm font-medium">Logout</p>
+                </button>
+            </form>
         </div>
     </aside>
     <!-- TopAppBar Shell (Exactly as Screen 11) -->
     <header
-        class="flex items-center justify-between px-8 sticky top-0 z-30 ml-64 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md w-full h-16 border-b border-slate-200 dark:border-slate-800">
+        class="flex items-center justify-between px-8 sticky top-0 z-30 ml-64 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md h-16 border-b border-slate-200 dark:border-slate-800">
         <div class="flex items-center gap-4">
             <div class="relative">
                 <span class="absolute inset-y-0 left-0 flex items-center pl-3 text-on-surface-variant">
@@ -199,29 +266,18 @@ if (isset($conn) && $conn instanceof mysqli) {
                     placeholder="Search parameters..." type="text" />
             </div>
         </div>
-        <div class="flex items-center gap-6">
-            <div class="flex items-center gap-4">
-                <button class="text-slate-500 hover:text-blue-700 transition-all duration-200">
-                    <span class="material-symbols-outlined" data-icon="notifications">notifications</span>
-                </button>
-                <button class="text-slate-500 hover:text-blue-700 transition-all duration-200">
-                    <span class="material-symbols-outlined" data-icon="help_outline">help_outline</span>
-                </button>
-            </div>
-            <div class="h-8 w-px bg-slate-200 dark:bg-slate-800"></div>
-            <div class="flex items-center gap-3">
-                <div class="text-right">
-                    <div class="text-xs font-bold text-slate-900">Alex Rivera</div>
-                    <div class="text-[10px] text-slate-500">Superadmin</div>
-                </div>
-                <img class="h-8 w-8 rounded-lg object-cover" data-alt="Superadmin Profile Avatar"
-                    src="https://lh3.googleusercontent.com/aida-public/AB6AXuBbWq7K39o59qxyf1N9jitSWRpffXaH70Rd7A4awqGKNS42DdPIknKcFsuc5McGZO9lpBxiAgAO3AhVelUg0OU0Kr0vATRrLtmyI4EIBHttmX3_sLKPXVw9tZJ8ka56x1iHPvfysI-uwt4l2henmEBYZXtrGBQVAIqV1pM_hHHBJXpPQ_BLbVFAeZl2ldXQYHQhIcwoDpgGiQGwiY5J0XvDuuEd38Uu1713IJQVMQ6on9guu5Bo_cgZm0v6yQW7PGnbdqfOzzIgw9Ou" />
-            </div>
+        <div class="flex items-center gap-4">
+            <button class="p-2 text-slate-500 hover:text-primary transition-colors">
+                <span class="material-symbols-outlined" data-icon="notifications">notifications</span>
+            </button>
+            <button class="p-2 text-slate-500 hover:text-primary transition-colors">
+                <span class="material-symbols-outlined" data-icon="help_outline">help_outline</span>
+            </button>
         </div>
     </header>
     <!-- Main Content Canvas -->
     <main class="ml-64 p-8 min-h-screen">
-        <div class="max-w-6xl mx-auto">
+        <div class="w-full">
             <div class="mb-8">
                 <h2 class="text-[1.875rem] font-black text-on-background tracking-tight">System Configuration</h2>
                 <p class="text-slate-500 text-sm mt-1">Manage global branding, scaling limits, and core architectural
@@ -252,9 +308,9 @@ if (isset($conn) && $conn instanceof mysqli) {
                                     Branding Color</label>
                                 <div class="flex items-center gap-3">
                                     <input class="h-10 w-10 p-0 border-0 rounded cursor-pointer overflow-hidden"
-                                        type="color" value="#1152d4" />
+                                        type="color" value="#b91c1c" />
                                     <input class="flex-1 px-3 py-2 border border-slate-200 rounded-lg text-sm font-mono"
-                                        type="text" value="#1152D4" />
+                                        type="text" value="#B91C1C" />
                                 </div>
                             </div>
                         </div>

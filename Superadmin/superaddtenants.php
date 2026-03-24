@@ -223,13 +223,13 @@ $noticeMessage = '';
 
 switch ($notice) {
     case 'tenant_created_email_sent':
-        $noticeTypeClass = 'bg-emerald-500';
+        $noticeTypeClass = 'bg-red-600';
         $noticeIcon = 'check_circle';
         $noticeTitle = 'Tenant Created';
         $noticeMessage = 'Tenant was created and email was sent successfully.';
         break;
     case 'tenant_created_email_failed':
-        $noticeTypeClass = 'bg-amber-500';
+        $noticeTypeClass = 'bg-red-500';
         $noticeIcon = 'warning';
         $noticeTitle = 'Tenant Created';
         $noticeMessage = 'Tenant was created, but the email could not be sent.';
@@ -241,7 +241,7 @@ switch ($notice) {
         $noticeMessage = 'Could not create tenant. Please try again.';
         break;
     case 'tenant_updated':
-        $noticeTypeClass = 'bg-emerald-500';
+        $noticeTypeClass = 'bg-red-600';
         $noticeIcon = 'check_circle';
         $noticeTitle = 'Tenant Updated';
         $noticeMessage = 'Tenant details were updated successfully.';
@@ -253,7 +253,7 @@ switch ($notice) {
         $noticeMessage = 'Could not update tenant. Please try again.';
         break;
     case 'tenant_approved':
-        $noticeTypeClass = 'bg-emerald-500';
+        $noticeTypeClass = 'bg-red-600';
         $noticeIcon = 'check_circle';
         $noticeTitle = 'Application Approved';
         $noticeMessage = 'Tenant application was approved and activated successfully.';
@@ -680,7 +680,7 @@ if (isset($_POST['createTenant'])) {
             theme: {
                 extend: {
                     colors: {
-                        "primary": "#1152d4",
+                        "primary": "#b91c1c",
                         "background-light": "#f6f6f8",
                         "background-dark": "#101622",
                     },
@@ -700,8 +700,8 @@ if (isset($_POST['createTenant'])) {
         class="flex flex-col fixed left-0 top-0 h-full z-40 h-screen w-64 border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 font-['Inter'] antialiased tracking-tight shadow-sm dark:shadow-none">
         <!-- Brand Header -->
         <div class="p-6 flex items-center gap-3">
-            <div class="bg-primary rounded-lg p-2 text-white">
-                <span class="material-symbols-outlined block text-2xl">directions_car</span>
+            <div class="size-12 rounded-lg bg-white p-1 shadow-md dark:bg-slate-900">
+                <img src="../pictures/RRlogo.png" alt="Rapid Repair logo" class="h-full w-full object-contain drop-shadow-sm">
             </div>
             <h2 class="text-xl font-bold tracking-tight text-slate-900 dark:text-white leading-none">
                 RapidRepair <span class="text-primary">SuperAdmin</span>
@@ -714,7 +714,7 @@ if (isset($_POST['createTenant'])) {
                 <span class="material-symbols-outlined" data-icon="dashboard">dashboard</span>
                 <span class="text-sm">Dashboard</span>
             </a>
-            <a class="flex items-center gap-3 px-3 py-2.5 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400 font-bold border-r-4 border-blue-700 dark:border-blue-500 rounded-lg active:scale-95"
+            <a class="flex items-center gap-3 px-3 py-2.5 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 font-bold border-r-4 border-red-700 dark:border-red-500 rounded-lg active:scale-95"
                 href="superaddtenants.php">
                 <span class="material-symbols-outlined" data-icon="groups">groups</span>
                 <span class="text-sm">Tenants</span>
@@ -806,10 +806,10 @@ if (isset($_POST['createTenant'])) {
                 </div>
             </div>
             <div class="flex items-center gap-4">
-                <button class="text-slate-500 hover:text-blue-700 transition-all duration-200">
+                <button class="text-slate-500 hover:text-red-600 transition-all duration-200">
                     <span class="material-symbols-outlined" data-icon="notifications">notifications</span>
                 </button>
-                <button class="text-slate-500 hover:text-blue-700 transition-all duration-200">
+                <button class="text-slate-500 hover:text-red-600 transition-all duration-200">
                     <span class="material-symbols-outlined" data-icon="help_outline">help_outline</span>
                 </button>
             </div>
@@ -1065,7 +1065,7 @@ if (isset($_POST['createTenant'])) {
                                         <td class="px-6 py-4 text-right">
                                             <div class="flex justify-end gap-2">
                                                 <button onclick="approveTenant('<?php echo $pendingRow['tenantID']; ?>')"
-                                                    class="px-3 py-1.5 bg-emerald-600 text-white text-xs font-bold rounded-lg hover:bg-emerald-700 transition-colors">Accept</button>
+                                                    class="px-3 py-1.5 bg-red-600 text-white text-xs font-bold rounded-lg hover:bg-red-700 transition-colors">Accept</button>
                                                 <button onclick="rejectTenant('<?php echo $pendingRow['tenantID']; ?>')"
                                                     class="px-3 py-1.5 border border-red-200 text-red-600 text-xs font-bold rounded-lg hover:bg-red-50 dark:hover:bg-red-900/10 transition-colors">Reject</button>
                                             </div>
@@ -1253,7 +1253,7 @@ if (isset($_POST['createTenant'])) {
                             <button type="button" onclick="closeApprovalModal()"
                                 class="flex-1 border rounded-lg py-3">Cancel</button>
                             <button onclick="submitApproval()"
-                                class="flex-1 bg-emerald-600 text-white rounded-lg py-3">Approve & Activate</button>
+                                class="flex-1 bg-red-600 text-white rounded-lg py-3">Approve & Activate</button>
                         </div>
                     </div>
                 </div>
@@ -1465,7 +1465,7 @@ if (isset($_POST['createTenant'])) {
                     .replace(/>/g, '&gt;')
                     .replace(/"/g, '&quot;')
                     .replace(/'/g, '&#39;');
-                return '<div class="flex items-start gap-1.5"><span class="material-symbols-outlined text-emerald-500 text-[14px]">check_circle</span><span>' + text + '</span></div>';
+                return '<div class="flex items-start gap-1.5"><span class="material-symbols-outlined text-red-500 text-[14px]">check_circle</span><span>' + text + '</span></div>';
             }).join('');
 
             preview.innerHTML = items;

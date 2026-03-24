@@ -2,10 +2,44 @@
 session_start();
 require_once '../db.php';
 
+if (isset($_POST['logout_superadmin'])) {
+    $_SESSION = [];
+
+    if (ini_get('session.use_cookies')) {
+        $params = session_get_cookie_params();
+        setcookie(
+            session_name(),
+            '',
+            time() - 42000,
+            $params['path'],
+            $params['domain'],
+            $params['secure'],
+            $params['httponly']
+        );
+    }
+
+    session_destroy();
+    header("Location: superaddlogin.php");
+    exit();
+}
+
 // Check if user is logged in as superadmin
 if (!isset($_SESSION['superadmin_id'])) {
     header("Location: superaddlogin.php");
     exit;
+}
+
+$superadminName = "Superadmin";
+$superadminStmt = $conn->prepare("SELECT fullName FROM superadmin WHERE superadmin_id = ? LIMIT 1");
+if ($superadminStmt) {
+    $superadminStmt->bind_param("i", $_SESSION['superadmin_id']);
+    $superadminStmt->execute();
+    $superadminRes = $superadminStmt->get_result();
+    if ($superadminRes && $superadminRes->num_rows > 0) {
+        $superadminRow = $superadminRes->fetch_assoc();
+        $superadminName = $superadminRow['fullName'] ?: $superadminName;
+    }
+    $superadminStmt->close();
 }
 
 // Helper functions
@@ -42,6 +76,23 @@ function getPercentChange($current, $previous)
 {
     if ($previous == 0) return $current > 0 ? 100 : 0;
     return (($current - $previous) / $previous) * 100;
+}
+
+function initials($name)
+{
+    $name = trim((string)$name);
+    if ($name === '') {
+        return 'NA';
+    }
+
+    $parts = preg_split('/\s+/', $name);
+    if (!$parts) {
+        return 'NA';
+    }
+
+    $first = strtoupper(substr($parts[0], 0, 1));
+    $second = count($parts) > 1 ? strtoupper(substr($parts[count($parts) - 1], 0, 1)) : '';
+    return $first . ($second ?: '');
 }
 
 // Get filter parameters
@@ -248,51 +299,51 @@ $dateStart = match($dateRange) {
             theme: {
                 extend: {
                     colors: {
-                        "primary-fixed-dim": "#bfdbfe",
-                        "surface-tint": "#1152d4",
-                        "background": "#f6f6f8",
-                        "secondary-fixed": "#e2e8f0",
+                        "primary-fixed-dim": "#fecaca",
+                        "surface-tint": "#b91c1c",
+                        "background": "#ffffff",
+                        "secondary-fixed": "#e5e7eb",
                         "surface-container-high": "#ffffff",
                         "surface-container-lowest": "#ffffff",
                         "tertiary": "#f59e0b",
                         "surface-container-low": "#ffffff",
-                        "secondary-fixed-dim": "#cbd5e1",
-                        "error": "#ef4444",
+                        "secondary-fixed-dim": "#d4d4d8",
+                        "error": "#dc2626",
                         "tertiary-fixed-dim": "#fed7aa",
-                        "on-primary-fixed-variant": "#1d4ed8",
-                        "on-primary-fixed": "#1e3a8a",
-                        "surface-dim": "#d9d9e4",
-                        "outline-variant": "#cbd5e1",
+                        "on-primary-fixed-variant": "#991b1b",
+                        "on-primary-fixed": "#7f1d1d",
+                        "surface-dim": "#e5e7eb",
+                        "outline-variant": "#d4d4d8",
                         "on-tertiary": "#ffffff",
                         "error-container": "#fee2e2",
-                        "on-primary-container": "#1152d4",
-                        "primary-container": "#eef2ff",
-                        "on-secondary-container": "#1e293b",
-                        "surface": "#f6f6f8",
-                        "outline": "#e2e8f0",
+                        "on-primary-container": "#7f1d1d",
+                        "primary-container": "#fee2e2",
+                        "on-secondary-container": "#18181b",
+                        "surface": "#ffffff",
+                        "outline": "#e5e7eb",
                         "tertiary-container": "#fef3c7",
-                        "surface-variant": "#f1f5f9",
-                        "on-background": "#0f172a",
-                        "inverse-primary": "#b4c5ff",
-                        "on-secondary-fixed-variant": "#334155",
+                        "surface-variant": "#f5f5f5",
+                        "on-background": "#0a0a0a",
+                        "inverse-primary": "#fecaca",
+                        "on-secondary-fixed-variant": "#3f3f46",
                         "surface-container-highest": "#ffffff",
-                        "inverse-surface": "#1e293b",
-                        "on-surface": "#0f172a",
+                        "inverse-surface": "#18181b",
+                        "on-surface": "#111827",
                         "surface-bright": "#ffffff",
                         "on-primary": "#ffffff",
-                        "secondary": "#475569",
-                        "on-surface-variant": "#64748b",
+                        "secondary": "#3f3f46",
+                        "on-surface-variant": "#525252",
                         "on-tertiary-fixed-variant": "#9a3412",
                         "inverse-on-surface": "#f8fafc",
-                        "primary-fixed": "#dbeafe",
+                        "primary-fixed": "#fee2e2",
                         "on-tertiary-fixed": "#7c2d12",
                         "on-error-container": "#991b1b",
-                        "secondary-container": "#f1f5f9",
-                        "on-secondary-fixed": "#0f172a",
+                        "secondary-container": "#f5f5f5",
+                        "on-secondary-fixed": "#111827",
                         "surface-container": "#ffffff",
                         "on-error": "#ffffff",
                         "tertiary-fixed": "#ffedd5",
-                        "primary": "#1152d4",
+                        "primary": "#b91c1c",
                         "on-tertiary-container": "#92400e",
                         "on-secondary": "#ffffff"
                     },
@@ -318,11 +369,11 @@ $dateStart = match($dateRange) {
 
         body {
             font-family: 'Inter', sans-serif;
-            background-color: #f6f6f8;
+            background-color: #ffffff;
         }
 
         .chart-gradient {
-            background: linear-gradient(to bottom, rgba(17, 82, 212, 0.1), rgba(17, 82, 212, 0));
+            background: linear-gradient(to bottom, rgba(185, 28, 28, 0.1), rgba(185, 28, 28, 0));
         }
     </style>
 </head>
@@ -362,7 +413,7 @@ $dateStart = match($dateRange) {
                 <span class="material-symbols-outlined" data-icon="subscriptions">subscriptions</span>
                 <span class="text-sm">Subscriptions</span>
             </a>
-            <a class="flex items-center gap-3 px-3 py-2.5 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400 font-bold border-r-4 border-blue-700 dark:border-blue-500 rounded-lg active:scale-95"
+            <a class="flex items-center gap-3 px-3 py-2.5 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 font-bold border-r-4 border-red-700 dark:border-red-500 rounded-lg active:scale-95"
                 href="supersalesreport.php">
                 <span class="material-symbols-outlined" data-icon="monitoring">monitoring</span>
                 <span class="text-sm">Sales Reports</span>
@@ -374,7 +425,7 @@ $dateStart = match($dateRange) {
             </a>
 
             <a class="flex items-center gap-3 px-3 py-2.5 text-slate-600 dark:text-slate-400 font-medium hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors rounded-lg active:scale-95"
-                href="backup_restore.php">
+                href="superbackup.php">
                 <span class="material-symbols-outlined" data-icon="backup"
                     style="font-variation-settings: 'FILL' 1;">backup</span>
                 <span class="text-sm">System Backup</span>
@@ -388,21 +439,22 @@ $dateStart = match($dateRange) {
         </nav>
         
             <div class="p-4 border-t border-slate-100 space-y-2">
-                <div class="flex items-center gap-3 p-2 rounded-lg hover:bg-slate-50 transition-colors cursor-pointer">
-                    <div class="w-10 h-10 rounded-full bg-slate-200 bg-cover bg-center"
-                        data-alt="Alex Rivera headshot professional portrait"
-                        style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuAA7ZvS0RT24pYl7zsQUKsnC9inrzmoUQVQC8PvdcW5_q4FtMWEC8ZD9Ke8mBa8iRwi4vfG0NbuLhEY9U_mYTQt3gBMRoNS0jNV_aJYQ-QCLtauVwWdyP53SHmFLjb5bQvwjbvvF24yHFp3moy4K6rJ0tVvtMIzdIUNohESEbLUilTPScnQYQQutAW0bzWhFZkGsX1GwwAl_2_9yXjauFnRNg0uTHfeR3lnfDRxLlk9Jo_hIr7N64rr5SWZq57QEfMdbFLkygzUgb-A')">
+                <div class="flex items-center gap-3 p-2 rounded-lg hover:bg-slate-50 transition-colors">
+                    <div class="w-10 h-10 rounded-full bg-primary-container text-primary flex items-center justify-center font-semibold text-sm">
+                        <?php echo htmlspecialchars(initials($superadminName)); ?>
                     </div>
                     <div class="flex flex-col min-w-0">
-                        <h3 class="text-sm font-semibold truncate">Alex Rivera</h3>
+                        <h3 class="text-sm font-semibold truncate"><?php echo htmlspecialchars($superadminName); ?></h3>
                         <p class="text-xs text-slate-500 truncate">Superadmin</p>
                     </div>
                 </div>
-                <div
-                    class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-red-500 hover:bg-red-50 transition-colors cursor-pointer mt-2 logout-btn">
-                    <span class="material-symbols-outlined">logout</span>
-                    <p class="text-sm font-medium">Logout</p>
-                </div>
+                <form method="POST" class="w-full">
+                    <button type="submit" name="logout_superadmin"
+                        class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-red-500 hover:bg-red-50 transition-colors cursor-pointer text-left mt-2">
+                        <span class="material-symbols-outlined">logout</span>
+                        <p class="text-sm font-medium">Logout</p>
+                    </button>
+                </form>
             </div>
         </aside>
         <!-- Main Content Canvas -->
@@ -642,7 +694,7 @@ $dateStart = match($dateRange) {
                                         <td class="px-6 py-4 text-xs font-bold"><?php echo htmlspecialchars($tenant['shopName']); ?></td>
                                         <td class="px-6 py-4 text-xs font-bold text-primary"><?php echo formatCurrency($tenant['total_revenue']); ?></td>
                                         <td class="px-6 py-4 text-xs">
-                                            <span class="px-2 py-0.5 bg-blue-50 text-blue-600 rounded text-[10px] font-bold">
+                                            <span class="px-2 py-0.5 bg-red-50 text-red-600 rounded text-[10px] font-bold">
                                                 <?php echo $tenant['tenant_count']; ?> active
                                             </span>
                                         </td>
@@ -684,13 +736,13 @@ $dateStart = match($dateRange) {
                     datasets: [{
                         label: 'Monthly Revenue',
                         data: trendData,
-                        borderColor: '#1152d4',
-                        backgroundColor: 'rgba(17, 82, 212, 0.05)',
+                        borderColor: '#b91c1c',
+                        backgroundColor: 'rgba(185, 28, 28, 0.08)',
                         borderWidth: 2,
                         fill: true,
                         tension: 0.4,
                         pointRadius: 4,
-                        pointBackgroundColor: '#1152d4',
+                        pointBackgroundColor: '#b91c1c',
                         pointBorderColor: '#ffffff',
                         pointBorderWidth: 2,
                         pointHoverRadius: 6
@@ -791,10 +843,6 @@ $dateStart = match($dateRange) {
             a.click();
         }
 
-        // Logout functionality
-        document.querySelector('.logout-btn')?.addEventListener('click', function() {
-            window.location.href = '../logout/logout.php';
-        });
     </script>
 </body>
 

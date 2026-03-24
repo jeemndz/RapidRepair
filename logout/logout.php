@@ -77,7 +77,7 @@ function buildSafeInAppPath($candidate)
 function buildAuthenticatedHomeUrl()
 {
 	if (isset($_SESSION['superadmin_id'])) {
-		return '../Superadmin/subscriptionmanage.php';
+		return '../superadmin/subscriptionmanage.php';
 	}
 
 	if (isset($_SESSION['shop_id']) || isset($_SESSION['tenant_id'])) {
@@ -101,7 +101,7 @@ if (isset($_POST['redirect'])) {
 $requestedRedirect = basename($requestRedirectSource);
 $allowedRedirects = [
 	'tenantlogin.php' => '../tenant/tenantlogin.php',
-	'superaddlogin.php' => '../Superadmin/superaddlogin.php',
+	'superaddlogin.php' => '../superadmin/superaddlogin.php',
 	'clientlogin.php' => '../clientapplication/clientlogin.php',
 	'index.php' => '../index.php'
 ];
@@ -109,7 +109,7 @@ $allowedRedirects = [
 $tenantLoginSlug = isset($_SESSION['login_slug']) ? (string)$_SESSION['login_slug'] : '';
 $logoutRedirect = buildTenantLoginUrl($tenantLoginSlug);
 if (isset($_SESSION['superadmin_id'])) {
-	$logoutRedirect = '../Superadmin/superaddlogin.php';
+	$logoutRedirect = '../superadmin/superaddlogin.php';
 } elseif (isset($_SESSION['email']) || isset($_SESSION['user_id'])) {
 	$logoutRedirect = '../clientapplication/clientlogin.php';
 }

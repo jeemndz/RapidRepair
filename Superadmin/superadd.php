@@ -20,13 +20,13 @@ if (isset($_POST['logout_superadmin'])) {
     }
 
     session_destroy();
-    header("Location: /Superadmin/superaddlogin.php");
+    header("Location: /superadmin/superaddlogin.php");
     exit();
 }
 
 // Redirect if not logged in
 if (!isset($_SESSION['superadmin_id'])) {
-    header("Location: /Superadmin/superaddlogin.php");
+    header("Location: /superadmin/superaddlogin.php");
     exit();
 }
 
@@ -44,12 +44,18 @@ function getPercentChange($current, $previous)
 }
 
 // Get superadmin info
-$superadmin_id = $_SESSION['superadmin_id'];
-$stmt = $conn->prepare("SELECT fullName, email FROM superadmin WHERE superadmin_id = ?");
-$stmt->bind_param("i", $superadmin_id);
-$stmt->execute();
-$result = $stmt->get_result();
-$superadmin = $result->fetch_assoc();
+$superadminName = "Superadmin";
+$superadminStmt = $conn->prepare("SELECT fullName FROM superadmin WHERE superadmin_id = ? LIMIT 1");
+if ($superadminStmt) {
+    $superadminStmt->bind_param("i", $_SESSION['superadmin_id']);
+    $superadminStmt->execute();
+    $superadminRes = $superadminStmt->get_result();
+    if ($superadminRes && $superadminRes->num_rows > 0) {
+        $superadminRow = $superadminRes->fetch_assoc();
+        $superadminName = $superadminRow['fullName'] ?: $superadminName;
+    }
+    $superadminStmt->close();
+}
 
 // ===== METRICS FOR KPI CARDS =====
 
@@ -202,6 +208,21 @@ function getActionColor($action)
             return 'slate';
     }
 }
+
+function initials($name)
+{
+    $name = trim((string)$name);
+    if ($name === '') {
+        return 'NA';
+    }
+    $parts = preg_split('/\s+/', $name);
+    if (!$parts) {
+        return 'NA';
+    }
+    $first = strtoupper(substr($parts[0], 0, 1));
+    $second = count($parts) > 1 ? strtoupper(substr($parts[count($parts) - 1], 0, 1)) : '';
+    return $first . ($second ?: '');
+}
 ?>
 
 
@@ -229,7 +250,7 @@ function getActionColor($action)
             theme: {
                 extend: {
                     colors: {
-                        "primary": "#1152d4",
+                        "primary": "#b91c1c",
                         "background-light": "#f6f6f8",
                         "background-dark": "#101622",
                     },
@@ -250,8 +271,8 @@ function getActionColor($action)
             class="w-72 flex flex-col bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 shrink-0">
             <!-- Brand Header -->
             <div class="p-6 flex items-center gap-3">
-                <div class="bg-primary rounded-lg p-2 text-white">
-                    <span class="material-symbols-outlined block text-2xl">directions_car</span>
+                <div class="size-12 rounded-lg bg-white p-1 shadow-md dark:bg-slate-900">
+                    <img src="../pictures/RRlogo3.png" alt="Rapid Repair logo" class="h-full w-full object-contain drop-shadow-sm">
                 </div>
                 <h2 class="text-xl font-bold tracking-tight text-slate-900 dark:text-white leading-none">
                     RapidRepair <span class="text-primary">SuperAdmin</span>
@@ -259,7 +280,7 @@ function getActionColor($action)
             </div>
             <!-- Navigation Links -->
             <nav class="flex-1 px-4 space-y-1 mt-4">
-                <a class="flex items-center gap-3 px-3 py-2.5 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400 font-bold border-r-4 border-blue-700 dark:border-blue-500 rounded-lg active:scale-95"
+                <a class="flex items-center gap-3 px-3 py-2.5 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 font-bold border-r-4 border-red-700 dark:border-red-500 rounded-lg active:scale-95"
                     href="superadd.php">
                     <span class="material-symbols-outlined" data-icon="dashboard">dashboard</span>
                     <span class="text-sm">Dashboard</span>
@@ -303,16 +324,19 @@ function getActionColor($action)
             </nav>
             <div class="p-4 border-t border-slate-100 dark:border-slate-800 space-y-2">
                 <!-- Profile -->
-                <a href="#"
-                    class="flex items-center gap-3 p-2 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer transition-colors">
-                    <div class="w-10 h-10 rounded-full bg-slate-200 dark:bg-slate-700 bg-cover bg-center"
-                        style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuAA7ZvS0RT24pYl7zsQUKsnC9inrzmoUQVQC8PvdcW5_q4FtMWEC8ZD9Ke8mBa8iRwi4vfG0NbuLhEY9U_mYTQt3gBMRoNS0jNV_aJYQ-QCLtauVwWdyP53SHmFLjb5bQvwjbvvF24yHFp3moy4K6rJ0tVvtMIzdIUNohESEbLUilTPScnQYQQutAW0bzWhFZkGsX1GwwAl_2_9yXjauFnRNg0uTHfeR3lnfDRxLlk9Jo_hIr7N64rr5SWZq57QEfMdbFLkygzUgb-A')">
+                <div
+                    class="flex items-center gap-3 p-2 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
+                    <div
+                        class="w-10 h-10 rounded-full bg-primary/10 text-primary flex items-center justify-center font-semibold text-sm">
+                        <?php echo htmlspecialchars(initials($superadminName)); ?>
                     </div>
                     <div class="flex flex-col min-w-0">
-                        <h3 class="text-sm font-semibold truncate">Alex Rivera</h3>
+                        <h3 class="text-sm font-semibold truncate text-slate-900 dark:text-white">
+                            <?php echo htmlspecialchars($superadminName); ?>
+                        </h3>
                         <p class="text-xs text-slate-500 dark:text-slate-400 truncate">Superadmin</p>
                     </div>
-                </a>
+                </div>
 
                 <!-- Logout -->
                 <form method="POST" class="w-full">
@@ -352,9 +376,8 @@ function getActionColor($action)
                         <span class="material-symbols-outlined">chat_bubble</span>
                     </button>
                     <div
-                        class="h-10 w-10 overflow-hidden rounded-full border-2 border-primary/20 bg-slate-100 dark:bg-slate-800">
-                        <img class="h-full w-full object-cover" data-alt="User profile avatar"
-                            src="https://lh3.googleusercontent.com/aida-public/AB6AXuAA7ZvS0RT24pYl7zsQUKsnC9inrzmoUQVQC8PvdcW5_q4FtMWEC8ZD9Ke8mBa8iRwi4vfG0NbuLhEY9U_mYTQt3gBMRoNS0jNV_aJYQ-QCLtauVwWdyP53SHmFLjb5bQvwjbvvF24yHFp3moy4K6rJ0tVvtMIzdIUNohESEbLUilTPScnQYQQutAW0bzWhFZkGsX1GwwAl_2_9yXjauFnRNg0uTHfeR3lnfDRxLlk9Jo_hIr7N64rr5SWZq57QEfMdbFLkygzUgb-A" />
+                        class="h-10 w-10 rounded-full border-2 border-primary/20 bg-primary/10 text-primary flex items-center justify-center font-semibold text-sm">
+                        <?php echo htmlspecialchars(initials($superadminName)); ?>
                     </div>
                 </div>
             </header>
@@ -404,7 +427,7 @@ function getActionColor($action)
                         <div class="flex items-center justify-between">
                             <p class="text-sm font-medium text-slate-500 dark:text-slate-400">Pending Approvals</p>
                             <span
-                                class="material-symbols-outlined text-amber-500 bg-amber-500/10 rounded-lg p-2">pending_actions</span>
+                                class="material-symbols-outlined text-red-600 bg-red-100 rounded-lg p-2">pending_actions</span>
                         </div>
                         <div class="mt-4">
                             <h3 class="text-3xl font-bold text-slate-900 dark:text-white">
@@ -432,7 +455,7 @@ function getActionColor($action)
                             </div>
                             <div class="flex gap-2">
                                 <span
-                                    class="inline-flex items-center rounded-md bg-green-50 px-2 py-1 text-xs font-medium text-green-700 ring-1 ring-inset ring-green-600/20">+<?php echo $totalTenantsCurrentMonth; ?>
+                                    class="inline-flex items-center rounded-md bg-red-50 px-2 py-1 text-xs font-medium text-red-700 ring-1 ring-inset ring-red-600/20">+<?php echo $totalTenantsCurrentMonth; ?>
                                     new shops</span>
                             </div>
                         </div>
@@ -496,7 +519,7 @@ function getActionColor($action)
                             </div>
                             <div class="flex-1 space-y-4 w-full">
                                 <?php
-                                $colors = ['#1152d4', '#60a5fa', '#93c5fd'];
+                                $colors = ['#b91c1c', '#dc2626', '#ef4444'];
                                 foreach ($subBreakdown as $idx => $sub):
                                     $percentage = $totalSubCount > 0 ? ($sub['count'] / $totalSubCount) * 100 : 0;
                                     ?>
@@ -534,10 +557,10 @@ function getActionColor($action)
                                 <?php foreach ($recentActivity as $activity):
                                     $color = getActionColor($activity['action']);
                                     $colorMap = [
-                                        'green' => 'border-l-4 border-l-green-500 bg-green-50/50 dark:bg-green-900/10',
-                                        'amber' => 'border-l-4 border-l-amber-500 bg-amber-50/50 dark:bg-amber-900/10',
+                                        'green' => 'border-l-4 border-l-red-700 bg-red-50/50 dark:bg-red-900/10',
+                                        'amber' => 'border-l-4 border-l-red-600 bg-red-50/40 dark:bg-red-900/10',
                                         'red' => 'border-l-4 border-l-red-500 bg-red-50/50 dark:bg-red-900/10',
-                                        'slate' => 'border-l-4 border-l-slate-500 bg-slate-50/50 dark:bg-slate-800/30'
+                                        'slate' => 'border-l-4 border-l-slate-900 bg-slate-50/50 dark:bg-slate-800/30'
                                     ];
                                     $colorClass = $colorMap[$color] ?? $colorMap['slate'];
                                     ?>
@@ -584,8 +607,8 @@ function getActionColor($action)
                         datasets: [{
                             label: 'Registrations',
                             data: <?php echo json_encode($growthData); ?>,
-                            borderColor: '#3b82f6',
-                            backgroundColor: 'rgba(59, 130, 246, 0.15)',
+                            borderColor: '#b91c1c',
+                            backgroundColor: 'rgba(185, 28, 28, 0.15)',
                             borderWidth: 2,
                             fill: false,
                             tension: 0,
@@ -624,7 +647,7 @@ function getActionColor($action)
                         labels: subLabels,
                         datasets: [{
                             data: subData,
-                            backgroundColor: ['#1152d4', '#60a5fa', '#93c5fd', '#bfdbfe'],
+                            backgroundColor: ['#7f1d1d', '#b91c1c', '#dc2626', '#ef4444'],
                             borderWidth: 1
                         }]
                     },

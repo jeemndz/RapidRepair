@@ -1,12 +1,63 @@
 <?php
 session_start();
 
+if (isset($_POST['logout_superadmin'])) {
+    $_SESSION = [];
+
+    if (ini_get('session.use_cookies')) {
+        $params = session_get_cookie_params();
+        setcookie(
+            session_name(),
+            '',
+            time() - 42000,
+            $params['path'],
+            $params['domain'],
+            $params['secure'],
+            $params['httponly']
+        );
+    }
+
+    session_destroy();
+    header("Location: superaddlogin.php");
+    exit();
+}
+
 if (!isset($_SESSION['superadmin_id'])) {
     header("Location: superaddlogin.php");
     exit();
 }
 
 include __DIR__ . "/../db.php";
+
+$superadminName = "Superadmin";
+$superadminStmt = $conn->prepare("SELECT fullName FROM superadmin WHERE superadmin_id = ? LIMIT 1");
+if ($superadminStmt) {
+    $superadminStmt->bind_param("i", $_SESSION['superadmin_id']);
+    $superadminStmt->execute();
+    $superadminRes = $superadminStmt->get_result();
+    if ($superadminRes && $superadminRes->num_rows > 0) {
+        $superadminRow = $superadminRes->fetch_assoc();
+        $superadminName = $superadminRow['fullName'] ?: $superadminName;
+    }
+    $superadminStmt->close();
+}
+
+function initials($name)
+{
+    $name = trim((string)$name);
+    if ($name === '') {
+        return 'NA';
+    }
+
+    $parts = preg_split('/\s+/', $name);
+    if (!$parts) {
+        return 'NA';
+    }
+
+    $first = strtoupper(substr($parts[0], 0, 1));
+    $second = count($parts) > 1 ? strtoupper(substr($parts[count($parts) - 1], 0, 1)) : '';
+    return $first . ($second ?: '');
+}
 
 function subscriptionsColumnExists($conn, $columnName)
 {
@@ -399,50 +450,50 @@ if ($stats['active_subscriptions'] > 0) {
                     colors: {
                         "on-secondary": "#ffffff",
                         "surface-container-high": "#ffffff",
-                        "outline-variant": "#cbd5e1",
+                        "outline-variant": "#d4d4d8",
                         "on-tertiary": "#ffffff",
                         "on-tertiary-container": "#92400e",
-                        "error": "#ef4444",
-                        "on-secondary-fixed-variant": "#334155",
-                        "background": "#f6f6f8",
-                        "on-secondary-container": "#1e293b",
-                        "inverse-primary": "#b4c5ff",
+                        "error": "#dc2626",
+                        "on-secondary-fixed-variant": "#3f3f46",
+                        "background": "#ffffff",
+                        "on-secondary-container": "#18181b",
+                        "inverse-primary": "#fecaca",
                         "surface-container-low": "#ffffff",
-                        "surface-dim": "#d9d9e4",
+                        "surface-dim": "#e5e7eb",
                         "tertiary-container": "#fef3c7",
-                        "outline": "#e2e8f0",
-                        "on-surface-variant": "#64748b",
-                        "on-surface": "#0f172a",
-                        "secondary": "#475569",
+                        "outline": "#e5e7eb",
+                        "on-surface-variant": "#525252",
+                        "on-surface": "#111827",
+                        "secondary": "#3f3f46",
                         "inverse-on-surface": "#f8fafc",
                         "on-primary": "#ffffff",
                         "on-tertiary-fixed": "#7c2d12",
-                        "on-primary-fixed": "#1e3a8a",
+                        "on-primary-fixed": "#7f1d1d",
                         "surface-container-highest": "#ffffff",
-                        "inverse-surface": "#1e293b",
-                        "primary-fixed": "#dbeafe",
-                        "on-background": "#0f172a",
+                        "inverse-surface": "#18181b",
+                        "primary-fixed": "#fee2e2",
+                        "on-background": "#0a0a0a",
                         "tertiary-fixed-dim": "#fed7aa",
-                        "surface-tint": "#1152d4",
+                        "surface-tint": "#b91c1c",
                         "surface-container": "#ffffff",
                         "error-container": "#fee2e2",
-                        "surface-variant": "#f1f5f9",
+                        "surface-variant": "#f5f5f5",
                         "surface-container-lowest": "#ffffff",
                         "tertiary-fixed": "#ffedd5",
-                        "surface": "#f6f6f8",
+                        "surface": "#ffffff",
                         "on-error": "#ffffff",
-                        "secondary-fixed": "#e2e8f0",
-                        "on-secondary-fixed": "#0f172a",
-                        "primary": "#1152d4",
+                        "secondary-fixed": "#e5e7eb",
+                        "on-secondary-fixed": "#111827",
+                        "primary": "#b91c1c",
                         "on-error-container": "#991b1b",
-                        "on-primary-fixed-variant": "#1d4ed8",
-                        "on-primary-container": "#1152d4",
-                        "primary-container": "#eef2ff",
+                        "on-primary-fixed-variant": "#991b1b",
+                        "on-primary-container": "#7f1d1d",
+                        "primary-container": "#fee2e2",
                         "tertiary": "#f59e0b",
                         "surface-bright": "#ffffff",
-                        "primary-fixed-dim": "#bfdbfe",
-                        "secondary-container": "#f1f5f9",
-                        "secondary-fixed-dim": "#cbd5e1",
+                        "primary-fixed-dim": "#fecaca",
+                        "secondary-container": "#f5f5f5",
+                        "secondary-fixed-dim": "#d4d4d8",
                         "on-tertiary-fixed-variant": "#9a3412"
                     },
                     fontFamily: {
@@ -497,7 +548,7 @@ if ($stats['active_subscriptions'] > 0) {
                 <span class="material-symbols-outlined" data-icon="bar_chart">bar_chart</span>
                 <span class="text-sm">Reports</span>
             </a>
-            <a class="flex items-center gap-3 px-3 py-2.5 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400 font-bold border-r-4 border-blue-700 dark:border-blue-500 rounded-lg active:scale-95"
+            <a class="flex items-center gap-3 px-3 py-2.5 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 font-bold border-r-4 border-red-700 dark:border-red-500 rounded-lg active:scale-95"
                 href="subscriptionmanage.php">
                 <span class="material-symbols-outlined" data-icon="subscriptions">subscriptions</span>
                 <span class="text-sm">Subscriptions</span>
@@ -513,7 +564,7 @@ if ($stats['active_subscriptions'] > 0) {
                 <span class="text-sm">Audit Logs</span>
             </a>
             <a class="flex items-center gap-3 px-3 py-2.5 text-slate-600 dark:text-slate-400 font-medium hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors rounded-lg active:scale-95"
-                href="backup_restore.php">
+                href="superbackup.php">
                 <span class="material-symbols-outlined" data-icon="backup"
                     style="font-variation-settings: 'FILL' 1;">backup</span>
                 <span class="text-sm">System Backup</span>
@@ -527,22 +578,22 @@ if ($stats['active_subscriptions'] > 0) {
         </nav>
         <!-- Footer Actions -->
         <div class="p-4 border-t border-slate-100 dark:border-slate-800 space-y-2">
-            <div
-                class="flex items-center gap-3 p-2 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer transition-colors">
-                <div class="w-10 h-10 rounded-full bg-slate-200 dark:bg-slate-700 bg-cover bg-center"
-                    data-alt="Alex Rivera headshot professional portrait"
-                    style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuAA7ZvS0RT24pYl7zsQUKsnC9inrzmoUQVQC8PvdcW5_q4FtMWEC8ZD9Ke8mBa8iRwi4vfG0NbuLhEY9U_mYTQt3gBMRoNS0jNV_aJYQ-QCLtauVwWdyP53SHmFLjb5bQvwjbvvF24yHFp3moy4K6rJ0tVvtMIzdIUNohESEbLUilTPScnQYQQutAW0bzWhFZkGsX1GwwAl_2_9yXjauFnRNg0uTHfeR3lnfDRxLlk9Jo_hIr7N64rr5SWZq57QEfMdbFLkygzUgb-A')">
+            <div class="flex items-center gap-3 p-2 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
+                <div class="w-10 h-10 rounded-full bg-primary-container text-primary flex items-center justify-center font-semibold text-sm">
+                    <?php echo htmlspecialchars(initials($superadminName)); ?>
                 </div>
                 <div class="flex flex-col min-w-0">
-                    <h3 class="text-sm font-semibold truncate text-slate-900 dark:text-white">Alex Rivera</h3>
+                    <h3 class="text-sm font-semibold truncate text-slate-900 dark:text-white"><?php echo htmlspecialchars($superadminName); ?></h3>
                     <p class="text-xs text-slate-500 dark:text-slate-400 truncate">Superadmin</p>
                 </div>
             </div>
-            <div
-                class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-red-500 hover:bg-red-50 dark:hover:bg-red-900/10 transition-colors cursor-pointer">
-                <span class="material-symbols-outlined">logout</span>
-                <a href="../logout/logout.php" class="text-sm font-medium">Logout</a>
-            </div>
+            <form method="POST" class="w-full">
+                <button type="submit" name="logout_superadmin"
+                    class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-red-500 hover:bg-red-50 dark:hover:bg-red-900/10 transition-colors cursor-pointer text-left">
+                    <span class="material-symbols-outlined">logout</span>
+                    <span class="text-sm font-medium">Logout</span>
+                </button>
+            </form>
         </div>
     </aside>
     <!-- TopAppBar Shell -->
@@ -569,23 +620,24 @@ if ($stats['active_subscriptions'] > 0) {
         </div>
         <div class="flex items-center gap-6">
             <div class="flex items-center gap-4">
-                <button class="relative text-slate-500 hover:text-blue-700 transition-all duration-200">
+                <button class="relative text-slate-500 hover:text-red-700 transition-all duration-200">
                     <span class="material-symbols-outlined" data-icon="notifications">notifications</span>
                     <span
                         class="absolute right-0.5 top-0.5 h-2 w-2 rounded-full bg-red-500 ring-2 ring-white dark:ring-slate-900"></span>
                 </button>
-                <button class="text-slate-500 hover:text-blue-700 transition-all duration-200">
+                <button class="text-slate-500 hover:text-red-700 transition-all duration-200">
                     <span class="material-symbols-outlined" data-icon="help_outline">help_outline</span>
                 </button>
             </div>
             <div class="h-8 w-px bg-slate-200 dark:bg-slate-800"></div>
             <div class="flex items-center gap-3">
                 <div class="text-right">
-                    <div class="text-xs font-bold text-slate-900">Admin User</div>
+                    <div class="text-xs font-bold text-slate-900"><?php echo htmlspecialchars($superadminName); ?></div>
                     <div class="text-[10px] text-slate-500">Superadmin</div>
                 </div>
-                <img class="h-8 w-8 rounded-lg object-cover" data-alt="Superadmin Profile Avatar"
-                    src="https://lh3.googleusercontent.com/aida-public/AB6AXuBbWq7K39o59qxyf1N9jitSWRpffXaH70Rd7A4awqGKNS42DdPIknKcFsuc5McGZO9lpBxiAgAO3AhVelUg0OU0Kr0vATRrLtmyI4EIBHttmX3_sLKPXVw9tZJ8ka56x1iHPvfysI-uwt4l2henmEBYZXtrGBQVAIqV1pM_hHHBJXpPQ_BLbVFAeZl2ldXQYHQhIcwoDpgGiQGwiY5J0XvDuuEd38Uu1713IJQVMQ6on9guu5Bo_cgZm0v6yQW7PGnbdqfOzzIgw9Ou" />
+                <div class="h-8 w-8 rounded-lg bg-primary-container text-primary flex items-center justify-center text-xs font-semibold">
+                    <?php echo htmlspecialchars(initials($superadminName)); ?>
+                </div>
             </div>
         </div>
     </header>
@@ -766,7 +818,7 @@ if ($stats['active_subscriptions'] > 0) {
                     <div
                         class="h-48 w-full bg-slate-50 rounded-lg border border-dashed border-slate-200 relative overflow-hidden">
                         <div class="absolute inset-0 opacity-10"
-                            style="background-image: radial-gradient(#1152d4 1px, transparent 0); background-size: 20px 20px;">
+                            style="background-image: radial-gradient(#b91c1c 1px, transparent 0); background-size: 20px 20px;">
                         </div>
                         <div
                             class="absolute bottom-0 left-0 w-full h-32 bg-gradient-to-t from-primary/10 to-transparent">
@@ -782,7 +834,7 @@ if ($stats['active_subscriptions'] > 0) {
                         <!-- Decorative SVG Line -->
                         <svg class="absolute bottom-10 left-0 w-full h-24" preserveaspectratio="none">
                             <path d="M0 60 Q 150 10, 300 50 T 600 20 T 900 70 T 1200 40" fill="transparent"
-                                stroke="#1152d4" stroke-width="2"></path>
+                                stroke="#b91c1c" stroke-width="2"></path>
                         </svg>
                     </div>
                     <div class="grid grid-cols-4 gap-6 mt-6">

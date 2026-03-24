@@ -247,7 +247,7 @@ function actionBadgeClass(string $action): string
     if (strpos($value, 'login') !== false || strpos($value, 'auth') !== false || strpos($value, 'signin') !== false) {
         return 'bg-slate-100 text-slate-700';
     }
-    return 'bg-blue-100 text-blue-800';
+    return 'bg-slate-100 text-slate-700';
 }
 
 $queryBase = $_GET;
@@ -279,53 +279,53 @@ $nextPage = min($totalPages, $page + 1);
             theme: {
                 extend: {
                     colors: {
-                        "secondary-fixed": "#e2e8f0",
+                        "secondary-fixed": "#e5e7eb",
                         "on-secondary": "#ffffff",
-                        "on-secondary-container": "#1e293b",
+                        "on-secondary-container": "#18181b",
                         "tertiary": "#f59e0b",
                         "on-tertiary-fixed-variant": "#9a3412",
-                        "inverse-surface": "#1e293b",
+                        "inverse-surface": "#18181b",
                         "on-tertiary": "#ffffff",
-                        "primary-container": "#eef2ff",
+                        "primary-container": "#fee2e2",
                         "on-error-container": "#991b1b",
                         "tertiary-fixed": "#ffedd5",
                         "tertiary-container": "#fef3c7",
-                        "outline": "#e2e8f0",
-                        "on-secondary-fixed": "#0f172a",
-                        "on-surface-variant": "#64748b",
+                        "outline": "#e5e7eb",
+                        "on-secondary-fixed": "#111827",
+                        "on-surface-variant": "#525252",
                         "surface-container-lowest": "#ffffff",
                         "error-container": "#fee2e2",
                         "tertiary-fixed-dim": "#fed7aa",
                         "surface-bright": "#ffffff",
-                        "secondary-container": "#f1f5f9",
-                        "on-primary-fixed": "#1e3a8a",
-                        "surface-tint": "#1152d4",
-                        "surface-dim": "#d9d9e4",
-                        "error": "#ef4444",
+                        "secondary-container": "#f5f5f5",
+                        "on-primary-fixed": "#7f1d1d",
+                        "surface-tint": "#b91c1c",
+                        "surface-dim": "#e5e7eb",
+                        "error": "#dc2626",
                         "on-tertiary-container": "#92400e",
-                        "primary-fixed": "#dbeafe",
-                        "on-secondary-fixed-variant": "#334155",
-                        "surface": "#f6f6f8",
-                        "background": "#f6f6f8",
-                        "outline-variant": "#cbd5e1",
+                        "primary-fixed": "#fee2e2",
+                        "on-secondary-fixed-variant": "#3f3f46",
+                        "surface": "#ffffff",
+                        "background": "#ffffff",
+                        "outline-variant": "#d4d4d8",
                         "on-primary": "#ffffff",
                         "inverse-on-surface": "#f8fafc",
                         "on-tertiary-fixed": "#7c2d12",
                         "surface-container": "#ffffff",
-                        "secondary": "#475569",
-                        "primary": "#1152d4",
-                        "on-primary-container": "#1152d4",
+                        "secondary": "#3f3f46",
+                        "primary": "#b91c1c",
+                        "on-primary-container": "#7f1d1d",
                         "surface-container-highest": "#ffffff",
-                        "primary-fixed-dim": "#bfdbfe",
-                        "on-surface": "#0f172a",
-                        "on-background": "#0f172a",
-                        "inverse-primary": "#b4c5ff",
+                        "primary-fixed-dim": "#fecaca",
+                        "on-surface": "#111827",
+                        "on-background": "#0a0a0a",
+                        "inverse-primary": "#fecaca",
                         "surface-container-high": "#ffffff",
-                        "surface-variant": "#f1f5f9",
-                        "on-primary-fixed-variant": "#1d4ed8",
+                        "surface-variant": "#f5f5f5",
+                        "on-primary-fixed-variant": "#991b1b",
                         "on-error": "#ffffff",
                         "surface-container-low": "#ffffff",
-                        "secondary-fixed-dim": "#cbd5e1"
+                        "secondary-fixed-dim": "#d4d4d8"
                     },
                     fontFamily: {
                         "headline": ["Inter"],
@@ -389,14 +389,14 @@ $nextPage = min($totalPages, $page + 1);
                 <span class="material-symbols-outlined" data-icon="monitoring">monitoring</span>
                 <span class="text-sm">Sales Reports</span>
             </a>
-            <a class="flex items-center gap-3 px-3 py-2.5 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400 font-bold border-r-4 border-blue-700 dark:border-blue-500 rounded-lg active:scale-95"
+            <a class="flex items-center gap-3 px-3 py-2.5 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 font-bold border-r-4 border-red-700 dark:border-red-500 rounded-lg active:scale-95"
                 href="superauditlogs.php">
                 <span class="material-symbols-outlined" data-icon="assignment">assignment</span>
                 <span class="text-sm">Audit Logs</span>
             </a>
 
             <a class="flex items-center gap-3 px-3 py-2.5 text-slate-600 dark:text-slate-400 font-medium hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors rounded-lg active:scale-95"
-                href="backup_restore.php">
+                href="superbackup.php">
                 <span class="material-symbols-outlined" data-icon="backup"
                     style="font-variation-settings: 'FILL' 1;">backup</span>
                 <span class="text-sm">System Backup</span>
@@ -485,7 +485,7 @@ $nextPage = min($totalPages, $page + 1);
                         <label class="text-[10px] font-bold text-slate-500 uppercase tracking-widest px-1">Date
                             Range</label>
                         <select name="date_range"
-                            class="w-full bg-slate-50 border-slate-200 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 py-2">
+                            class="w-full bg-slate-50 border-slate-200 text-sm rounded-lg focus:ring-primary focus:border-primary py-2">
                             <option value="24h" <?= $dateRange === '24h' ? 'selected' : '' ?>>Last 24 Hours</option>
                             <option value="7d" <?= $dateRange === '7d' ? 'selected' : '' ?>>Last 7 Days</option>
                             <option value="30d" <?= $dateRange === '30d' ? 'selected' : '' ?>>Last 30 Days</option>
@@ -496,7 +496,7 @@ $nextPage = min($totalPages, $page + 1);
                         <label class="text-[10px] font-bold text-slate-500 uppercase tracking-widest px-1">Action
                             Category</label>
                         <select name="action"
-                            class="w-full bg-slate-50 border-slate-200 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 py-2">
+                            class="w-full bg-slate-50 border-slate-200 text-sm rounded-lg focus:ring-primary focus:border-primary py-2">
                             <option value="">All Actions</option>
                             <?php foreach ($actions as $actionOption): ?>
                                 <option value="<?= htmlspecialchars($actionOption) ?>" <?= $action === $actionOption ? 'selected' : '' ?>><?= htmlspecialchars($actionOption) ?></option>
@@ -507,7 +507,7 @@ $nextPage = min($totalPages, $page + 1);
                         <label
                             class="text-[10px] font-bold text-slate-500 uppercase tracking-widest px-1">Admin/User</label>
                         <select name="role"
-                            class="w-full bg-slate-50 border-slate-200 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 py-2">
+                            class="w-full bg-slate-50 border-slate-200 text-sm rounded-lg focus:ring-primary focus:border-primary py-2">
                             <option value="">All Users</option>
                             <?php foreach ($roles as $roleOption): ?>
                                 <option value="<?= htmlspecialchars($roleOption) ?>" <?= $role === $roleOption ? 'selected' : '' ?>><?= htmlspecialchars(ucfirst($roleOption)) ?></option>
@@ -518,7 +518,7 @@ $nextPage = min($totalPages, $page + 1);
                         <label
                             class="text-[10px] font-bold text-slate-500 uppercase tracking-widest px-1">Target Entity</label>
                         <select name="entity_type"
-                            class="w-full bg-slate-50 border-slate-200 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 py-2">
+                            class="w-full bg-slate-50 border-slate-200 text-sm rounded-lg focus:ring-primary focus:border-primary py-2">
                             <option value="">All Entities</option>
                             <?php foreach ($entityTypes as $entityOption): ?>
                                 <option value="<?= htmlspecialchars($entityOption) ?>" <?= $entityType === $entityOption ? 'selected' : '' ?>><?= htmlspecialchars($entityOption) ?></option>
@@ -527,7 +527,7 @@ $nextPage = min($totalPages, $page + 1);
                     </div>
                     <div class="flex items-end">
                         <button type="submit"
-                            class="w-full bg-blue-700 hover:bg-blue-800 text-white font-bold text-sm py-2 px-4 rounded-lg transition-colors flex items-center justify-center gap-2">
+                            class="w-full bg-red-700 hover:bg-red-800 text-white font-bold text-sm py-2 px-4 rounded-lg transition-colors flex items-center justify-center gap-2">
                             <span class="material-symbols-outlined text-lg" data-icon="filter_list">filter_list</span>
                             Apply Filters
                         </button>
@@ -616,7 +616,7 @@ $nextPage = min($totalPages, $page + 1);
                             class="p-1 rounded hover:bg-slate-200 text-slate-400 transition-colors <?= $page <= 1 ? 'pointer-events-none opacity-30' : '' ?>">
                             <span class="material-symbols-outlined" data-icon="chevron_left">chevron_left</span>
                         </a>
-                        <span class="h-8 min-w-8 px-2 flex items-center justify-center rounded bg-blue-700 text-white text-xs font-bold"><?= (int)$page ?></span>
+                        <span class="h-8 min-w-8 px-2 flex items-center justify-center rounded bg-red-700 text-white text-xs font-bold"><?= (int)$page ?></span>
                         <a href="?<?= htmlspecialchars(http_build_query(array_merge($queryBase, ['q' => $q, 'date_range' => $dateRange, 'action' => $action, 'role' => $role, 'entity_type' => $entityType, 'page' => $nextPage]))) ?>"
                             class="p-1 rounded hover:bg-slate-200 text-slate-400 transition-colors <?= $page >= $totalPages ? 'pointer-events-none opacity-30' : '' ?>">
                             <span class="material-symbols-outlined" data-icon="chevron_right">chevron_right</span>
@@ -627,7 +627,7 @@ $nextPage = min($totalPages, $page + 1);
             <!-- Summary Stats (Bento Grid Style) -->
             <div class="mt-8 grid grid-cols-1 md:grid-cols-3 gap-6">
                 <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex items-center gap-4">
-                    <div class="h-12 w-12 rounded-lg bg-blue-50 flex items-center justify-center text-blue-700">
+                    <div class="h-12 w-12 rounded-lg bg-red-50 flex items-center justify-center text-red-700">
                         <span class="material-symbols-outlined" data-icon="security">security</span>
                     </div>
                     <div>
