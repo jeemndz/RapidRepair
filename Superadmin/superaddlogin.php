@@ -25,7 +25,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
             $_SESSION['email'] = $row['email'];
 
             // Redirect to superadd.php
-            header("Location: superadd.php");
+            header("Location: /Superadmin/superadd.php");
             exit();
         } else {
             $message = "Incorrect password.";
