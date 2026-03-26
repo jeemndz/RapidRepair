@@ -62,7 +62,7 @@ function buildWhereSql($parts)
 
 function formatCurrency($value)
 {
-    return "$" . number_format($value, 2);
+    return "₱" . number_format($value, 2);
 }
 
 function formatCount($value)
