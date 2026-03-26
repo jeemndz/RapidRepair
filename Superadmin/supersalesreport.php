@@ -817,7 +817,7 @@ $dateStart = match ($dateRange) {
                             beginAtZero: true,
                             ticks: {
                                 callback: function (value) {
-                                    return '$' + (value / 1000).toFixed(0) + 'k';
+                                    return '₱' + (value / 1000).toFixed(0) + 'k';
                                 },
                                 font: {
                                     size: 11
