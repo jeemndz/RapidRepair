@@ -96,7 +96,7 @@ function validateEnum(?string $value, array $allowed, string $field): string
 }
 
 $host = envOrDefault('DB_HOST', envOrDefault('MYSQL_HOST', '127.0.0.1'));
-$db = envOrDefault('DB_NAME', envOrDefault('MYSQL_DATABASE', 'rapidrepair'));
+$db = envOrDefault('DB_NAME', envOrDefault('MYSQL_DATABASE', 'rapidrepairs'));
 $user = envOrDefault('DB_USER', envOrDefault('MYSQL_USER', 'root'));
 $pass = envOrDefault('DB_PASS', envOrDefault('MYSQL_PASSWORD', ''));
 $port = envOrDefault('DB_PORT', '3306');
