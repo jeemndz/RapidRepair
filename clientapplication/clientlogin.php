@@ -1,3 +1,66 @@
+<?php
+session_start();
+include __DIR__ . "/../db.php";
+
+$errors = [];
+$formData = [
+    'email' => ''
+];
+
+if (isset($_SESSION['client_id'])) {
+    header('Location: clientlanding.php');
+    exit;
+}
+
+function clientInfoColumnExists($conn, $columnName)
+{
+    $safeColumn = mysqli_real_escape_string($conn, $columnName);
+    $checkSql = "SHOW COLUMNS FROM client_info LIKE '$safeColumn'";
+    $check = mysqli_query($conn, $checkSql);
+    return $check && mysqli_num_rows($check) > 0;
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['loginClient'])) {
+    $formData['email'] = trim((string) ($_POST['email'] ?? ''));
+    $password = (string) ($_POST['password'] ?? '');
+
+    if ($formData['email'] === '' || $password === '') {
+        $errors[] = 'Email and password are required.';
+    }
+
+    if ($formData['email'] !== '' && !filter_var($formData['email'], FILTER_VALIDATE_EMAIL)) {
+        $errors[] = 'Please enter a valid email address.';
+    }
+
+    if (!clientInfoColumnExists($conn, 'password_hash')) {
+        $errors[] = 'Login is not ready yet. Please register again after database update.';
+    }
+
+    if (count($errors) === 0) {
+        $stmt = mysqli_prepare($conn, "SELECT clientID, firstName, lastName, email, password_hash FROM client_info WHERE email = ? LIMIT 1");
+        if ($stmt) {
+            mysqli_stmt_bind_param($stmt, 's', $formData['email']);
+            mysqli_stmt_execute($stmt);
+            $result = mysqli_stmt_get_result($stmt);
+            $client = $result ? mysqli_fetch_assoc($result) : null;
+            mysqli_stmt_close($stmt);
+
+            if ($client && isset($client['password_hash']) && password_verify($password, (string) $client['password_hash'])) {
+                $_SESSION['client_id'] = (int) $client['clientID'];
+                $_SESSION['client_email'] = (string) $client['email'];
+                $_SESSION['client_name'] = trim(((string) $client['firstName']) . ' ' . ((string) $client['lastName']));
+
+                header('Location: clientlanding.php');
+                exit;
+            }
+
+            $errors[] = 'Invalid email or password.';
+        } else {
+            $errors[] = 'Unable to process login right now. Please try again.';
+        }
+    }
+}
+?>
 <!DOCTYPE html>
 
 <html class="light" lang="en">
@@ -105,7 +168,7 @@
             <!-- Branding Overlay Content -->
             <div class="relative z-10 p-16 flex flex-col justify-between h-full w-full">
                 <div class="flex items-center gap-2">
-                    <span class="text-3xl font-black tracking-tighter text-primary">Cobalt Precision</span>
+                    <span class="text-3xl font-black tracking-tighter text-primary">RapidRepairCo.</span>
                 </div>
                 <div class="max-w-md">
                     <div
@@ -143,7 +206,7 @@
             class="relative w-full md:w-1/2 lg:w-2/5 bg-white flex flex-col justify-center px-8 sm:px-12 lg:px-24 py-12">
             <nav class="absolute top-0 right-0 p-8">
                 <a class="flex items-center gap-2 text-xs font-bold text-on-surface-variant hover:text-primary transition-colors uppercase tracking-widest"
-                    href="#">
+                    href="clientlanding.php">
                     <span class="material-symbols-outlined text-[18px]">arrow_back</span>
                     Back to Website
                 </a>
@@ -151,13 +214,22 @@
             <div class="w-full max-w-sm mx-auto">
                 <!-- Mobile Branding -->
                 <div class="md:hidden mb-12 flex items-center gap-2">
-                    <span class="text-2xl font-black text-primary tracking-tighter">Cobalt Precision</span>
+                    <span class="text-2xl font-black text-primary tracking-tighter">RapidRepairCo.</span>
                 </div>
                 <header class="mb-10">
                     <h2 class="text-3xl text-on-surface tracking-tight mb-2 font-bold">Authorize Access</h2>
                     <p class="text-on-surface-variant font-medium">Enter your credentials to enter the network.</p>
                 </header>
-                <form class="space-y-6">
+                <?php if (count($errors) > 0): ?>
+                    <div class="mb-6 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                        <?php foreach ($errors as $error): ?>
+                            <p><?php echo htmlspecialchars($error, ENT_QUOTES, 'UTF-8'); ?></p>
+                        <?php endforeach; ?>
+                    </div>
+                <?php endif; ?>
+
+                <form class="space-y-6" method="post" action="">
+                    <input type="hidden" name="loginClient" value="1" />
                     <!-- Email Input -->
                     <div class="space-y-2">
                         <label class="text-xs font-bold text-on-surface-variant uppercase tracking-widest"
@@ -169,8 +241,8 @@
                             </div>
                             <input
                                 class="block w-full pl-10 pr-4 py-3 bg-surface-variant border-transparent border-b-2 border-b-outline focus:border-b-primary focus:ring-0 text-sm font-semibold transition-all duration-200"
-                                id="email" name="email" placeholder="name@cobaltprecision.com" required=""
-                                type="email" />
+                                id="email" name="email" placeholder="name@rapidrepairco.com" required=""
+                                type="email" value="<?php echo htmlspecialchars($formData['email'], ENT_QUOTES, 'UTF-8'); ?>" />
                         </div>
                     </div>
                     <!-- Password Input -->
@@ -203,6 +275,10 @@
                         class="w-full flex justify-center items-center py-4 px-6 bg-primary text-white text-sm font-bold uppercase tracking-[0.2em] rounded-lg shadow-lg hover:shadow-primary/20 hover:translate-y-[-1px] active:translate-y-[1px] transition-all duration-300 group"
                         type="submit">Authorize Access <span
                             class="material-symbols-outlined ml-3 text-[20px] group-hover:translate-x-1 transition-transform">arrow_forward</span></button>
+                    <div class="text-center">
+                        <span class="text-sm text-on-surface-variant">Don't have an account? </span>
+                        <a class="text-sm font-bold text-primary hover:underline" href="clientregister.php">Register here</a>
+                    </div>
                 </form>
                 <!-- Support Footer -->
                 <footer class="mt-12 pt-8 border-t border-outline flex flex-col gap-4">

@@ -1,3 +1,129 @@
+<?php
+include __DIR__ . "/../db.php";
+
+$errors = [];
+$successMessage = "";
+
+$formData = [
+    'firstName' => '',
+    'lastName' => '',
+    'email' => '',
+    'password' => '',
+    'confirmPassword' => ''
+];
+
+function clientInfoColumnExists($conn, $columnName)
+{
+    $safeColumn = mysqli_real_escape_string($conn, $columnName);
+    $checkSql = "SHOW COLUMNS FROM client_info LIKE '$safeColumn'";
+    $check = mysqli_query($conn, $checkSql);
+    return $check && mysqli_num_rows($check) > 0;
+}
+
+function ensureClientPasswordColumn($conn)
+{
+    if (clientInfoColumnExists($conn, 'password_hash')) {
+        return true;
+    }
+
+    $alterSql = "ALTER TABLE client_info ADD COLUMN password_hash VARCHAR(255) NULL AFTER email";
+    return mysqli_query($conn, $alterSql) !== false;
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['registerClient'])) {
+    $formData['firstName'] = trim((string) ($_POST['firstName'] ?? ''));
+    $formData['lastName'] = trim((string) ($_POST['lastName'] ?? ''));
+    $formData['email'] = trim((string) ($_POST['email'] ?? ''));
+    $formData['password'] = (string) ($_POST['password'] ?? '');
+    $formData['confirmPassword'] = (string) ($_POST['confirmPassword'] ?? '');
+
+    if ($formData['firstName'] === '' || $formData['lastName'] === '' || $formData['email'] === '' || $formData['password'] === '' || $formData['confirmPassword'] === '') {
+        $errors[] = 'First name, last name, email, and password fields are required.';
+    }
+
+    if ($formData['email'] !== '' && !filter_var($formData['email'], FILTER_VALIDATE_EMAIL)) {
+        $errors[] = 'Please enter a valid email address.';
+    }
+
+    if ($formData['password'] !== '' && strlen($formData['password']) < 8) {
+        $errors[] = 'Password must be at least 8 characters.';
+    }
+
+    if ($formData['password'] !== $formData['confirmPassword']) {
+        $errors[] = 'Password and confirm password do not match.';
+    }
+
+    if (count($errors) === 0) {
+        if (!ensureClientPasswordColumn($conn)) {
+            $errors[] = 'System setup issue: password column is missing in client_info.';
+        }
+    }
+
+    if (count($errors) === 0) {
+        $emailCheckStmt = mysqli_prepare($conn, "SELECT clientID FROM client_info WHERE email = ? LIMIT 1");
+        if ($emailCheckStmt) {
+            mysqli_stmt_bind_param($emailCheckStmt, 's', $formData['email']);
+            mysqli_stmt_execute($emailCheckStmt);
+            mysqli_stmt_store_result($emailCheckStmt);
+            if (mysqli_stmt_num_rows($emailCheckStmt) > 0) {
+                $errors[] = 'This email is already registered.';
+            }
+            mysqli_stmt_close($emailCheckStmt);
+        }
+    }
+
+    if (count($errors) === 0) {
+        $passwordHash = password_hash($formData['password'], PASSWORD_DEFAULT);
+        $hasLegacyPasswordColumn = clientInfoColumnExists($conn, 'password');
+
+        if ($hasLegacyPasswordColumn) {
+            $stmt = mysqli_prepare($conn, "INSERT INTO client_info (firstName, lastName, email, password, password_hash) VALUES (?, ?, ?, ?, ?)");
+        } else {
+            $stmt = mysqli_prepare($conn, "INSERT INTO client_info (firstName, lastName, email, password_hash) VALUES (?, ?, ?, ?)");
+        }
+
+        if ($stmt) {
+            if ($hasLegacyPasswordColumn) {
+                mysqli_stmt_bind_param(
+                    $stmt,
+                    'sssss',
+                    $formData['firstName'],
+                    $formData['lastName'],
+                    $formData['email'],
+                    $passwordHash,
+                    $passwordHash
+                );
+            } else {
+                mysqli_stmt_bind_param(
+                    $stmt,
+                    'ssss',
+                    $formData['firstName'],
+                    $formData['lastName'],
+                    $formData['email'],
+                    $passwordHash
+                );
+            }
+
+            if (mysqli_stmt_execute($stmt)) {
+                $successMessage = 'Registration submitted successfully.';
+                $formData = [
+                    'firstName' => '',
+                    'lastName' => '',
+                    'email' => '',
+                    'password' => '',
+                    'confirmPassword' => ''
+                ];
+            } else {
+                $errors[] = 'Unable to submit registration right now. Please try again.';
+            }
+
+            mysqli_stmt_close($stmt);
+        } else {
+            $errors[] = 'Unable to prepare registration request. Please try again.';
+        }
+    }
+}
+?>
 <!DOCTYPE html>
 
 <html lang="en">
@@ -5,7 +131,7 @@
 <head>
     <meta charset="utf-8" />
     <meta content="width=device-width, initial-scale=1.0" name="viewport" />
-    <title>Rapid Repair Co. - Create Account</title>
+    <title>RapidRepairCo. - Create Account</title>
     <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&amp;display=swap"
         rel="stylesheet" />
@@ -101,12 +227,12 @@
     <nav
         class="fixed top-0 w-full z-50 flex justify-between items-center px-8 h-16 bg-white dark:bg-slate-900 shadow-sm dark:shadow-none border-b border-slate-200 dark:border-slate-800 font-['Inter'] antialiased tracking-tight">
         <div class="text-[20px] font-black text-[#1152d4] dark:text-blue-500 uppercase tracking-tighter">
-            Rapid Repair Co.
+            RapidRepairCo.
         </div>
-        <button
-            class="bg-primary text-on-primary px-4 py-2 rounded-lg text-[14px] font-bold active:opacity-80 transition-all">
+        <a href="clientlogin.php"
+            class="bg-primary text-on-primary px-4 py-2 rounded-lg text-[14px] font-bold active:opacity-80 transition-all inline-flex items-center">
             Partner Login
-        </button>
+        </a>
     </nav>
     <!-- Main Registration Content -->
     <main class="flex-grow flex items-stretch pt-16">
@@ -123,7 +249,7 @@
                     Join the Future of Shop Management
                 </h1>
                 <p class="text-[18px] text-slate-400 max-w-lg leading-relaxed mb-12">
-                    Cobalt Precision provides the high-fidelity operational tools required for top-tier repair networks.
+                    RapidRepairCo. provides the high-fidelity operational tools required for top-tier repair networks.
                     Secure your position in the architectural standard of vehicle maintenance.
                 </p>
                 <div class="grid grid-cols-1 gap-8">
@@ -162,7 +288,7 @@
         <div class="w-full lg:w-1/2 flex items-center justify-center p-8 md:p-12 lg:p-24 bg-surface">
             <div class="w-full max-w-md">
                 <div class="mb-10 lg:hidden">
-                    <div class="text-[20px] font-black text-[#1152d4] uppercase tracking-tighter mb-2">Cobalt Network
+                    <div class="text-[20px] font-black text-[#1152d4] uppercase tracking-tighter mb-2">RapidRepairCo.
                     </div>
                     <h2 class="text-[24px] font-bold tracking-tight">Join the Future of Shop Management</h2>
                 </div>
@@ -172,19 +298,36 @@
                         <p class="text-on-surface-variant text-[14px]">Enter your shop details to begin the onboarding
                             process.</p>
                     </div>
-                    <form class="space-y-5">
+                    <?php if ($successMessage !== ''): ?>
+                        <div class="mb-5 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">
+                            <?php echo htmlspecialchars($successMessage, ENT_QUOTES, 'UTF-8'); ?>
+                        </div>
+                    <?php endif; ?>
+
+                    <?php if (count($errors) > 0): ?>
+                        <div class="mb-5 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                            <?php foreach ($errors as $error): ?>
+                                <p><?php echo htmlspecialchars($error, ENT_QUOTES, 'UTF-8'); ?></p>
+                            <?php endforeach; ?>
+                        </div>
+                    <?php endif; ?>
+
+                    <form class="space-y-5" method="post" action="">
+                        <input type="hidden" name="registerClient" value="1" />
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div class="space-y-1.5">
                                 <label class="text-[12px] font-bold text-on-surface-variant uppercase tracking-wider">First Name</label>
                                 <input
                                     class="w-full h-11 bg-surface-container-highest border border-outline px-4 rounded-lg focus:ring-1 focus:ring-primary focus:border-primary text-[14px] outline-none transition-all"
-                                    placeholder="First Name" type="text" />
+                                    placeholder="First Name" type="text" name="firstName" required
+                                    value="<?php echo htmlspecialchars($formData['firstName'], ENT_QUOTES, 'UTF-8'); ?>" />
                             </div>
                             <div class="space-y-1.5">
                                 <label class="text-[12px] font-bold text-on-surface-variant uppercase tracking-wider">Last Name</label>
                                 <input
                                     class="w-full h-11 bg-surface-container-highest border border-outline px-4 rounded-lg focus:ring-1 focus:ring-primary focus:border-primary text-[14px] outline-none transition-all"
-                                    placeholder="Last Name" type="text" />
+                                    placeholder="Last Name" type="text" name="lastName" required
+                                    value="<?php echo htmlspecialchars($formData['lastName'], ENT_QUOTES, 'UTF-8'); ?>" />
                             </div>
                         </div>
                         <div class="space-y-1.5">
@@ -193,7 +336,8 @@
                                 Email Address</label>
                             <input
                                 class="w-full h-11 bg-surface-container-highest border border-outline px-4 rounded-lg focus:ring-1 focus:ring-primary focus:border-primary text-[14px] outline-none transition-all"
-                                placeholder="manager@shop.com" type="email" />
+                                placeholder="manager@shop.com" type="email" name="email" required
+                                value="<?php echo htmlspecialchars($formData['email'], ENT_QUOTES, 'UTF-8'); ?>" />
                         </div>
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div class="space-y-1.5">
@@ -202,7 +346,7 @@
                                     Password</label>
                                 <input
                                     class="w-full h-11 bg-surface-container-highest border border-outline px-4 rounded-lg focus:ring-1 focus:ring-primary focus:border-primary text-[14px] outline-none transition-all"
-                                    placeholder="••••••••" type="password" />
+                                    placeholder="••••••••" type="password" name="password" required />
                             </div>
                             <div class="space-y-1.5">
                                 <label
@@ -210,12 +354,12 @@
                                     Password</label>
                                 <input
                                     class="w-full h-11 bg-surface-container-highest border border-outline px-4 rounded-lg focus:ring-1 focus:ring-primary focus:border-primary text-[14px] outline-none transition-all"
-                                    placeholder="••••••••" type="password" />
+                                    placeholder="••••••••" type="password" name="confirmPassword" required />
                             </div>
                         </div>
                         <div class="flex items-center gap-2 pt-2">
                             <input class="w-4 h-4 text-primary border-outline rounded focus:ring-primary" id="terms"
-                                type="checkbox" />
+                                type="checkbox" required />
                             <label class="text-[12px] text-on-surface-variant leading-none" for="terms">I agree to the
                                 <a class="text-primary font-bold" href="#">Terms of Service</a> and <a
                                     class="text-primary font-bold" href="#">Privacy Policy</a>.</label>
@@ -228,13 +372,13 @@
                             </button>
                             <div class="text-center">
                                 <span class="text-[14px] text-on-surface-variant">Already have an account? </span>
-                                <a class="text-[14px] text-primary font-bold hover:underline" href="#">Login</a>
+                                <a class="text-[14px] text-primary font-bold hover:underline" href="clientlogin.php">Login</a>
                             </div>
                         </div>
                     </form>
                 </div>
                 <p class="mt-8 text-center text-[12px] text-on-surface-variant">
-                    Security verified by Rapid Repair Auth Services.
+                    Security verified by RapidRepairCo. Auth Services.
                 </p>
             </div>
         </div>
@@ -243,10 +387,10 @@
     <footer
         class="w-full py-12 px-8 flex flex-col md:flex-row justify-between items-center gap-4 bg-slate-50 dark:bg-slate-950 border-t border-slate-200 dark:border-slate-800 font-['Inter'] text-[14px] leading-relaxed">
         <div class="text-lg font-bold text-slate-900 dark:text-slate-100">
-            Rapid Repair Co.
+            RapidRepairCo.
         </div>
         <div class="text-slate-500 dark:text-slate-400 text-center md:text-left">
-            © 2026 Rapid Repair Co. All rights reserved.
+            © 2026 RapidRepairCo. All rights reserved.
         </div>
         <div class="flex gap-6">
             <a class="text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 transition-colors"

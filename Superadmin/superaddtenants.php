@@ -6,7 +6,7 @@ if (!isset($_SESSION['superadmin_id'])) {
     exit();
 }
 
-// ✅ Load environment variables from .env file
+// âœ… Load environment variables from .env file
 if (file_exists(__DIR__ . '/../.env')) {
     $envLines = file(__DIR__ . '/../.env', FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
     foreach ($envLines as $line) {
@@ -27,6 +27,57 @@ header("Pragma: no-cache");
 header("Expires: Thu, 01 Jan 1970 00:00:00 GMT");
 
 include __DIR__ . "/../db.php";
+
+if (isset($_POST['logout_superadmin'])) {
+    $_SESSION = [];
+
+    if (ini_get('session.use_cookies')) {
+        $params = session_get_cookie_params();
+        setcookie(
+            session_name(),
+            '',
+            time() - 42000,
+            $params['path'],
+            $params['domain'],
+            $params['secure'],
+            $params['httponly']
+        );
+    }
+
+    session_destroy();
+    header("Location: superaddlogin.php");
+    exit();
+}
+
+$superadminName = "Superadmin";
+$superadminStmt = $conn->prepare("SELECT fullName FROM superadmin WHERE superadmin_id = ? LIMIT 1");
+if ($superadminStmt) {
+    $superadminStmt->bind_param("i", $_SESSION['superadmin_id']);
+    $superadminStmt->execute();
+    $superadminRes = $superadminStmt->get_result();
+    if ($superadminRes && $superadminRes->num_rows > 0) {
+        $superadminRow = $superadminRes->fetch_assoc();
+        $superadminName = $superadminRow['fullName'] ?: $superadminName;
+    }
+    $superadminStmt->close();
+}
+
+function initials($name)
+{
+    $name = trim((string) $name);
+    if ($name === '') {
+        return 'NA';
+    }
+
+    $parts = preg_split('/\s+/', $name);
+    if (!$parts) {
+        return 'NA';
+    }
+
+    $first = strtoupper(substr($parts[0], 0, 1));
+    $second = count($parts) > 1 ? strtoupper(substr($parts[count($parts) - 1], 0, 1)) : '';
+    return $first . ($second ?: '');
+}
 
 function subscriptionPlansTableExists($conn)
 {
@@ -67,6 +118,115 @@ function getBillingCycleDivisor($billingCycle)
     }
 
     return 1;
+}
+
+function subscriptionsTableExists($conn)
+{
+    $check = mysqli_query($conn, "SHOW TABLES LIKE 'subscriptions'");
+    return $check && mysqli_num_rows($check) > 0;
+}
+
+function resolvePlanIdForSubscription($conn, $planKey, $planName)
+{
+    if (!subscriptionPlansTableExists($conn)) {
+        return null;
+    }
+
+    $hasPlanIdColumn = subscriptionPlansColumnExists($conn, 'plan_id');
+    if (!$hasPlanIdColumn) {
+        return null;
+    }
+
+    $hasPlanCodeColumn = subscriptionPlansColumnExists($conn, 'plan_code');
+    $hasPlanNameColumn = subscriptionPlansColumnExists($conn, 'plan_name');
+
+    if ($hasPlanCodeColumn) {
+        $safePlanKey = mysqli_real_escape_string($conn, (string) $planKey);
+        $queryByCode = mysqli_query($conn, "SELECT plan_id FROM subscription_plans WHERE plan_code='$safePlanKey' LIMIT 1");
+        if ($queryByCode && mysqli_num_rows($queryByCode) > 0) {
+            $row = mysqli_fetch_assoc($queryByCode);
+            return isset($row['plan_id']) ? (int) $row['plan_id'] : null;
+        }
+    }
+
+    if ($hasPlanNameColumn) {
+        $safePlanName = mysqli_real_escape_string($conn, (string) $planName);
+        $queryByName = mysqli_query($conn, "SELECT plan_id FROM subscription_plans WHERE plan_name='$safePlanName' LIMIT 1");
+        if ($queryByName && mysqli_num_rows($queryByName) > 0) {
+            $row = mysqli_fetch_assoc($queryByName);
+            return isset($row['plan_id']) ? (int) $row['plan_id'] : null;
+        }
+    }
+
+    return null;
+}
+
+function syncApprovedTenantSubscription($conn, $tenantID, $planId, $billingCycle, $subscriptionStart, $subscriptionEnd, $nextBillingDate, $amount)
+{
+    if (!subscriptionsTableExists($conn)) {
+        return true;
+    }
+
+    if ($planId === null) {
+        return false;
+    }
+
+    $safeTenantID = mysqli_real_escape_string($conn, (string) $tenantID);
+    $safeBillingCycle = mysqli_real_escape_string($conn, (string) $billingCycle);
+    $safeStartDate = mysqli_real_escape_string($conn, (string) $subscriptionStart);
+    $safeEndDate = mysqli_real_escape_string($conn, (string) $subscriptionEnd);
+    $safeNextBillingDate = mysqli_real_escape_string($conn, (string) $nextBillingDate);
+    $safeAmount = mysqli_real_escape_string($conn, number_format((float) $amount, 2, '.', ''));
+    $safePlanId = (int) $planId;
+
+    $existingSql = "SELECT subscription_id FROM subscriptions WHERE tenantID='$safeTenantID' ORDER BY subscription_id DESC LIMIT 1";
+    $existingRes = mysqli_query($conn, $existingSql);
+
+    if ($existingRes && mysqli_num_rows($existingRes) > 0) {
+        $existing = mysqli_fetch_assoc($existingRes);
+        $subscriptionId = (int) ($existing['subscription_id'] ?? 0);
+
+        if ($subscriptionId > 0) {
+            $updateSql = "UPDATE subscriptions SET
+                plan_id = '$safePlanId',
+                billing_cycle = '$safeBillingCycle',
+                start_date = '$safeStartDate',
+                end_date = '$safeEndDate',
+                next_billing_date = '$safeNextBillingDate',
+                amount = '$safeAmount',
+                status = 'active',
+                updated_at = NOW()
+                WHERE subscription_id = '$subscriptionId' LIMIT 1";
+
+            return mysqli_query($conn, $updateSql) !== false;
+        }
+    }
+
+    $insertSql = "INSERT INTO subscriptions (
+        tenantID,
+        plan_id,
+        billing_cycle,
+        start_date,
+        end_date,
+        next_billing_date,
+        amount,
+        status,
+        created_at,
+        updated_at
+    ) VALUES (
+        '$safeTenantID',
+        '$safePlanId',
+        '$safeBillingCycle',
+        '$safeStartDate',
+        '$safeEndDate',
+        '$safeNextBillingDate',
+        '$safeAmount',
+        'active',
+        NOW(),
+        NOW()
+    )";
+
+    return mysqli_query($conn, $insertSql) !== false;
 }
 
 function loadSubscriptionPlans($conn)
@@ -143,6 +303,229 @@ function loadSubscriptionPlans($conn)
     return $plans;
 }
 
+function buildMailTransports()
+{
+    $smtpHost = getenv('SMTP_HOST') ?: 'smtp.gmail.com';
+    $smtpPort = (int) (getenv('SMTP_PORT') ?: 587);
+    $smtpEncryption = strtolower(trim((string) (getenv('SMTP_ENCRYPTION') ?: '')));
+    $smtpUsername = getenv('SMTP_USERNAME') ?: 'rapidrepair224@gmail.com';
+    $smtpPassword = getenv('SMTP_PASSWORD') ?: 'gabd xcqy gbgq rtwj';
+
+    if ($smtpEncryption === '') {
+        $smtpEncryption = ($smtpPort === 465) ? 'ssl' : 'tls';
+    }
+
+    $fallbackSmtpHost = getenv('SMTP_FALLBACK_HOST') ?: $smtpHost;
+    $fallbackSmtpPort = (int) (getenv('SMTP_FALLBACK_PORT') ?: $smtpPort);
+    $fallbackSmtpEncryption = strtolower(trim((string) (getenv('SMTP_FALLBACK_ENCRYPTION') ?: $smtpEncryption)));
+    $fallbackSmtpUsername = getenv('SMTP_FALLBACK_USERNAME') ?: '';
+    $fallbackSmtpPassword = getenv('SMTP_FALLBACK_PASSWORD') ?: '';
+
+    $mailTransports = [
+        [
+            'label' => 'primary',
+            'host' => $smtpHost,
+            'port' => $smtpPort,
+            'encryption' => $smtpEncryption,
+            'username' => $smtpUsername,
+            'password' => $smtpPassword,
+            'from_address' => getenv('MAIL_FROM_ADDRESS') ?: $smtpUsername,
+            'from_name' => getenv('MAIL_FROM_NAME') ?: 'Rapid Repair Admin',
+            'reply_to_address' => getenv('MAIL_REPLY_TO') ?: (getenv('MAIL_FROM_ADDRESS') ?: $smtpUsername),
+            'reply_to_name' => getenv('MAIL_REPLY_TO_NAME') ?: 'Rapid Repair Support'
+        ]
+    ];
+
+    if ($fallbackSmtpUsername !== '' && $fallbackSmtpPassword !== '') {
+        $mailTransports[] = [
+            'label' => 'fallback',
+            'host' => $fallbackSmtpHost,
+            'port' => $fallbackSmtpPort,
+            'encryption' => $fallbackSmtpEncryption,
+            'username' => $fallbackSmtpUsername,
+            'password' => $fallbackSmtpPassword,
+            'from_address' => getenv('SMTP_FALLBACK_FROM_ADDRESS') ?: $fallbackSmtpUsername,
+            'from_name' => getenv('SMTP_FALLBACK_FROM_NAME') ?: (getenv('MAIL_FROM_NAME') ?: 'Rapid Repair Admin'),
+            'reply_to_address' => getenv('SMTP_FALLBACK_REPLY_TO') ?: (getenv('SMTP_FALLBACK_FROM_ADDRESS') ?: $fallbackSmtpUsername),
+            'reply_to_name' => getenv('SMTP_FALLBACK_REPLY_TO_NAME') ?: (getenv('MAIL_REPLY_TO_NAME') ?: 'Rapid Repair Support')
+        ];
+    }
+
+    return $mailTransports;
+}
+
+function sendTenantActivationDetailsEmail($ownerRow, $planName, $billingCycle, $subscriptionStart, $subscriptionEnd, $nextBillingDate, $planTotalPrice)
+{
+    $email = trim((string) ($ownerRow['email'] ?? ''));
+    if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        return ['sent' => false, 'reason' => 'general'];
+    }
+
+    $ownerName = trim((string) ($ownerRow['ownerName'] ?? 'Tenant Owner'));
+    $shopName = trim((string) ($ownerRow['shopName'] ?? 'Your Shop'));
+    $loginSlug = trim((string) ($ownerRow['login_slug'] ?? ''));
+    $baseURL = rtrim((string) (getenv('APP_BASE_URL') ?: 'https://rapidrepair-gygpcbczgyg0czek.southeastasia-01.azurewebsites.net'), '/');
+    $loginLink = $loginSlug !== ''
+        ? $baseURL . '/tenant/tenantlogin.php?shop=' . urlencode($loginSlug)
+        : $baseURL . '/tenant/tenantlogin.php';
+
+    $safeOwnerName = htmlspecialchars($ownerName, ENT_QUOTES, 'UTF-8');
+    $safeShopName = htmlspecialchars($shopName, ENT_QUOTES, 'UTF-8');
+    $safeEmail = htmlspecialchars($email, ENT_QUOTES, 'UTF-8');
+    $safePlanName = htmlspecialchars((string) $planName, ENT_QUOTES, 'UTF-8');
+    $safeBillingCycle = htmlspecialchars(ucfirst((string) $billingCycle), ENT_QUOTES, 'UTF-8');
+    $safeStartDate = htmlspecialchars((string) $subscriptionStart, ENT_QUOTES, 'UTF-8');
+    $safeEndDate = htmlspecialchars((string) $subscriptionEnd, ENT_QUOTES, 'UTF-8');
+    $safeNextBillingDate = htmlspecialchars((string) $nextBillingDate, ENT_QUOTES, 'UTF-8');
+    $safePlanPrice = htmlspecialchars(number_format((float) $planTotalPrice, 2), ENT_QUOTES, 'UTF-8');
+    $safeLoginLink = htmlspecialchars($loginLink, ENT_QUOTES, 'UTF-8');
+
+    $mail = new \PHPMailer\PHPMailer\PHPMailer(true);
+    $mail->isHTML(true);
+    $mail->Subject = 'RapidRepair Application Approved';
+    $mail->Body = "
+        <!DOCTYPE html>
+        <html lang='en'>
+        <head>
+            <meta charset='UTF-8'>
+            <meta name='viewport' content='width=device-width, initial-scale=1.0'>
+            <title>RapidRepair Approval</title>
+        </head>
+        <body style='margin:0;padding:0;background:#f1f5f9;font-family:Arial,Helvetica,sans-serif;color:#0f172a;'>
+            <table role='presentation' cellpadding='0' cellspacing='0' border='0' width='100%' style='background:#f1f5f9;padding:24px 0;'>
+                <tr>
+                    <td align='center'>
+                        <table role='presentation' cellpadding='0' cellspacing='0' border='0' width='100%' style='max-width:640px;background:#ffffff;border:1px solid #dbe1ea;border-radius:14px;overflow:hidden;'>
+                            <tr>
+                                <td style='padding:22px 24px;background:linear-gradient(135deg,#123b69,#0b1f42);color:#e2e8f0;'>
+                                    <h1 style='margin:0;font-size:26px;line-height:32px;font-weight:700;color:#ffffff;'>RapidRepair</h1>
+                                    <p style='margin:6px 0 0 0;font-size:14px;line-height:20px;'>Application approved and activated</p>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td style='padding:24px;'>
+                                    <p style='margin:0 0 12px 0;font-size:24px;line-height:30px;font-weight:700;color:#0f172a;'>Hello {$safeOwnerName},</p>
+                                    <p style='margin:0 0 18px 0;font-size:16px;line-height:24px;color:#1e293b;'>
+                                        Your application for <strong>{$safeShopName}</strong> is now approved and your tenant is active.
+                                    </p>
+
+                                    <table role='presentation' cellpadding='0' cellspacing='0' border='0' width='100%' style='border:1px solid #d1d5db;border-radius:12px;background:#f8fafc;margin:0 0 18px 0;'>
+                                        <tr><td style='padding:14px 16px;font-size:14px;color:#0f172a;'><strong>Plan:</strong> {$safePlanName}</td></tr>
+                                        <tr><td style='padding:0 16px 14px 16px;font-size:14px;color:#0f172a;'><strong>Billing Cycle:</strong> {$safeBillingCycle}</td></tr>
+                                        <tr><td style='padding:0 16px 14px 16px;font-size:14px;color:#0f172a;'><strong>Subscription Start:</strong> {$safeStartDate}</td></tr>
+                                        <tr><td style='padding:0 16px 14px 16px;font-size:14px;color:#0f172a;'><strong>Subscription End:</strong> {$safeEndDate}</td></tr>
+                                        <tr><td style='padding:0 16px 14px 16px;font-size:14px;color:#0f172a;'><strong>Next Billing Date:</strong> {$safeNextBillingDate}</td></tr>
+                                        <tr><td style='padding:0 16px 16px 16px;font-size:14px;color:#0f172a;'><strong>Amount:</strong> PHP {$safePlanPrice}</td></tr>
+                                    </table>
+
+                                    <p style='margin:0 0 8px 0;font-size:14px;line-height:22px;color:#334155;'>Login email: <strong>{$safeEmail}</strong></p>
+                                    <p style='margin:0 0 18px 0;font-size:14px;line-height:22px;word-break:break-all;'>
+                                        Tenant login link: <a href='{$safeLoginLink}' style='color:#1d4ed8;text-decoration:underline;'>{$safeLoginLink}</a>
+                                    </p>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td style='padding:14px 24px;border-top:1px solid #e5e7eb;background:#f8fafc;font-size:11px;line-height:18px;color:#64748b;'>
+                                    This email was sent by RapidRepair System.
+                                </td>
+                            </tr>
+                        </table>
+                    </td>
+                </tr>
+            </table>
+        </body>
+        </html>
+    ";
+    $mail->AltBody = "RapidRepair Application Approved\n\n"
+        . "Hello {$ownerName},\n\n"
+        . "Your application for {$shopName} is approved and your tenant is now active.\n\n"
+        . "Plan: {$planName}\n"
+        . "Billing Cycle: " . ucfirst((string) $billingCycle) . "\n"
+        . "Subscription Start: {$subscriptionStart}\n"
+        . "Subscription End: {$subscriptionEnd}\n"
+        . "Next Billing Date: {$nextBillingDate}\n"
+        . "Amount: PHP " . number_format((float) $planTotalPrice, 2) . "\n\n"
+        . "Login Email: {$email}\n"
+        . "Tenant Login Link: {$loginLink}\n";
+
+    $emailFailureReason = '';
+    $mailTransports = buildMailTransports();
+
+    foreach ($mailTransports as $index => $transport) {
+        try {
+            $mail->isSMTP();
+            $mail->Host = $transport['host'];
+            $mail->SMTPAuth = true;
+            $mail->Username = $transport['username'];
+            $mail->Password = $transport['password'];
+
+            if ($transport['encryption'] === 'ssl' || $transport['encryption'] === 'smtps') {
+                $mail->SMTPSecure = \PHPMailer\PHPMailer\PHPMailer::ENCRYPTION_SMTPS;
+            } elseif ($transport['encryption'] === 'tls' || $transport['encryption'] === 'starttls') {
+                $mail->SMTPSecure = \PHPMailer\PHPMailer\PHPMailer::ENCRYPTION_STARTTLS;
+            } else {
+                $mail->SMTPSecure = '';
+            }
+
+            $mail->Port = (int) $transport['port'];
+
+            $smtpDebug = (int) (getenv('SMTP_DEBUG') ?: 0);
+            if ($smtpDebug > 0) {
+                $mail->SMTPDebug = $smtpDebug;
+            }
+
+            $allowSelfSigned = strtolower((string) (getenv('SMTP_ALLOW_SELF_SIGNED') ?: 'false')) === 'true';
+            if ($allowSelfSigned) {
+                $mail->SMTPOptions = [
+                    'ssl' => [
+                        'verify_peer' => false,
+                        'verify_peer_name' => false,
+                        'allow_self_signed' => true
+                    ]
+                ];
+            }
+
+            $mail->clearAddresses();
+            $mail->clearReplyTos();
+            $mail->clearCustomHeaders();
+
+            $mail->setFrom($transport['from_address'], $transport['from_name']);
+            $mail->Sender = $transport['from_address'];
+            $mail->addReplyTo($transport['reply_to_address'], $transport['reply_to_name']);
+            $mail->CharSet = 'UTF-8';
+            $mail->Encoding = 'base64';
+            $mail->WordWrap = 78;
+            $mail->addCustomHeader('X-Mailer', 'RapidRepair/Tenant-Approval');
+
+            $mail->addAddress($email, $ownerName);
+            $mail->send();
+
+            error_log("Activation Mail Sent ({$transport['label']}) for tenant {$shopName} ({$email})");
+            return ['sent' => true, 'reason' => ''];
+        } catch (Exception $e) {
+            $combinedError = strtolower($mail->ErrorInfo . ' | ' . $e->getMessage());
+            $isQuotaError = (strpos($combinedError, 'daily user sending limit exceeded') !== false)
+                || (strpos($combinedError, '5.4.5') !== false)
+                || (strpos($combinedError, 'quota') !== false);
+
+            if ($isQuotaError) {
+                $emailFailureReason = 'quota';
+            }
+
+            $hasNextTransport = ($index < count($mailTransports) - 1);
+            if (!$hasNextTransport && $emailFailureReason === '') {
+                $emailFailureReason = 'general';
+            }
+        }
+    }
+
+    if ($emailFailureReason === '') {
+        $emailFailureReason = 'general';
+    }
+
+    return ['sent' => false, 'reason' => $emailFailureReason];
+}
+
 $subscriptionPlans = loadSubscriptionPlans($conn);
 $billingCycles = [
     'monthly' => 1,
@@ -192,6 +575,7 @@ if (isset($_POST['updateTenantStatus'])) {
         $subscriptionEnd = date('Y-m-d', strtotime('+' . $billingDivisor . ' months'));
         $planTotalPrice = $subscriptionPlans[$subscriptionPlan]['monthly_price'] * $billingDivisor;
         $nextBillingDate = $subscriptionEnd;
+        $resolvedPlanId = resolvePlanIdForSubscription($conn, $subscriptionPlan, $subscriptionPlans[$subscriptionPlan]['name']);
 
         $updateSql = "UPDATE owners SET 
             status = '$status',
@@ -202,12 +586,59 @@ if (isset($_POST['updateTenantStatus'])) {
             plan_price = '" . mysqli_real_escape_string($conn, (string) $planTotalPrice) . "',
             next_billing_date = '" . mysqli_real_escape_string($conn, $nextBillingDate) . "'
             WHERE tenantID = '$tenantID'";
+
+        mysqli_begin_transaction($conn);
+        $ownersUpdated = mysqli_query($conn, $updateSql);
+        $subscriptionSynced = $ownersUpdated && syncApprovedTenantSubscription(
+            $conn,
+            $tenantID,
+            $resolvedPlanId,
+            $billingCycle,
+            $subscriptionStart,
+            $subscriptionEnd,
+            $nextBillingDate,
+            $planTotalPrice
+        );
+
+        if ($ownersUpdated && $subscriptionSynced) {
+            mysqli_commit($conn);
+
+            $ownerRes = mysqli_query($conn, "SELECT ownerName, shopName, email, login_slug FROM owners WHERE tenantID = '$tenantID' LIMIT 1");
+            $ownerRow = $ownerRes && mysqli_num_rows($ownerRes) > 0 ? mysqli_fetch_assoc($ownerRes) : [];
+            $emailResult = sendTenantActivationDetailsEmail(
+                $ownerRow,
+                $subscriptionPlans[$subscriptionPlan]['name'],
+                $billingCycle,
+                $subscriptionStart,
+                $subscriptionEnd,
+                $nextBillingDate,
+                $planTotalPrice
+            );
+
+            if ($emailResult['sent']) {
+                header("Location: superaddtenants.php?notice=tenant_approved_email_sent");
+            } elseif (($emailResult['reason'] ?? '') === 'quota') {
+                header("Location: superaddtenants.php?notice=tenant_approved_email_quota_exceeded");
+            } else {
+                header("Location: superaddtenants.php?notice=tenant_approved_email_failed");
+            }
+        } else {
+            mysqli_rollback($conn);
+            header("Location: superaddtenants.php?notice=tenant_status_update_failed");
+        }
+        exit;
     } else {
         $updateSql = "UPDATE owners SET status = '$status' WHERE tenantID = '$tenantID'";
     }
 
     if (mysqli_query($conn, $updateSql)) {
-        $redirect = ($status === 'Active') ? 'tenant_approved' : 'tenant_rejected';
+        if ($status === 'Active') {
+            $redirect = 'tenant_approved';
+        } elseif ($status === 'Suspended') {
+            $redirect = 'tenant_suspended';
+        } else {
+            $redirect = 'tenant_rejected';
+        }
         header("Location: superaddtenants.php?notice=" . $redirect);
     } else {
         header("Location: superaddtenants.php?notice=tenant_status_update_failed");
@@ -222,6 +653,24 @@ $noticeTitle = '';
 $noticeMessage = '';
 
 switch ($notice) {
+    case 'tenant_approved_email_sent':
+        $noticeTypeClass = 'bg-red-600';
+        $noticeIcon = 'check_circle';
+        $noticeTitle = 'Application Approved';
+        $noticeMessage = 'Tenant application was approved, activated, and the email details were sent.';
+        break;
+    case 'tenant_approved_email_failed':
+        $noticeTypeClass = 'bg-amber-500';
+        $noticeIcon = 'warning';
+        $noticeTitle = 'Application Approved';
+        $noticeMessage = 'Tenant was activated, but the approval email could not be sent.';
+        break;
+    case 'tenant_approved_email_quota_exceeded':
+        $noticeTypeClass = 'bg-amber-500';
+        $noticeIcon = 'warning';
+        $noticeTitle = 'Application Approved';
+        $noticeMessage = 'Tenant was activated, but email sending quota was exceeded.';
+        break;
     case 'tenant_created_email_sent':
         $noticeTypeClass = 'bg-red-600';
         $noticeIcon = 'check_circle';
@@ -233,6 +682,12 @@ switch ($notice) {
         $noticeIcon = 'warning';
         $noticeTitle = 'Tenant Created';
         $noticeMessage = 'Tenant was created, but the email could not be sent.';
+        break;
+    case 'tenant_created_email_quota_exceeded':
+        $noticeTypeClass = 'bg-amber-500';
+        $noticeIcon = 'warning';
+        $noticeTitle = 'Tenant Created';
+        $noticeMessage = 'Tenant was created, but email sending quota was exceeded. Configure fallback SMTP or retry tomorrow.';
         break;
     case 'tenant_create_failed':
         $noticeTypeClass = 'bg-red-500';
@@ -264,6 +719,12 @@ switch ($notice) {
         $noticeTitle = 'Application Rejected';
         $noticeMessage = 'Tenant application was rejected.';
         break;
+    case 'tenant_suspended':
+        $noticeTypeClass = 'bg-amber-500';
+        $noticeIcon = 'pause_circle';
+        $noticeTitle = 'Tenant Suspended';
+        $noticeMessage = 'Tenant status was updated to suspended.';
+        break;
     case 'tenant_status_update_failed':
         $noticeTypeClass = 'bg-red-500';
         $noticeIcon = 'error';
@@ -285,7 +746,7 @@ $rowsPerPage = 5;
 $tenantPage = isset($_GET['tenant_page']) ? max(1, (int) $_GET['tenant_page']) : 1;
 $pendingPage = isset($_GET['pending_page']) ? max(1, (int) $_GET['pending_page']) : 1;
 
-// ✅ Generate unique login slug
+// âœ… Generate unique login slug
 function generateSlug($conn, $shopName)
 {
     $slug = strtolower(trim($shopName));
@@ -403,16 +864,16 @@ if (isset($_POST['createTenant'])) {
         $tempPassword = generateTemporaryPassword();
     }
 
-    // ✅ VALIDATE EMAIL (VERY IMPORTANT)
+    // âœ… VALIDATE EMAIL (VERY IMPORTANT)
     if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
         die("Invalid email address.");
     }
 
-    // ✅ DO NOT HASH PASSWORD YET - Store as plain text for first login only
+    // âœ… DO NOT HASH PASSWORD YET - Store as plain text for first login only
     // Hash will happen after user changes password on first login
     $hashedPassword = $tempPassword;  // Store temporarily as plain text
 
-    // ✅ Generate tenant ID
+    // âœ… Generate tenant ID
     $getID = mysqli_query($conn, "SELECT tenantID FROM owners ORDER BY tenantID DESC LIMIT 1");
 
     if (mysqli_num_rows($getID) > 0) {
@@ -424,10 +885,10 @@ if (isset($_POST['createTenant'])) {
 
     $tenantID = str_pad($newID, 3, "0", STR_PAD_LEFT);
 
-    // ✅ Generate slug
+    // âœ… Generate slug
     $login_slug = generateSlug($conn, $shopName);
 
-    // ✅ INSERT (subscription fields will be populated when tenant is approved)
+    // âœ… INSERT (subscription fields will be populated when tenant is approved)
     $insertColumns = [
         'tenantID',
         'ownerName',
@@ -458,89 +919,69 @@ if (isset($_POST['createTenant'])) {
     $insert = mysqli_query($conn, $insertSql);
 
     $emailSent = false;
+    $emailFailureReason = '';
 
     if ($insert) {
 
-        // ✅ LOGIN LINK
+        // âœ… LOGIN LINK
         $baseURL = "https://rapidrepair-gygpcbczgyg0czek.southeastasia-01.azurewebsites.net";
         $loginLink = $baseURL . "/tenant/tenantlogin.php?shop=" . urlencode($login_slug);
 
         $mail = new PHPMailer(true);
 
-        try {
-            $smtpHost = getenv('SMTP_HOST') ?: 'smtp.gmail.com';
-            $smtpPort = (int) (getenv('SMTP_PORT') ?: 587);
-            $smtpEncryption = strtolower((string) (getenv('SMTP_ENCRYPTION') ?: 'tls'));
-            $smtpUsername = getenv('SMTP_USERNAME') ?: 'rapidrepair224@gmail.com';
-            $smtpPassword = getenv('SMTP_PASSWORD') ?: 'gabd xcqy gbgq rtwj';
+        $smtpHost = getenv('SMTP_HOST') ?: 'smtp.gmail.com';
+        $smtpPort = (int) (getenv('SMTP_PORT') ?: 587);
+        $smtpEncryption = strtolower(trim((string) (getenv('SMTP_ENCRYPTION') ?: '')));
+        $smtpUsername = getenv('SMTP_USERNAME') ?: 'rapidrepair224@gmail.com';
+        $smtpPassword = getenv('SMTP_PASSWORD') ?: 'gabd xcqy gbgq rtwj';
 
-            // ✅ DEBUG: Log loaded configuration
-            error_log("SMTP Config - Host: {$smtpHost}, Port: {$smtpPort}, Encryption: {$smtpEncryption}, Username: {$smtpUsername}");
+        if ($smtpEncryption === '') {
+            $smtpEncryption = ($smtpPort === 465) ? 'ssl' : 'tls';
+        }
 
-            $mail->isSMTP();
-            $mail->Host = $smtpHost;
-            $mail->SMTPAuth = true;
-            $mail->Username = $smtpUsername;
-            $mail->Password = $smtpPassword;
-            $mail->SMTPSecure = ($smtpEncryption === 'ssl')
-                ? PHPMailer::ENCRYPTION_SMTPS
-                : PHPMailer::ENCRYPTION_STARTTLS;
-            $mail->Port = $smtpPort;
+        $fallbackSmtpHost = getenv('SMTP_FALLBACK_HOST') ?: $smtpHost;
+        $fallbackSmtpPort = (int) (getenv('SMTP_FALLBACK_PORT') ?: $smtpPort);
+        $fallbackSmtpEncryption = strtolower(trim((string) (getenv('SMTP_FALLBACK_ENCRYPTION') ?: $smtpEncryption)));
+        $fallbackSmtpUsername = getenv('SMTP_FALLBACK_USERNAME') ?: '';
+        $fallbackSmtpPassword = getenv('SMTP_FALLBACK_PASSWORD') ?: '';
 
-            // ✅ TEST CONNECTION
-            if (!$mail->smtpConnect()) {
-                $connError = "SMTP Connection Failed: " . $mail->ErrorInfo;
-                error_log($connError);
-                throw new Exception($connError);
-            }
+        $mailTransports = [
+            [
+                'label' => 'primary',
+                'host' => $smtpHost,
+                'port' => $smtpPort,
+                'encryption' => $smtpEncryption,
+                'username' => $smtpUsername,
+                'password' => $smtpPassword,
+                'from_address' => getenv('MAIL_FROM_ADDRESS') ?: $smtpUsername,
+                'from_name' => getenv('MAIL_FROM_NAME') ?: 'Rapid Repair Admin',
+                'reply_to_address' => getenv('MAIL_REPLY_TO') ?: (getenv('MAIL_FROM_ADDRESS') ?: $smtpUsername),
+                'reply_to_name' => getenv('MAIL_REPLY_TO_NAME') ?: 'Rapid Repair Support'
+            ]
+        ];
 
-            $allowSelfSigned = strtolower((string) (getenv('SMTP_ALLOW_SELF_SIGNED') ?: 'false')) === 'true';
-            if ($allowSelfSigned) {
-                // Only use this for temporary troubleshooting.
-                $mail->SMTPOptions = [
-                    'ssl' => [
-                        'verify_peer' => false,
-                        'verify_peer_name' => false,
-                        'allow_self_signed' => true
-                    ]
-                ];
-            }
+        if ($fallbackSmtpUsername !== '' && $fallbackSmtpPassword !== '') {
+            $mailTransports[] = [
+                'label' => 'fallback',
+                'host' => $fallbackSmtpHost,
+                'port' => $fallbackSmtpPort,
+                'encryption' => $fallbackSmtpEncryption,
+                'username' => $fallbackSmtpUsername,
+                'password' => $fallbackSmtpPassword,
+                'from_address' => getenv('SMTP_FALLBACK_FROM_ADDRESS') ?: $fallbackSmtpUsername,
+                'from_name' => getenv('SMTP_FALLBACK_FROM_NAME') ?: (getenv('MAIL_FROM_NAME') ?: 'Rapid Repair Admin'),
+                'reply_to_address' => getenv('SMTP_FALLBACK_REPLY_TO') ?: (getenv('SMTP_FALLBACK_FROM_ADDRESS') ?: $fallbackSmtpUsername),
+                'reply_to_name' => getenv('SMTP_FALLBACK_REPLY_TO_NAME') ?: (getenv('MAIL_REPLY_TO_NAME') ?: 'Rapid Repair Support')
+            ];
+        }
 
-            // ✅ CLEAR ANY PREVIOUS RECIPIENTS
-            $mail->clearAddresses();
+        $safeOwnerName = htmlspecialchars($ownerName, ENT_QUOTES, 'UTF-8');
+        $safeShopName = htmlspecialchars($shopName, ENT_QUOTES, 'UTF-8');
+        $safeLoginLink = htmlspecialchars($loginLink, ENT_QUOTES, 'UTF-8');
+        $safeTempPassword = htmlspecialchars($tempPassword, ENT_QUOTES, 'UTF-8');
+        $safeLoginEmail = htmlspecialchars($email, ENT_QUOTES, 'UTF-8');
 
-            // ✅ SENDER
-            $mailFromAddress = getenv('MAIL_FROM_ADDRESS') ?: $mail->Username;
-            $mailFromName = getenv('MAIL_FROM_NAME') ?: 'Rapid Repair Admin';
-            $mailReplyToAddress = getenv('MAIL_REPLY_TO') ?: $mailFromAddress;
-            $mailReplyToName = getenv('MAIL_REPLY_TO_NAME') ?: 'Rapid Repair Support';
-
-            $mail->setFrom($mailFromAddress, $mailFromName);
-            $mail->addReplyTo($mailReplyToAddress, $mailReplyToName);
-            $mail->CharSet = 'UTF-8';
-            $mail->Encoding = 'base64';
-            $mail->WordWrap = 78;
-
-            // ✅ ANTI-SPAM HEADERS
-            $mail->addCustomHeader('List-Unsubscribe', '<mailto:' . htmlspecialchars($mailFromAddress) . '?subject=unsubscribe>');
-            $mail->addCustomHeader('X-Mailer', 'RapidRepair/Tenant-Onboarding');
-            $mail->addCustomHeader('X-Priority', '3');
-            $mail->addCustomHeader('X-MSMail-Priority', 'Normal');
-            $mail->addCustomHeader('Precedence', 'bulk');
-
-            // ✅ RECEIVER (THIS IS THE FIX)
-            $mail->addAddress($email, $ownerName);
-
-            $mail->isHTML(true);
-            $mail->Subject = 'Rapid Repair Tenant Access Details';
-
-            $safeOwnerName = htmlspecialchars($ownerName, ENT_QUOTES, 'UTF-8');
-            $safeShopName = htmlspecialchars($shopName, ENT_QUOTES, 'UTF-8');
-            $safeLoginLink = htmlspecialchars($loginLink, ENT_QUOTES, 'UTF-8');
-            $safeTempPassword = htmlspecialchars($tempPassword, ENT_QUOTES, 'UTF-8');
-            $safeLoginEmail = htmlspecialchars($email, ENT_QUOTES, 'UTF-8');
-
-            $mail->Body = "
+        $mail->Body = "
                 <!DOCTYPE html>
                 <html lang='en'>
                 <head>
@@ -626,32 +1067,105 @@ if (isset($_POST['createTenant'])) {
                 </html>
             ";
 
-            $mail->AltBody = "Rapid Repair Tenant Account Information\n\n"
-                . "Hello {$ownerName},\n\n"
-                . "Your tenant account for {$shopName} has been set up and is pending approval.\n\n"
-                . "Your tenant login link: {$loginLink}\n"
-                . "Tip: copy and paste the link into your browser if needed.\n\n"
-                . "Temporary Password: {$tempPassword}\n"
-                . "Status: Pending Approval\n\n"
-                . "Next steps:\n"
-                . "- Open the link above and log in using this email address: {$email}\n"
-                . "- Use the temporary password, then change it immediately after you sign in.\n"
-                . "- Bookmark your login link for quick access.\n\n"
-                . "This email was sent by RapidRepair System\n"
-                . "If you did not request this, ignore this email.";
+        $mail->AltBody = "Rapid Repair Tenant Account Information\n\n"
+            . "Hello {$ownerName},\n\n"
+            . "Your tenant account for {$shopName} has been set up and is pending approval.\n\n"
+            . "Your tenant login link: {$loginLink}\n"
+            . "Tip: copy and paste the link into your browser if needed.\n\n"
+            . "Temporary Password: {$tempPassword}\n"
+            . "Status: Pending Approval\n\n"
+            . "Next steps:\n"
+            . "- Open the link above and log in using this email address: {$email}\n"
+            . "- Use the temporary password, then change it immediately after you sign in.\n"
+            . "- Bookmark your login link for quick access.\n\n"
+            . "This email was sent by RapidRepair System\n"
+            . "If you did not request this, ignore this email.";
 
-            $mail->send();
-            $emailSent = true;
+        foreach ($mailTransports as $index => $transport) {
+            try {
+                error_log("SMTP Config ({$transport['label']}) - Host: {$transport['host']}, Port: {$transport['port']}, Encryption: {$transport['encryption']}, Username: {$transport['username']}");
 
-        } catch (Exception $e) {
-            $errorMsg = "Mailer Error: " . $mail->ErrorInfo . " | Exception: " . $e->getMessage();
-            error_log($errorMsg);
+                $mail->isSMTP();
+                $mail->Host = $transport['host'];
+                $mail->SMTPAuth = true;
+                $mail->Username = $transport['username'];
+                $mail->Password = $transport['password'];
+
+                if ($transport['encryption'] === 'ssl' || $transport['encryption'] === 'smtps') {
+                    $mail->SMTPSecure = PHPMailer::ENCRYPTION_SMTPS;
+                } elseif ($transport['encryption'] === 'tls' || $transport['encryption'] === 'starttls') {
+                    $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
+                } else {
+                    $mail->SMTPSecure = '';
+                }
+
+                $mail->Port = (int) $transport['port'];
+
+                $smtpDebug = (int) (getenv('SMTP_DEBUG') ?: 0);
+                if ($smtpDebug > 0) {
+                    $mail->SMTPDebug = $smtpDebug;
+                }
+
+                $allowSelfSigned = strtolower((string) (getenv('SMTP_ALLOW_SELF_SIGNED') ?: 'false')) === 'true';
+                if ($allowSelfSigned) {
+                    $mail->SMTPOptions = [
+                        'ssl' => [
+                            'verify_peer' => false,
+                            'verify_peer_name' => false,
+                            'allow_self_signed' => true
+                        ]
+                    ];
+                }
+
+                $mail->clearAddresses();
+                $mail->clearReplyTos();
+                $mail->clearCustomHeaders();
+
+                $mail->setFrom($transport['from_address'], $transport['from_name']);
+                $mail->Sender = $transport['from_address'];
+                $mail->addReplyTo($transport['reply_to_address'], $transport['reply_to_name']);
+                $mail->CharSet = 'UTF-8';
+                $mail->Encoding = 'base64';
+                $mail->WordWrap = 78;
+                $mail->addCustomHeader('X-Mailer', 'RapidRepair/Tenant-Onboarding');
+
+                $mail->addAddress($email, $ownerName);
+                $mail->isHTML(true);
+                $mail->Subject = 'Rapid Repair Tenant Access Details';
+
+                $mail->send();
+                error_log("Mailer Accepted ({$transport['label']}) for recipient {$email} | Message-ID: {$mail->getLastMessageID()}");
+                $emailSent = true;
+                break;
+            } catch (Exception $e) {
+                $combinedError = strtolower($mail->ErrorInfo . ' | ' . $e->getMessage());
+                $isQuotaError = (strpos($combinedError, 'daily user sending limit exceeded') !== false)
+                    || (strpos($combinedError, '5.4.5') !== false)
+                    || (strpos($combinedError, 'quota') !== false);
+
+                $errorMsg = "Mailer Error ({$transport['label']}) for recipient {$email}: " . $mail->ErrorInfo . " | Exception: " . $e->getMessage();
+                error_log($errorMsg);
+
+                if ($isQuotaError) {
+                    $emailFailureReason = 'quota';
+                }
+
+                $hasNextTransport = ($index < count($mailTransports) - 1);
+                if (!$hasNextTransport) {
+                    if ($emailFailureReason === '') {
+                        $emailFailureReason = 'general';
+                    }
+                    break;
+                }
+            }
         }
     }
 
-    // ✅ REDIRECT
+    // âœ… REDIRECT
     if ($insert && $emailSent) {
         header("Location: superaddtenants.php?notice=tenant_created_email_sent");
+    } elseif ($insert && $emailFailureReason === 'quota') {
+        header("Location: superaddtenants.php?notice=tenant_created_email_quota_exceeded");
     } elseif ($insert) {
         header("Location: superaddtenants.php?notice=tenant_created_email_failed");
     } else {
@@ -691,6 +1205,7 @@ if (isset($_POST['createTenant'])) {
             },
         }
     </script>
+    
 </head>
 
 <body class="bg-background-light dark:bg-background-dark font-display text-slate-900 dark:text-slate-100">
@@ -701,7 +1216,7 @@ if (isset($_POST['createTenant'])) {
         <!-- Brand Header -->
         <div class="p-6 flex items-center gap-3">
             <div class="size-12 rounded-lg bg-white p-1 shadow-md dark:bg-slate-900">
-                <img src="../pictures/RRlogo.png" alt="Rapid Repair logo" class="h-full w-full object-contain drop-shadow-sm">
+                <img src="../pictures/RRlogo3.png" alt="Rapid Repair logo" class="h-full w-full object-contain drop-shadow-sm">
             </div>
             <h2 class="text-xl font-bold tracking-tight text-slate-900 dark:text-white leading-none">
                 RapidRepair <span class="text-primary">SuperAdmin</span>
@@ -756,21 +1271,23 @@ if (isset($_POST['createTenant'])) {
         </nav>
         <div class="p-4 border-t border-slate-100 dark:border-slate-800 space-y-2">
             <div
-                class="flex items-center gap-3 p-2 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer transition-colors">
-                <div class="w-10 h-10 rounded-full bg-slate-200 dark:bg-slate-700 bg-cover bg-center"
-                    data-alt="Admin headshot"
-                    style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuAA7ZvS0RT24pYl7zsQUKsnC9inrzmoUQVQC8PvdcW5_q4FtMWEC8ZD9Ke8mBa8iRwi4vfG0NbuLhEY9U_mYTQt3gBMRoNS0jNV_aJYQ-QCLtauVwWdyP53SHmFLjb5bQvwjbvvF24yHFp3moy4K6rJ0tVvtMIzdIUNohESEbLUilTPScnQYQQutAW0bzWhFZkGsX1GwwAl_2_9yXjauFnRNg0uTHfeR3lnfDRxLlk9Jo_hIr7N64rr5SWZq57QEfMdbFLkygzUgb-A')">
+                class="flex items-center gap-3 p-2 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
+                <div
+                    class="w-10 h-10 rounded-full bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 flex items-center justify-center font-semibold text-sm">
+                    <?php echo htmlspecialchars(initials($superadminName)); ?>
                 </div>
                 <div class="flex flex-col min-w-0">
-                    <h3 class="text-sm font-semibold truncate text-slate-900 dark:text-white">Admin User</h3>
+                    <h3 class="text-sm font-semibold truncate text-slate-900 dark:text-white"><?php echo htmlspecialchars($superadminName); ?></h3>
                     <p class="text-xs text-slate-500 dark:text-slate-400 truncate">Superadmin</p>
                 </div>
             </div>
-            <div
-                class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-red-500 hover:bg-red-50 dark:hover:bg-red-900/10 transition-colors cursor-pointer">
-                <span class="material-symbols-outlined">logout</span>
-                <a href="../logout/logout.php" class="text-sm font-medium">Logout</a>
-            </div>
+            <form method="POST" class="w-full">
+                <button type="submit" name="logout_superadmin"
+                    class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-red-500 hover:bg-red-50 dark:hover:bg-red-900/10 transition-colors cursor-pointer text-left mt-2">
+                    <span class="material-symbols-outlined">logout</span>
+                    <p class="text-sm font-medium">Logout</p>
+                </button>
+            </form>
         </div>
     </aside>
 
@@ -868,6 +1385,8 @@ if (isset($_POST['createTenant'])) {
                                     $statusColor = "red";
                                 if (strtolower($row['status']) == "pending")
                                     $statusColor = "amber";
+                                if (strtolower($row['status']) == "suspended")
+                                    $statusColor = "yellow";
 
                                 $tenantPlanKey = strtolower(isset($row['subscription_plan']) ? $row['subscription_plan'] : $defaultPlanKey);
                                 if (!isset($subscriptionPlans[$tenantPlanKey])) {
@@ -1064,7 +1583,7 @@ if (isset($_POST['createTenant'])) {
                                         </td>
                                         <td class="px-6 py-4 text-right">
                                             <div class="flex justify-end gap-2">
-                                                <button onclick="approveTenant('<?php echo $pendingRow['tenantID']; ?>')"
+                                                <button onclick="approveTenant('<?php echo $pendingRow['tenantID']; ?>', '<?php echo htmlspecialchars($pendingPlanKey, ENT_QUOTES, 'UTF-8'); ?>')"
                                                     class="px-3 py-1.5 bg-red-600 text-white text-xs font-bold rounded-lg hover:bg-red-700 transition-colors">Accept</button>
                                                 <button onclick="rejectTenant('<?php echo $pendingRow['tenantID']; ?>')"
                                                     class="px-3 py-1.5 border border-red-200 text-red-600 text-xs font-bold rounded-lg hover:bg-red-50 dark:hover:bg-red-900/10 transition-colors">Reject</button>
@@ -1173,6 +1692,7 @@ if (isset($_POST['createTenant'])) {
                                     <option value="Active">Active</option>
                                     <option value="Pending">Pending</option>
                                     <option value="Inactive">Inactive</option>
+                                    <option value="Suspended">Suspended</option>
                                 </select>
                             </div>
                             <div class="flex flex-col gap-2">
@@ -1512,8 +2032,12 @@ if (isset($_POST['createTenant'])) {
             document.getElementById("editTenantModal").classList.add("hidden");
         }
 
-        function approveTenant(tenantID) {
+        function approveTenant(tenantID, subscriptionPlan = '') {
             document.getElementById("approveTenantID").value = tenantID;
+            const approvalPlanSelect = document.getElementById("approvalSubscriptionPlan");
+            if (approvalPlanSelect && subscriptionPlan !== '') {
+                approvalPlanSelect.value = subscriptionPlan;
+            }
             renderPlanFeatures('approvalSubscriptionPlan', 'approvalPlanFeaturesPreview');
             document.getElementById("approvalModal").classList.remove("hidden");
         }

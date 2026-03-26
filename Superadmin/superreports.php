@@ -98,6 +98,23 @@ function formatPercent($value)
     return number_format((float) $value, 1) . "%";
 }
 
+function formatStorageBytes($bytes)
+{
+    $bytes = max(0.0, (float) $bytes);
+
+    if ($bytes >= 1073741824) {
+        return number_format($bytes / 1073741824, 2) . " GB";
+    }
+    if ($bytes >= 1048576) {
+        return number_format($bytes / 1048576, 2) . " MB";
+    }
+    if ($bytes >= 1024) {
+        return number_format($bytes / 1024, 2) . " KB";
+    }
+
+    return number_format($bytes, 0) . " B";
+}
+
 function getStatusBadgeClass($status)
 {
     $normalized = strtolower(trim((string) $status));
@@ -193,6 +210,8 @@ $hasBillingCycle = ownersColumnExists($conn, "billing_cycle");
 $hasSubscriptionPlan = ownersColumnExists($conn, "subscription_plan");
 $hasUsersTable = tableExists($conn, "users");
 $hasUsersTenantId = tableColumnExists($conn, "users", "tenantID");
+$hasUsersRole = tableColumnExists($conn, "users", "role");
+$hasUsersCreatedAt = tableColumnExists($conn, "users", "created_at");
 
 $dateRange = $_GET["date_range"] ?? "30";
 $tenantFilter = $_GET["tenant"] ?? "all";
@@ -308,24 +327,74 @@ $previousMonthEnd = date("Y-m-t 23:59:59", strtotime("last day of last month"));
 
 $newRegistrationsCurrent = 0;
 $newRegistrationsPrevious = 0;
-if ($hasCreatedAt) {
-    $newRegCurrentParts = $tenantStatusWhereParts;
-    $newRegCurrentParts[] = "created_at >= '$currentMonthStart'";
-    $newRegCurrentSql = "SELECT COUNT(*) AS total FROM owners " . buildWhereSql($newRegCurrentParts);
-    $newRegCurrentRes = mysqli_query($conn, $newRegCurrentSql);
-    if ($newRegCurrentRes) {
-        $newRegCurrentRow = mysqli_fetch_assoc($newRegCurrentRes);
-        $newRegistrationsCurrent = (int) ($newRegCurrentRow["total"] ?? 0);
+$registrationLabel = "Client Registrations";
+if ($hasUsersCreatedAt) {
+    $registrationLabel = "New Client Registrations <span class=\"text-[10px] opacity-70\">(Monthly)</span>";
+}
+
+if ($hasUsersTable && $hasUsersTenantId) {
+    $userWhereParts = [];
+
+    if ($hasUsersRole) {
+        $userWhereParts[] = "LOWER(u.role) = 'client'";
     }
 
-    $newRegPrevParts = $tenantStatusWhereParts;
-    $newRegPrevParts[] = "created_at >= '$previousMonthStart'";
-    $newRegPrevParts[] = "created_at <= '$previousMonthEnd'";
-    $newRegPrevSql = "SELECT COUNT(*) AS total FROM owners " . buildWhereSql($newRegPrevParts);
-    $newRegPrevRes = mysqli_query($conn, $newRegPrevSql);
-    if ($newRegPrevRes) {
-        $newRegPrevRow = mysqli_fetch_assoc($newRegPrevRes);
-        $newRegistrationsPrevious = (int) ($newRegPrevRow["total"] ?? 0);
+    if ($tenantFilter !== "all") {
+        $safeTenant = mysqli_real_escape_string($conn, (string) $tenantFilter);
+        $userWhereParts[] = "u.tenantID = '$safeTenant'";
+    }
+
+    $joinOwnersForStatus = $hasTenantId && $hasStatus && $statusFilter !== "all";
+    if ($joinOwnersForStatus) {
+        if ($statusFilter === "active_trial") {
+            $statusClause = "LOWER(o.status) IN ('active', 'trial', 'trialing', 'pending')";
+        } elseif ($statusFilter === "active_only") {
+            $statusClause = "LOWER(o.status) = 'active'";
+        } elseif ($statusFilter === "suspended") {
+            $statusClause = "LOWER(o.status) IN ('suspended', 'inactive')";
+        } elseif ($statusFilter === "churned") {
+            $statusClause = "LOWER(o.status) IN ('inactive', 'churned')";
+        }
+
+        if (isset($statusClause)) {
+            $userWhereParts[] = $statusClause;
+            unset($statusClause);
+        }
+    }
+
+    $fromUsersSql = "FROM users u";
+    if ($joinOwnersForStatus) {
+        $fromUsersSql .= " INNER JOIN owners o ON o.tenantID = u.tenantID";
+    }
+
+    if ($hasUsersCreatedAt) {
+        $newRegCurrentParts = $userWhereParts;
+        $newRegCurrentParts[] = "u.created_at >= '$currentMonthStart'";
+        $newRegCurrentSql = "SELECT COUNT(*) AS total $fromUsersSql " . buildWhereSql($newRegCurrentParts);
+        $newRegCurrentRes = mysqli_query($conn, $newRegCurrentSql);
+        if ($newRegCurrentRes) {
+            $newRegCurrentRow = mysqli_fetch_assoc($newRegCurrentRes);
+            $newRegistrationsCurrent = (int) ($newRegCurrentRow["total"] ?? 0);
+        }
+
+        $newRegPrevParts = $userWhereParts;
+        $newRegPrevParts[] = "u.created_at >= '$previousMonthStart'";
+        $newRegPrevParts[] = "u.created_at <= '$previousMonthEnd'";
+        $newRegPrevSql = "SELECT COUNT(*) AS total $fromUsersSql " . buildWhereSql($newRegPrevParts);
+        $newRegPrevRes = mysqli_query($conn, $newRegPrevSql);
+        if ($newRegPrevRes) {
+            $newRegPrevRow = mysqli_fetch_assoc($newRegPrevRes);
+            $newRegistrationsPrevious = (int) ($newRegPrevRow["total"] ?? 0);
+        }
+    } else {
+        $newRegCurrentSql = "SELECT COUNT(*) AS total $fromUsersSql " . buildWhereSql($userWhereParts);
+        $newRegCurrentRes = mysqli_query($conn, $newRegCurrentSql);
+        if ($newRegCurrentRes) {
+            $newRegCurrentRow = mysqli_fetch_assoc($newRegCurrentRes);
+            $newRegistrationsCurrent = (int) ($newRegCurrentRow["total"] ?? 0);
+        }
+
+        $newRegistrationsPrevious = $newRegistrationsCurrent;
     }
 }
 
@@ -472,7 +541,6 @@ if (count($tableColumns) > 0) {
         while ($tableRow = mysqli_fetch_assoc($tableRes)) {
             $tenantIdValue = (int) ($tableRow["tenantID"] ?? 0);
             $shopNameValue = (string) ($tableRow["shopName"] ?? ("Tenant #" . $tenantIdValue));
-            $storageGb = $tenantIdValue > 0 ? (40 + (($tenantIdValue * 17) % 860)) : (40 + (crc32($shopNameValue) % 860));
 
             $activityReference = "";
             if ($hasUpdatedAt && !empty($tableRow["updated_at"])) {
@@ -485,8 +553,8 @@ if (count($tableColumns) > 0) {
                 "tenant_id" => $tenantIdValue,
                 "shop_name" => $shopNameValue,
                 "status" => (string) ($tableRow["status"] ?? "Unknown"),
-                "storage_gb" => (float) $storageGb,
-                "active_users" => 0,
+                "storage_bytes" => 0.0,
+                "active_customers" => 0,
                 "last_activity_raw" => $activityReference,
                 "last_activity" => getRelativeTime($activityReference)
             ];
@@ -505,27 +573,87 @@ if ($hasUsersTable && $hasUsersTenantId && count($tenantRows) > 0) {
 
     if (count($tenantIds) > 0) {
         $idList = implode(",", $tenantIds);
-        $usersCountSql = "SELECT tenantID, COUNT(*) AS total_users FROM users WHERE tenantID IN ($idList) GROUP BY tenantID";
+        $usersWhereParts = ["tenantID IN ($idList)"];
+        if ($hasUsersRole) {
+            $usersWhereParts[] = "LOWER(role) = 'client'";
+        }
+
+        $usersCountSql = "SELECT tenantID, COUNT(*) AS total_customers FROM users " . buildWhereSql($usersWhereParts) . " GROUP BY tenantID";
         $usersCountRes = mysqli_query($conn, $usersCountSql);
 
-        $usersByTenant = [];
+        $customersByTenant = [];
         if ($usersCountRes) {
             while ($usersRow = mysqli_fetch_assoc($usersCountRes)) {
-                $usersByTenant[(int) ($usersRow["tenantID"] ?? 0)] = (int) ($usersRow["total_users"] ?? 0);
+                $customersByTenant[(int) ($usersRow["tenantID"] ?? 0)] = (int) ($usersRow["total_customers"] ?? 0);
             }
         }
 
         foreach ($tenantRows as $idx => $tenantRow) {
             $tenantId = (int) ($tenantRow["tenant_id"] ?? 0);
-            $tenantRows[$idx]["active_users"] = $usersByTenant[$tenantId] ?? 0;
+            $tenantRows[$idx]["active_customers"] = $customersByTenant[$tenantId] ?? 0;
+        }
+    }
+}
+
+if (count($tenantRows) > 0) {
+    $tenantIds = [];
+    foreach ($tenantRows as $tenantRow) {
+        $tenantId = (int) ($tenantRow["tenant_id"] ?? 0);
+        if ($tenantId > 0) {
+            $tenantIds[$tenantId] = $tenantId;
+        }
+    }
+
+    if (count($tenantIds) > 0) {
+        $idList = implode(",", $tenantIds);
+        $tenantStorageBytes = [];
+
+        $tablesSql = "SELECT c.TABLE_NAME, COALESCE(t.AVG_ROW_LENGTH, 0) AS avg_row_length "
+            . "FROM information_schema.COLUMNS c "
+            . "INNER JOIN information_schema.TABLES t ON t.TABLE_SCHEMA = c.TABLE_SCHEMA AND t.TABLE_NAME = c.TABLE_NAME "
+            . "WHERE c.TABLE_SCHEMA = DATABASE() AND c.COLUMN_NAME = 'tenantID' AND t.TABLE_TYPE = 'BASE TABLE' "
+            . "GROUP BY c.TABLE_NAME, t.AVG_ROW_LENGTH";
+        $tablesRes = mysqli_query($conn, $tablesSql);
+
+        if ($tablesRes) {
+            while ($tableMeta = mysqli_fetch_assoc($tablesRes)) {
+                $tableName = (string) ($tableMeta["TABLE_NAME"] ?? "");
+                if ($tableName === "") {
+                    continue;
+                }
+
+                $avgRowLength = (float) ($tableMeta["avg_row_length"] ?? 0);
+                if ($avgRowLength <= 0) {
+                    $avgRowLength = 512.0;
+                }
+
+                $safeTableName = str_replace("`", "``", $tableName);
+                $countSql = "SELECT tenantID, COUNT(*) AS total_rows FROM `$safeTableName` WHERE tenantID IN ($idList) GROUP BY tenantID";
+                $countRes = mysqli_query($conn, $countSql);
+
+                if ($countRes) {
+                    while ($countRow = mysqli_fetch_assoc($countRes)) {
+                        $tenantId = (int) ($countRow["tenantID"] ?? 0);
+                        $totalRows = (int) ($countRow["total_rows"] ?? 0);
+                        if ($tenantId > 0 && $totalRows > 0) {
+                            $tenantStorageBytes[$tenantId] = ($tenantStorageBytes[$tenantId] ?? 0.0) + ($totalRows * $avgRowLength);
+                        }
+                    }
+                }
+            }
+        }
+
+        foreach ($tenantRows as $idx => $tenantRow) {
+            $tenantId = (int) ($tenantRow["tenant_id"] ?? 0);
+            $tenantRows[$idx]["storage_bytes"] = (float) ($tenantStorageBytes[$tenantId] ?? 0.0);
         }
     }
 }
 
 $maxStorage = 0.0;
 foreach ($tenantRows as $tenantRow) {
-    if ((float) $tenantRow["storage_gb"] > $maxStorage) {
-        $maxStorage = (float) $tenantRow["storage_gb"];
+    if ((float) $tenantRow["storage_bytes"] > $maxStorage) {
+        $maxStorage = (float) $tenantRow["storage_bytes"];
     }
 }
 
@@ -545,6 +673,26 @@ $barChartJson = json_encode([
     <meta charset="utf-8" />
     <meta content="width=device-width, initial-scale=1.0" name="viewport" />
     <title>System Reports | Cobalt Precision</title>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: "#b91c1c",
+                        "primary-container": "#fee2e2",
+                        "on-primary": "#ffffff",
+                        secondary: "#334155",
+                        background: "#f8fafc",
+                        "on-background": "#0f172a",
+                        surface: "#ffffff",
+                        "surface-variant": "#e2e8f0",
+                        "on-surface-variant": "#64748b",
+                        outline: "#cbd5e1"
+                    }
+                }
+            }
+        };
+    </script>
     <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&amp;display=swap"
@@ -552,42 +700,7 @@ $barChartJson = json_encode([
     <link
         href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap"
         rel="stylesheet" />
-    <script id="tailwind-config">
-        tailwind.config = {
-            darkMode: "class",
-            theme: {
-                extend: {
-                    colors: {
-                        "primary": "#b91c1c",
-                        "on-primary": "#ffffff",
-                        "primary-container": "#fee2e2",
-                        "on-primary-container": "#7f1d1d",
-                        "background": "#ffffff",
-                        "on-background": "#0a0a0a",
-                        "surface": "#ffffff",
-                        "on-surface": "#111827",
-                        "surface-variant": "#f5f5f5",
-                        "on-surface-variant": "#525252",
-                        "outline": "#e5e7eb",
-                        "outline-variant": "#d4d4d8",
-                        "secondary": "#3f3f46",
-                        "error": "#dc2626"
-                    },
-                    fontFamily: {
-                        "headline": ["Inter"],
-                        "body": ["Inter"],
-                        "label": ["Inter"]
-                    },
-                    borderRadius: {
-                        "DEFAULT": "0.125rem",
-                        "lg": "0.25rem",
-                        "xl": "0.5rem",
-                        "full": "0.75rem"
-                    }
-                }
-            }
-        }
-    </script>
+        
     <style>
         body {
             font-family: 'Inter', sans-serif;
@@ -608,72 +721,72 @@ $barChartJson = json_encode([
 
 <body class="bg-background text-on-background antialiased selection:bg-primary-container selection:text-primary">
     <aside
-        class="flex flex-col fixed left-0 top-0 h-full z-50 w-64 border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 font-['Inter'] antialiased tracking-tight shadow-sm dark:shadow-none">
+        class="flex flex-col fixed left-0 top-0 h-full z-50 w-64 border-r border-slate-200 bg-white font-['Inter'] antialiased tracking-tight shadow-sm">
         <div class="p-6 flex items-center gap-3">
-            <div class="bg-primary rounded-lg p-2 text-white">
-                <span class="material-symbols-outlined block text-2xl">directions_car</span>
+            <div class="size-12 rounded-lg bg-white p-1 shadow-md">
+                <img src="../pictures/RRlogo3.png" alt="Rapid Repair logo" class="h-full w-full object-contain drop-shadow-sm">
             </div>
-            <h2 class="text-xl font-bold tracking-tight text-slate-900 dark:text-white leading-none">
+            <h2 class="text-xl font-bold tracking-tight text-slate-900 leading-none">
                 RapidRepair <span class="text-primary">SuperAdmin</span>
             </h2>
         </div>
         <nav class="flex-1 px-4 space-y-1 mt-4">
-            <a class="flex items-center gap-3 px-3 py-2.5 text-slate-600 dark:text-slate-400 font-medium hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors rounded-lg active:scale-95"
+            <a class="flex items-center gap-3 px-3 py-2.5 text-slate-600 font-medium hover:bg-slate-50 transition-colors rounded-lg active:scale-95"
                 href="superadd.php">
                 <span class="material-symbols-outlined" data-icon="dashboard">dashboard</span>
                 <span class="text-sm">Dashboard</span>
             </a>
-            <a class="flex items-center gap-3 px-3 py-2.5 text-slate-600 dark:text-slate-400 font-medium hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors rounded-lg active:scale-95"
+            <a class="flex items-center gap-3 px-3 py-2.5 text-slate-600 font-medium hover:bg-slate-50 transition-colors rounded-lg active:scale-95"
                 href="superaddtenants.php">
                 <span class="material-symbols-outlined" data-icon="groups">groups</span>
                 <span class="text-sm">Tenants</span>
             </a>
-            <a class="flex items-center gap-3 px-3 py-2.5 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 font-bold border-r-4 border-red-700 dark:border-red-500 rounded-lg active:scale-95"
+            <a class="flex items-center gap-3 px-3 py-2.5 bg-red-50 text-red-700 font-bold border-r-4 border-red-700 rounded-lg active:scale-95"
                 href="superreports.php">
                 <span class="material-symbols-outlined" data-icon="bar_chart">bar_chart</span>
                 <span class="text-sm">Reports</span>
             </a>
-            <a class="flex items-center gap-3 px-3 py-2.5 text-slate-600 dark:text-slate-400 font-medium hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors rounded-lg active:scale-95"
+            <a class="flex items-center gap-3 px-3 py-2.5 text-slate-600 font-medium hover:bg-slate-50 transition-colors rounded-lg active:scale-95"
                 href="subscriptionmanage.php">
                 <span class="material-symbols-outlined" data-icon="subscriptions">subscriptions</span>
                 <span class="text-sm">Subscriptions</span>
             </a>
-            <a class="flex items-center gap-3 px-3 py-2.5 text-slate-600 dark:text-slate-400 font-medium hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors rounded-lg active:scale-95"
+            <a class="flex items-center gap-3 px-3 py-2.5 text-slate-600 font-medium hover:bg-slate-50 transition-colors rounded-lg active:scale-95"
                 href="supersalesreport.php">
                 <span class="material-symbols-outlined" data-icon="monitoring">monitoring</span>
                 <span class="text-sm">Sales Reports</span>
             </a>
-            <a class="flex items-center gap-3 px-3 py-2.5 text-slate-600 dark:text-slate-400 font-medium hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors rounded-lg active:scale-95"
+            <a class="flex items-center gap-3 px-3 py-2.5 text-slate-600 font-medium hover:bg-slate-50 transition-colors rounded-lg active:scale-95"
                 href="superauditlogs.php">
                 <span class="material-symbols-outlined" data-icon="assignment">assignment</span>
                 <span class="text-sm">Audit Logs</span>
             </a>
-            <a class="flex items-center gap-3 px-3 py-2.5 text-slate-600 dark:text-slate-400 font-medium hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors rounded-lg active:scale-95"
+            <a class="flex items-center gap-3 px-3 py-2.5 text-slate-600 font-medium hover:bg-slate-50 transition-colors rounded-lg active:scale-95"
                 href="superbackup.php">
                 <span class="material-symbols-outlined" data-icon="backup"
                     style="font-variation-settings: 'FILL' 1;">backup</span>
                 <span class="text-sm">System Backup</span>
             </a>
-            <a class="flex items-center gap-3 px-3 py-2.5 text-slate-600 dark:text-slate-400 font-medium hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors rounded-lg active:scale-95"
+            <a class="flex items-center gap-3 px-3 py-2.5 text-slate-600 font-medium hover:bg-slate-50 transition-colors rounded-lg active:scale-95"
                 href="supersettings.php">
                 <span class="material-symbols-outlined" data-icon="settings">settings</span>
                 <span class="text-sm">Settings</span>
             </a>
 
         </nav>
-        <div class="p-4 border-t border-slate-100 dark:border-slate-800 space-y-2">
-            <div class="flex items-center gap-3 p-2 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
+        <div class="p-4 border-t border-slate-100 space-y-2">
+            <div class="flex items-center gap-3 p-2 rounded-lg hover:bg-slate-50 transition-colors">
                 <div class="w-10 h-10 rounded-full bg-primary-container text-primary flex items-center justify-center font-semibold text-sm">
                     <?php echo htmlspecialchars(initials($superadminName)); ?>
                 </div>
                 <div class="flex flex-col min-w-0">
-                    <h3 class="text-sm font-semibold truncate text-slate-900 dark:text-white"><?php echo htmlspecialchars($superadminName); ?></h3>
-                    <p class="text-xs text-slate-500 dark:text-slate-400 truncate">Superadmin</p>
+                    <h3 class="text-sm font-semibold truncate"><?php echo htmlspecialchars($superadminName); ?></h3>
+                    <p class="text-xs text-slate-500 truncate">Superadmin</p>
                 </div>
             </div>
             <form method="POST" class="w-full">
                 <button type="submit" name="logout_superadmin"
-                    class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-red-500 hover:bg-red-50 dark:hover:bg-red-900/10 transition-colors cursor-pointer text-left">
+                    class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-red-500 hover:bg-red-50 transition-colors cursor-pointer text-left mt-2">
                     <span class="material-symbols-outlined">logout</span>
                     <p class="text-sm font-medium">Logout</p>
                 </button>
@@ -683,18 +796,18 @@ $barChartJson = json_encode([
 
     <main class="ml-64 min-h-screen">
         <header
-            class="flex items-center justify-between px-8 sticky top-0 z-40 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md w-full h-16 border-b border-slate-200 dark:border-slate-800">
+            class="flex items-center justify-between px-8 sticky top-0 z-40 bg-white/80 backdrop-blur-md w-full h-16 border-b border-slate-200">
             <div class="flex items-center gap-4">
                 <div class="relative">
                     <span class="absolute inset-y-0 left-0 flex items-center pl-3 text-on-surface-variant">
                         <span class="material-symbols-outlined text-lg" data-icon="search">search</span>
                     </span>
                     <input id="tenantSearchInput"
-                        class="pl-10 pr-4 py-1.5 bg-surface-variant border-none text-sm rounded-lg focus:ring-2 focus:ring-primary w-72 transition-all"
+                        class="pl-10 pr-4 py-1.5 bg-slate-100/80 border border-outline text-sm rounded-lg focus:ring-2 focus:ring-primary w-72 transition-all"
                         placeholder="Search tenant rows in table..." type="text" />
                 </div>
             </div>
-            <div class="flex items-center gap-6">
+            <div class="flex items-center gap-4">
                 <div class="flex items-center gap-4">
                     <button class="text-slate-500 hover:text-red-700 transition-all duration-200">
                         <span class="material-symbols-outlined" data-icon="notifications">notifications</span>
@@ -730,13 +843,13 @@ $barChartJson = json_encode([
                 </div>
             </div>
 
-            <section class="bg-surface p-6 rounded-xl border border-outline shadow-sm">
+            <section class="bg-slate-50/80 p-6 rounded-xl border border-outline shadow-sm">
                 <form method="GET" class="grid grid-cols-1 md:grid-cols-4 gap-6 items-end">
                     <div class="space-y-1.5">
                         <label for="date_range" class="text-xs font-bold text-secondary uppercase tracking-wider">Date
                             Range</label>
                         <select id="date_range" name="date_range"
-                            class="w-full bg-surface-variant border-none rounded-lg text-sm focus:ring-2 focus:ring-primary/20">
+                            class="w-full bg-slate-100 border border-outline rounded-lg text-sm focus:ring-2 focus:ring-primary/20">
                             <option value="30" <?php echo $dateRange === "30" ? "selected" : ""; ?>>Last 30 Days</option>
                             <option value="90" <?php echo $dateRange === "90" ? "selected" : ""; ?>>Last 90 Days</option>
                             <option value="ytd" <?php echo $dateRange === "ytd" ? "selected" : ""; ?>>Year to Date
@@ -748,7 +861,7 @@ $barChartJson = json_encode([
                         <label for="tenant"
                             class="text-xs font-bold text-secondary uppercase tracking-wider">Tenant</label>
                         <select id="tenant" name="tenant"
-                            class="w-full bg-surface-variant border-none rounded-lg text-sm focus:ring-2 focus:ring-primary/20">
+                            class="w-full bg-slate-100 border border-outline rounded-lg text-sm focus:ring-2 focus:ring-primary/20">
                             <option value="all">All Tenants</option>
                             <?php foreach ($tenantOptions as $option): ?>
                                 <option
@@ -763,7 +876,7 @@ $barChartJson = json_encode([
                         <label for="status"
                             class="text-xs font-bold text-secondary uppercase tracking-wider">Status</label>
                         <select id="status" name="status"
-                            class="w-full bg-surface-variant border-none rounded-lg text-sm focus:ring-2 focus:ring-primary/20">
+                            class="w-full bg-slate-100 border border-outline rounded-lg text-sm focus:ring-2 focus:ring-primary/20">
                             <option value="all" <?php echo $statusFilter === "all" ? "selected" : ""; ?>>All Statuses
                             </option>
                             <option value="active_trial" <?php echo $statusFilter === "active_trial" ? "selected" : ""; ?>>Active &amp; Trial</option>
@@ -780,7 +893,7 @@ $barChartJson = json_encode([
                             class="text-xs font-bold text-secondary uppercase tracking-wider">Report Type</label>
                         <div class="flex gap-2">
                             <select id="report_type" name="report_type"
-                                class="w-full bg-surface-variant border-none rounded-lg text-sm focus:ring-2 focus:ring-primary/20">
+                                class="w-full bg-slate-100 border border-outline rounded-lg text-sm focus:ring-2 focus:ring-primary/20">
                                 <option value="usage" <?php echo $reportType === "usage" ? "selected" : ""; ?>>Usage &amp;
                                     Performance</option>
                                 <option value="financial" <?php echo $reportType === "financial" ? "selected" : ""; ?>>
@@ -791,14 +904,14 @@ $barChartJson = json_encode([
                                     User Engagement</option>
                             </select>
                             <button type="submit"
-                                class="bg-primary text-white px-4 rounded-lg text-sm font-semibold hover:opacity-90">Apply</button>
+                                class="bg-primary text-black px-5 py-2.5 rounded-lg text-sm font-bold border border-red-700 shadow-sm hover:bg-red-700 hover:text-black hover:shadow-md active:translate-y-[1px] transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-red-200 whitespace-nowrap">Apply</button>
                         </div>
                     </div>
                 </form>
             </section>
 
             <section class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                <div class="bg-surface p-6 rounded-xl border border-outline shadow-sm flex flex-col justify-between">
+                <div class="bg-slate-50/80 p-6 rounded-xl border border-outline shadow-sm flex flex-col justify-between">
                     <div class="flex justify-between items-start">
                         <div class="p-2 bg-primary-container rounded-lg text-primary">
                             <span class="material-symbols-outlined" data-icon="groups">groups</span>
@@ -815,7 +928,7 @@ $barChartJson = json_encode([
                     </div>
                 </div>
 
-                <div class="bg-surface p-6 rounded-xl border border-outline shadow-sm flex flex-col justify-between">
+                <div class="bg-slate-50/80 p-6 rounded-xl border border-outline shadow-sm flex flex-col justify-between">
                     <div class="flex justify-between items-start">
                         <div class="p-2 bg-primary-container rounded-lg text-primary">
                             <span class="material-symbols-outlined" data-icon="person_add">person_add</span>
@@ -826,14 +939,13 @@ $barChartJson = json_encode([
                         </span>
                     </div>
                     <div class="mt-4">
-                        <p class="text-sm font-medium text-on-surface-variant">New Registrations <span
-                                class="text-[10px] opacity-70">(Monthly)</span></p>
+                        <p class="text-sm font-medium text-on-surface-variant"><?php echo $registrationLabel; ?></p>
                         <h3 class="text-2xl font-black text-on-background mt-1">
                             <?php echo formatCount($newRegistrationsCurrent); ?></h3>
                     </div>
                 </div>
 
-                <div class="bg-surface p-6 rounded-xl border border-outline shadow-sm flex flex-col justify-between">
+                <div class="bg-slate-50/80 p-6 rounded-xl border border-outline shadow-sm flex flex-col justify-between">
                     <div class="flex justify-between items-start">
                         <div class="p-2 bg-primary-container rounded-lg text-primary">
                             <span class="material-symbols-outlined" data-icon="payments">payments</span>
@@ -850,7 +962,7 @@ $barChartJson = json_encode([
                     </div>
                 </div>
 
-                <div class="bg-surface p-6 rounded-xl border border-outline shadow-sm flex flex-col justify-between">
+                <div class="bg-slate-50/80 p-6 rounded-xl border border-outline shadow-sm flex flex-col justify-between">
                     <div class="flex justify-between items-start">
                         <div class="p-2 bg-primary-container rounded-lg text-primary">
                             <span class="material-symbols-outlined" data-icon="task_alt">task_alt</span>
@@ -866,7 +978,7 @@ $barChartJson = json_encode([
             </section>
 
             <section class="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                <div class="bg-surface p-8 rounded-xl border border-outline shadow-sm">
+                <div class="bg-slate-50/80 p-8 rounded-xl border border-outline shadow-sm">
                     <div class="flex items-center justify-between mb-8">
                         <h4 class="text-lg font-bold text-on-background flex items-center gap-2">
                             <span class="material-symbols-outlined text-primary"
@@ -880,7 +992,7 @@ $barChartJson = json_encode([
                     </div>
                 </div>
 
-                <div class="bg-surface p-8 rounded-xl border border-outline shadow-sm">
+                <div class="bg-slate-50/80 p-8 rounded-xl border border-outline shadow-sm">
                     <div class="flex items-center justify-between mb-8">
                         <h4 class="text-lg font-bold text-on-background flex items-center gap-2">
                             <span class="material-symbols-outlined text-primary" data-icon="bar_chart">bar_chart</span>
@@ -894,7 +1006,7 @@ $barChartJson = json_encode([
                 </div>
             </section>
 
-            <section class="bg-surface rounded-xl border border-outline shadow-sm overflow-hidden">
+            <section class="bg-slate-50/80 rounded-xl border border-outline shadow-sm overflow-hidden">
                 <div class="p-6 border-b border-outline flex items-center justify-between bg-white">
                     <h4 class="text-lg font-bold text-on-background">Usage Statistics by Tenant</h4>
                     <a href="superauditlogs.php"
@@ -910,7 +1022,7 @@ $barChartJson = json_encode([
                                 class="bg-surface-variant/50 text-on-surface-variant text-[10px] font-black uppercase tracking-widest">
                                 <th class="px-6 py-4">Tenant Name</th>
                                 <th class="px-6 py-4 text-center">Storage Used</th>
-                                <th class="px-6 py-4 text-center">Active Users</th>
+                                <th class="px-6 py-4 text-center">Active Customers</th>
                                 <th class="px-6 py-4">Status</th>
                                 <th class="px-6 py-4">Last Activity</th>
                             </tr>
@@ -925,7 +1037,7 @@ $barChartJson = json_encode([
 
                             <?php foreach ($tenantRows as $tenant): ?>
                                 <?php
-                                $storagePercent = $maxStorage > 0 ? (($tenant["storage_gb"] / $maxStorage) * 100) : 0;
+                                $storagePercent = $maxStorage > 0 ? (($tenant["storage_bytes"] / $maxStorage) * 100) : 0;
                                 $searchBlob = strtolower(trim((string) $tenant["shop_name"] . " " . (string) $tenant["status"] . " " . (string) $tenant["last_activity"]));
                                 ?>
                                 <tr class="tenant-searchable-row hover:bg-surface-variant/30 transition-colors"
@@ -949,9 +1061,7 @@ $barChartJson = json_encode([
                                     </td>
                                     <td class="px-6 py-4 text-center">
                                         <div class="flex flex-col gap-1 items-center">
-                                            <span
-                                                class="text-xs font-medium"><?php echo number_format((float) $tenant["storage_gb"], 1); ?>
-                                                GB</span>
+                                            <span class="text-xs font-medium"><?php echo formatStorageBytes($tenant["storage_bytes"] ?? 0); ?></span>
                                             <div class="w-20 h-1.5 bg-slate-100 rounded-full overflow-hidden">
                                                 <div class="bg-primary h-full"
                                                     style="width: <?php echo number_format($storagePercent, 1); ?>%;"></div>
@@ -959,7 +1069,7 @@ $barChartJson = json_encode([
                                         </div>
                                     </td>
                                     <td class="px-6 py-4 text-center font-medium text-sm">
-                                        <?php echo number_format((int) $tenant["active_users"]); ?></td>
+                                        <?php echo number_format((int) $tenant["active_customers"]); ?></td>
                                     <td class="px-6 py-4">
                                         <span
                                             class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase <?php echo getStatusBadgeClass($tenant["status"]); ?>">

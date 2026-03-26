@@ -102,11 +102,18 @@ $pendingChangeTrend = $pendingApprovals < $lastMonthPending ? "-" : "+";
 // ===== CHART DATA: TENANT GROWTH (Last 12 Months) =====
 $growthLabels = [];
 $growthData = [];
+$currentMonthIndex = null;
+$currentMonthYearString = date('M Y');
 
 for ($i = 11; $i >= 0; $i--) {
     $monthStart = date('Y-m-01', strtotime("-$i months"));
     $monthEnd = date('Y-m-t', strtotime("-$i months"));
-    $monthLabel = date('M', strtotime("-$i months"));
+    $monthLabel = date('M Y', strtotime("-$i months"));
+
+    // Track current month
+    if ($monthLabel === $currentMonthYearString) {
+        $currentMonthIndex = 11 - $i; // Index in the array (0-based)
+    }
 
     $monthCountResult = $conn->query("SELECT COUNT(*) as total FROM owners WHERE DATE(created_at) >= '$monthStart' AND DATE(created_at) <= '$monthEnd'");
     $monthCount = $monthCountResult ? $monthCountResult->fetch_assoc()['total'] : 0;
@@ -115,9 +122,30 @@ for ($i = 11; $i >= 0; $i--) {
     $growthData[] = $monthCount;
 }
 
-// ===== GEOGRAPHIC DISTRIBUTION (Top Regions - use a placeholder field or estimated by tenantID mod) =====
-// Since there's no explicit region field, we'll aggregate by first letter of shopName as pseudo-regions
-$geoQuery = "SELECT LEFT(shopName, 1) as region_code, COUNT(*) as shop_count FROM owners GROUP BY region_code ORDER BY shop_count DESC LIMIT 5";
+// ===== GEOGRAPHIC DISTRIBUTION (Philippine Regions) =====
+// Extract regions from Philippine addresses based on shopAddress
+$geoQuery = "SELECT 
+    CASE 
+        WHEN shopAddress LIKE '%Metro Manila%' OR shopAddress LIKE '%Manila%' OR shopAddress LIKE '%Makati%' OR shopAddress LIKE '%Pasig%' OR shopAddress LIKE '%Taguig%' OR shopAddress LIKE '%Quezon%' OR shopAddress LIKE '%Caloocan%' THEN 'Metro Manila'
+        WHEN shopAddress LIKE '%Cebu%' THEN 'Cebu'
+        WHEN shopAddress LIKE '%Davao%' THEN 'Davao'
+        WHEN shopAddress LIKE '%Bulacan%' OR shopAddress LIKE '%Malolos%' OR shopAddress LIKE '%Meycauayan%' OR shopAddress LIKE '%Marilao%' THEN 'Bulacan'
+        WHEN shopAddress LIKE '%Laguna%' THEN 'Laguna'
+        WHEN shopAddress LIKE '%Cavite%' THEN 'Cavite'
+        WHEN shopAddress LIKE '%Batangas%' THEN 'Batangas'
+        WHEN shopAddress LIKE '%Rizal%' THEN 'Rizal'
+        WHEN shopAddress LIKE '%Pampanga%' THEN 'Pampanga'
+        WHEN shopAddress LIKE '%Iloilo%' THEN 'Iloilo'
+        WHEN shopAddress LIKE '%Cagayan%' THEN 'Cagayan de Oro'
+        WHEN shopAddress LIKE '%Mindanao%' THEN 'Mindanao'
+        WHEN shopAddress LIKE '%Visayas%' THEN 'Visayas'
+        WHEN shopAddress LIKE '%Luzon%' THEN 'Luzon'
+        ELSE 'Other Regions'
+    END as region, COUNT(*) as shop_count 
+FROM owners 
+WHERE shopAddress IS NOT NULL AND shopAddress != ''
+GROUP BY region 
+ORDER BY shop_count DESC LIMIT 10";
 $geoResult = $conn->query($geoQuery);
 $geoData = [];
 if ($geoResult) {
@@ -170,6 +198,28 @@ if (empty($recentActivity)) {
                 'created_at' => $row['created_at']
             ];
         }
+    }
+}
+
+// ===== ACTIVE AND INACTIVE TENANTS LIST =====
+$activeTenantsList = [];
+$inactiveTenantsList = [];
+
+// Get active tenants (status = 'active', limit 20)
+$activeTenantsQuery = "SELECT tenantID, ownerName, shopName, email, status, created_at FROM owners WHERE LOWER(status) = 'active' ORDER BY created_at DESC LIMIT 20";
+$activeTenantsResult = $conn->query($activeTenantsQuery);
+if ($activeTenantsResult) {
+    while ($row = $activeTenantsResult->fetch_assoc()) {
+        $activeTenantsList[] = $row;
+    }
+}
+
+// Get inactive tenants (status != 'active', limit 20)
+$inactiveTenantsQuery = "SELECT tenantID, ownerName, shopName, email, status, created_at FROM owners WHERE LOWER(status) != 'active' ORDER BY created_at DESC LIMIT 20";
+$inactiveTenantsResult = $conn->query($inactiveTenantsQuery);
+if ($inactiveTenantsResult) {
+    while ($row = $inactiveTenantsResult->fetch_assoc()) {
+        $inactiveTenantsList[] = $row;
     }
 }
 
@@ -375,10 +425,6 @@ function initials($name)
                         class="rounded-lg p-2 text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800">
                         <span class="material-symbols-outlined">chat_bubble</span>
                     </button>
-                    <div
-                        class="h-10 w-10 rounded-full border-2 border-primary/20 bg-primary/10 text-primary flex items-center justify-center font-semibold text-sm">
-                        <?php echo htmlspecialchars(initials($superadminName)); ?>
-                    </div>
                 </div>
             </header>
             <div class="p-8 space-y-8">
@@ -450,8 +496,7 @@ function initials($name)
                         <div class="flex items-center justify-between mb-6">
                             <div>
                                 <h4 class="text-base font-bold text-slate-900 dark:text-white">Tenant Growth Trend</h4>
-                                <p class="text-xs text-slate-500 dark:text-slate-400">Monthly shop registrations (12
-                                    Months)</p>
+                                <p class="text-xs text-slate-500 dark:text-slate-400">Monthly shop registrations</p>
                             </div>
                             <div class="flex gap-2">
                                 <span
@@ -459,8 +504,58 @@ function initials($name)
                                     new shops</span>
                             </div>
                         </div>
-                        <div class="relative w-full" style="height: 300px; position: relative;">
-                            <canvas id="growthChart" style="max-height: 300px;"></canvas>
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-sm growth-table" data-rows-per-page="5">
+                                <thead>
+                                    <tr class="border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50">
+                                        <th class="px-4 py-3 text-left font-semibold text-slate-600 dark:text-slate-300">Month</th>
+                                        <th class="px-4 py-3 text-right font-semibold text-slate-600 dark:text-slate-300">Registrations</th>
+                                        <th class="px-4 py-3 text-right font-semibold text-slate-600 dark:text-slate-300">Growth</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <?php 
+                                    $maxValue = max($growthData);
+                                    for ($i = 0; $i < count($growthLabels); $i++):
+                                        $month = $growthLabels[$i];
+                                        $value = $growthData[$i];
+                                        $percentage = $maxValue > 0 ? ($value / $maxValue) * 100 : 0;
+                                        $isCurrentMonth = ($i === $currentMonthIndex);
+                                    ?>
+                                        <tr class="growth-row border-b border-slate-100 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors <?php echo $isCurrentMonth ? 'bg-blue-50 dark:bg-blue-900/20' : ''; ?>">
+                                            <td class="px-4 py-3 text-slate-900 dark:text-slate-100 font-medium flex items-center gap-2">
+                                                <?php echo htmlspecialchars($month); ?>
+                                                <?php if ($isCurrentMonth): ?>
+                                                    <span class="inline-flex items-center rounded-md bg-blue-100 dark:bg-blue-900 px-2 py-0.5 text-xs font-medium text-blue-700 dark:text-blue-300">Current</span>
+                                                <?php endif; ?>
+                                            </td>
+                                            <td class="px-4 py-3 text-right text-slate-900 dark:text-slate-100 font-semibold"><?php echo number_format($value); ?></td>
+                                            <td class="px-4 py-3 text-right">
+                                                <div class="flex items-center justify-end gap-2">
+                                                    <div class="w-16 h-6 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden">
+                                                        <div class="h-full bg-primary" style="width: <?php echo $percentage; ?>%;"></div>
+                                                    </div>
+                                                    <span class="text-xs text-slate-500 dark:text-slate-400 w-8 text-right"><?php echo round($percentage); ?>%</span>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    <?php endfor; ?>
+                                </tbody>
+                            </table>
+                        </div>
+                        <!-- Pagination -->
+                        <div class="flex items-center justify-between mt-4 pt-4 border-t border-slate-100 dark:border-slate-700">
+                            <span class="text-xs text-slate-500 dark:text-slate-400">
+                                Showing <span class="growth-page-info">1-5</span> of <?php echo count($growthLabels); ?> months
+                            </span>
+                            <div class="flex gap-2">
+                                <button class="growth-prev-btn px-3 py-1.5 rounded-lg text-sm font-medium text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
+                                    ← Previous
+                                </button>
+                                <button class="growth-next-btn px-3 py-1.5 rounded-lg text-sm font-medium text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
+                                    Next →
+                                </button>
+                            </div>
                         </div>
                     </div>
                     <!-- Geographic Distribution -->
@@ -470,8 +565,7 @@ function initials($name)
                             <div>
                                 <h4 class="text-base font-bold text-slate-900 dark:text-white">Geographic Distribution
                                 </h4>
-                                <p class="text-xs text-slate-500 dark:text-slate-400">Top performance regions by shop
-                                    volume</p>
+                                <p class="text-xs text-slate-500 dark:text-slate-400">Shop distribution across Bulacan cities</p>
                             </div>
                             <button class="text-xs text-primary font-medium hover:underline">View Map</button>
                         </div>
@@ -480,8 +574,7 @@ function initials($name)
                             $maxShops = !empty($geoData) ? $geoData[0]['shop_count'] : 1;
                             foreach ($geoData as $idx => $region):
                                 $percentage = ($region['shop_count'] / $maxShops) * 100;
-                                $regionNames = ['A' => 'Aurora', 'B' => 'Brooklyn', 'C' => 'Chicago', 'D' => 'Denver', 'E' => 'Edison', 'F' => 'Fresco', 'G' => 'Georgia', 'H' => 'Houston'];
-                                $displayName = isset($regionNames[$region['region_code']]) ? $regionNames[$region['region_code']] : $region['region_code'] . ' Region';
+                                $displayName = htmlspecialchars($region['region']);
                                 ?>
                                 <div>
                                     <div class="flex justify-between text-sm mb-1.5">
@@ -496,7 +589,7 @@ function initials($name)
                                 </div>
                             <?php endforeach; ?>
                             <?php if (empty($geoData)): ?>
-                                <p class="text-sm text-slate-400">No shop data available</p>
+                                <p class="text-sm text-slate-400">No Bulacan shop data available</p>
                             <?php endif; ?>
                         </div>
                     </div>
@@ -505,44 +598,68 @@ function initials($name)
                     <!-- Subscription Breakdown -->
                     <div
                         class="lg:col-span-2 rounded-xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-                        <div class="flex items-center justify-between mb-8">
+                        <div class="flex items-center justify-between mb-6">
                             <div>
-                                <h4 class="text-base font-bold text-slate-900 dark:text-white">Service &amp; Tier
-                                    Breakdown</h4>
-                                <p class="text-xs text-slate-500 dark:text-slate-400">Revenue distribution by membership
-                                    tier</p>
+                                <h4 class="text-base font-bold text-slate-900 dark:text-white">Service & Tier Breakdown</h4>
+                                <p class="text-xs text-slate-500 dark:text-slate-400">Revenue distribution by membership tier</p>
                             </div>
                         </div>
-                        <div class="flex flex-col md:flex-row items-center gap-12">
-                            <div style="width: 250px; height: 250px; position: relative; flex-shrink: 0;">
-                                <canvas id="subscriptionChart" style="display: block;"></canvas>
-                            </div>
-                            <div class="flex-1 space-y-4 w-full">
-                                <?php
-                                $colors = ['#b91c1c', '#dc2626', '#ef4444'];
-                                foreach ($subBreakdown as $idx => $sub):
-                                    $percentage = $totalSubCount > 0 ? ($sub['count'] / $totalSubCount) * 100 : 0;
-                                    ?>
-                                    <div class="flex items-center gap-4">
-                                        <div class="h-3 w-3 rounded-full"
-                                            style="background-color: <?php echo $colors[$idx % count($colors)]; ?>"></div>
-                                        <span class="flex-1 text-sm text-slate-600 dark:text-slate-400">
-                                            <?php echo htmlspecialchars($sub['subscription_plan'] ?: 'Standard Plan'); ?>
-                                        </span>
-                                        <span class="text-sm font-bold"><?php echo number_format($percentage, 0); ?>%</span>
-                                    </div>
-                                <?php endforeach; ?>
-                                <?php if (empty($subBreakdown)): ?>
-                                    <p class="text-sm text-slate-400">No subscription data available</p>
-                                <?php endif; ?>
-                                <div class="pt-4 border-t border-slate-100 dark:border-slate-800">
-                                    <div class="flex items-center justify-between">
-                                        <span class="text-sm font-medium">Monthly Recurring Revenue</span>
-                                        <span
-                                            class="text-primary font-bold">$<?php echo number_format($totalActivePlanRevenue, 0); ?></span>
-                                    </div>
-                                </div>
-                            </div>
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-sm">
+                                <thead>
+                                    <tr class="border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50">
+                                        <th class="px-4 py-3 text-left font-semibold text-slate-600 dark:text-slate-300">Plan</th>
+                                        <th class="px-4 py-3 text-right font-semibold text-slate-600 dark:text-slate-300">Count</th>
+                                        <th class="px-4 py-3 text-right font-semibold text-slate-600 dark:text-slate-300">Distribution</th>
+                                        <th class="px-4 py-3 text-right font-semibold text-slate-600 dark:text-slate-300">Revenue</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <?php 
+                                    if (!empty($subBreakdown)) {
+                                        foreach ($subBreakdown as $idx => $sub):
+                                            $percentage = $totalSubCount > 0 ? ($sub['count'] / $totalSubCount) * 100 : 0;
+                                            $revenue = $sub['revenue'] ?: 0;
+                                        ?>
+                                            <tr class="border-b border-slate-100 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
+                                                <td class="px-4 py-3 text-slate-900 dark:text-slate-100 font-medium">
+                                                    <?php echo htmlspecialchars(ucfirst($sub['subscription_plan']) ?: 'Standard Plan'); ?>
+                                                </td>
+                                                <td class="px-4 py-3 text-right text-slate-900 dark:text-slate-100 font-semibold">
+                                                    <?php echo number_format($sub['count']); ?>
+                                                </td>
+                                                <td class="px-4 py-3 text-right">
+                                                    <div class="flex items-center justify-end gap-2">
+                                                        <div class="w-16 h-6 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden">
+                                                            <div class="h-full bg-primary" style="width: <?php echo $percentage; ?>%;"></div>
+                                                        </div>
+                                                        <span class="text-xs text-slate-500 dark:text-slate-400 w-8 text-right"><?php echo round($percentage); ?>%</span>
+                                                    </div>
+                                                </td>
+                                                <td class="px-4 py-3 text-right font-semibold text-primary">
+                                                    $<?php echo number_format($revenue, 0); ?>
+                                                </td>
+                                            </tr>
+                                        <?php endforeach;
+                                    } else { ?>
+                                        <tr>
+                                            <td colspan="4" class="px-4 py-8 text-center text-sm text-slate-400">No subscription data available</td>
+                                        </tr>
+                                    <?php } ?>
+                                </tbody>
+                                <tfoot>
+                                    <tr class="border-t-2 border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 font-bold">
+                                        <td class="px-4 py-3 text-slate-900 dark:text-slate-100">Total</td>
+                                        <td class="px-4 py-3 text-right text-slate-900 dark:text-slate-100">
+                                            <?php echo number_format($totalSubCount); ?>
+                                        </td>
+                                        <td class="px-4 py-3 text-right text-slate-900 dark:text-slate-100">100%</td>
+                                        <td class="px-4 py-3 text-right text-primary">
+                                            $<?php echo number_format($totalActivePlanRevenue, 0); ?>
+                                        </td>
+                                    </tr>
+                                </tfoot>
+                            </table>
                         </div>
                     </div>
                     <!-- Recent Activity Feed -->
@@ -590,78 +707,228 @@ function initials($name)
                         </div>
                     </div>
                 </div>
+                
+                <!-- Active and Inactive Tenants Lists -->
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <!-- Active Tenants -->
+                    <div class="rounded-xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+                        <div class="flex items-center justify-between mb-4">
+                            <div>
+                                <h4 class="text-base font-bold text-slate-900 dark:text-white">Active Tenants</h4>
+                                <p class="text-xs text-slate-500 dark:text-slate-400 active-count"><?php echo count($activeTenantsList); ?> active shops</p>
+                            </div>
+                            <span class="material-symbols-outlined text-green-600 bg-green-100/50 rounded-lg p-2">verified</span>
+                        </div>
+                        <div class="mb-4">
+                            <input 
+                                type="text" 
+                                id="activeTenantsSearch"
+                                class="w-full rounded-lg border border-slate-200 bg-slate-50 py-2 px-3 text-sm focus:border-primary focus:ring-1 focus:ring-primary dark:border-slate-800 dark:bg-slate-800 dark:text-slate-200"
+                                placeholder="Search by name or email..."
+                            />
+                        </div>
+                        <div class="space-y-3 max-h-96 overflow-y-auto active-tenants-list">
+                            <?php if (!empty($activeTenantsList)): ?>
+                                <?php foreach ($activeTenantsList as $tenant): ?>
+                                    <div class="tenant-item" data-name="<?php echo htmlspecialchars($tenant['ownerName']); ?>" data-email="<?php echo htmlspecialchars($tenant['email']); ?>" data-shop="<?php echo htmlspecialchars($tenant['shopName']); ?>" data-initials="<?php echo htmlspecialchars(initials($tenant['ownerName'])); ?>">
+                                        <div class="flex items-start gap-4 p-3 border border-slate-100 dark:border-slate-700 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
+                                            <div class="w-10 h-10 rounded-full bg-green-100 text-green-700 flex items-center justify-center font-semibold text-sm flex-shrink-0">
+                                                <?php echo htmlspecialchars(initials($tenant['ownerName'])); ?>
+                                            </div>
+                                            <div class="flex-1 min-w-0">
+                                                <p class="text-sm font-medium text-slate-900 dark:text-white truncate">
+                                                    <?php echo htmlspecialchars($tenant['ownerName']); ?>
+                                                </p>
+                                                <p class="text-xs text-slate-500 dark:text-slate-400 truncate">
+                                                    <?php echo htmlspecialchars($tenant['shopName']); ?>
+                                                </p>
+                                                <p class="text-xs text-slate-400 dark:text-slate-500 truncate">
+                                                    <?php echo htmlspecialchars($tenant['email']); ?>
+                                                </p>
+                                                <p class="text-xs text-green-600 dark:text-green-400 mt-1 font-medium">
+                                                    Joined <?php echo date('M d, Y', strtotime($tenant['created_at'])); ?>
+                                                </p>
+                                            </div>
+                                            <div class="flex-shrink-0">
+                                                <span class="inline-flex items-center rounded-full bg-green-100 px-2.5 py-0.5 text-xs font-medium text-green-800 dark:bg-green-900/30 dark:text-green-400">
+                                                    Active
+                                                </span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                <?php endforeach; ?>
+                            <?php else: ?>
+                                <p class="text-sm text-slate-400 text-center py-6">No active tenants</p>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+
+                    <!-- Inactive Tenants -->
+                    <div class="rounded-xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+                        <div class="flex items-center justify-between mb-4">
+                            <div>
+                                <h4 class="text-base font-bold text-slate-900 dark:text-white">Inactive Tenants</h4>
+                                <p class="text-xs text-slate-500 dark:text-slate-400 inactive-count"><?php echo count($inactiveTenantsList); ?> inactive shops</p>
+                            </div>
+                            <span class="material-symbols-outlined text-amber-600 bg-amber-100/50 rounded-lg p-2">pause_circle</span>
+                        </div>
+                        <div class="mb-4">
+                            <input 
+                                type="text" 
+                                id="inactiveTenantsSearch"
+                                class="w-full rounded-lg border border-slate-200 bg-slate-50 py-2 px-3 text-sm focus:border-primary focus:ring-1 focus:ring-primary dark:border-slate-800 dark:bg-slate-800 dark:text-slate-200"
+                                placeholder="Search by name or email..."
+                            />
+                        </div>
+                        <div class="space-y-3 max-h-96 overflow-y-auto inactive-tenants-list">
+                            <?php if (!empty($inactiveTenantsList)): ?>
+                                <?php foreach ($inactiveTenantsList as $tenant): ?>
+                                    <div class="tenant-item" data-name="<?php echo htmlspecialchars($tenant['ownerName']); ?>" data-email="<?php echo htmlspecialchars($tenant['email']); ?>" data-shop="<?php echo htmlspecialchars($tenant['shopName']); ?>" data-initials="<?php echo htmlspecialchars(initials($tenant['ownerName'])); ?>" data-status="<?php echo htmlspecialchars($tenant['status']); ?>">
+                                        <div class="flex items-start gap-4 p-3 border border-slate-100 dark:border-slate-700 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
+                                            <div class="w-10 h-10 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center font-semibold text-sm flex-shrink-0">
+                                                <?php echo htmlspecialchars(initials($tenant['ownerName'])); ?>
+                                            </div>
+                                            <div class="flex-1 min-w-0">
+                                                <p class="text-sm font-medium text-slate-900 dark:text-white truncate">
+                                                    <?php echo htmlspecialchars($tenant['ownerName']); ?>
+                                                </p>
+                                                <p class="text-xs text-slate-500 dark:text-slate-400 truncate">
+                                                    <?php echo htmlspecialchars($tenant['shopName']); ?>
+                                                </p>
+                                                <p class="text-xs text-slate-400 dark:text-slate-500 truncate">
+                                                    <?php echo htmlspecialchars($tenant['email']); ?>
+                                                </p>
+                                                <p class="text-xs text-amber-600 dark:text-amber-400 mt-1 font-medium">
+                                                    Joined <?php echo date('M d, Y', strtotime($tenant['created_at'])); ?>
+                                                </p>
+                                            </div>
+                                            <div class="flex-shrink-0">
+                                                <span class="inline-flex items-center rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-900/30 dark:text-amber-400">
+                                                    <?php echo htmlspecialchars(ucfirst($tenant['status'])); ?>
+                                                </span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                <?php endforeach; ?>
+                            <?php else: ?>
+                                <p class="text-sm text-slate-400 text-center py-6">No inactive tenants</p>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+                </div>
             </div>
         </main>
     </div>
 
     <script>
         document.addEventListener('DOMContentLoaded', function () {
-            // Growth Chart
-            const growthCtx = document.getElementById('growthChart');
-            if (growthCtx && typeof Chart !== 'undefined') {
-                const growthCtxContext = growthCtx.getContext('2d');
-                new Chart(growthCtxContext, {
-                    type: 'line',
-                    data: {
-                        labels: <?php echo json_encode($growthLabels); ?>,
-                        datasets: [{
-                            label: 'Registrations',
-                            data: <?php echo json_encode($growthData); ?>,
-                            borderColor: '#b91c1c',
-                            backgroundColor: 'rgba(185, 28, 28, 0.15)',
-                            borderWidth: 2,
-                            fill: false,
-                            tension: 0,
-                            pointRadius: 3
-                        }]
-                    },
-                    options: {
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        plugins: {
-                            legend: {
-                                display: false
-                            }
-                        },
-                        scales: {
-                            y: {
-                                beginAtZero: true,
-                                ticks: { precision: 0 }
-                            },
-                            x: { grid: { display: false } }
-                        }
+            // Growth Table Pagination
+            const growthTable = document.querySelector('.growth-table');
+            if (growthTable) {
+                const rows = Array.from(growthTable.querySelectorAll('.growth-row'));
+                const rowsPerPage = parseInt(growthTable.getAttribute('data-rows-per-page')) || 5;
+                let currentPage = 1;
+                const totalPages = Math.ceil(rows.length / rowsPerPage);
+
+                function showPage(pageNum) {
+                    const start = (pageNum - 1) * rowsPerPage;
+                    const end = start + rowsPerPage;
+
+                    rows.forEach((row, idx) => {
+                        row.style.display = (idx >= start && idx < end) ? 'table-row' : 'none';
+                    });
+
+                    // Update pagination info
+                    const pageInfo = document.querySelector('.growth-page-info');
+                    if (pageInfo) {
+                        const displayStart = start + 1;
+                        const displayEnd = Math.min(end, rows.length);
+                        pageInfo.textContent = `${displayStart}-${displayEnd}`;
                     }
-                });
+
+                    // Update button states
+                    const prevBtn = document.querySelector('.growth-prev-btn');
+                    const nextBtn = document.querySelector('.growth-next-btn');
+                    if (prevBtn) prevBtn.disabled = pageNum === 1;
+                    if (nextBtn) nextBtn.disabled = pageNum === totalPages;
+                }
+
+                // Pagination button handlers
+                const prevBtn = document.querySelector('.growth-prev-btn');
+                const nextBtn = document.querySelector('.growth-next-btn');
+
+                if (prevBtn) {
+                    prevBtn.addEventListener('click', () => {
+                        if (currentPage > 1) {
+                            currentPage--;
+                            showPage(currentPage);
+                        }
+                    });
+                }
+
+                if (nextBtn) {
+                    nextBtn.addEventListener('click', () => {
+                        if (currentPage < totalPages) {
+                            currentPage++;
+                            showPage(currentPage);
+                        }
+                    });
+                }
+
+                // Initialize first page
+                showPage(1);
             }
 
-            // Subscription Chart (Pie)
-            const subCtx = document.getElementById('subscriptionChart');
-            if (subCtx && typeof Chart !== 'undefined') {
-                const subCtxContext = subCtx.getContext('2d');
-                const subLabels = <?php echo json_encode(array_map(fn($s) => $s['subscription_plan'] ?: 'Standard', $subBreakdown)); ?>;
-                const subData = <?php echo json_encode(array_map(fn($s) => $s['count'], $subBreakdown)); ?>;
+            // Tenant Search Functionality
+            const activeSearchInput = document.getElementById('activeTenantsSearch');
+            const inactiveSearchInput = document.getElementById('inactiveTenantsSearch');
 
-                new Chart(subCtxContext, {
-                    type: 'pie',
-                    data: {
-                        labels: subLabels,
-                        datasets: [{
-                            data: subData,
-                            backgroundColor: ['#7f1d1d', '#b91c1c', '#dc2626', '#ef4444'],
-                            borderWidth: 1
-                        }]
-                    },
-                    options: {
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        plugins: {
-                            legend: {
-                                display: true,
-                                position: 'bottom'
-                            }
-                        }
-                    }
+            function filterTenants(searchInput, tenantList, countElement) {
+                const searchTerm = searchInput.value.toLowerCase();
+                const tenantItems = tenantList.querySelectorAll('.tenant-item');
+                let visibleCount = 0;
+
+                tenantItems.forEach(item => {
+                    const name = item.dataset.name.toLowerCase();
+                    const email = item.dataset.email.toLowerCase();
+                    const shop = item.dataset.shop.toLowerCase();
+
+                    const matches = name.includes(searchTerm) || email.includes(searchTerm) || shop.includes(searchTerm);
+                    item.style.display = matches ? 'block' : 'none';
+                    if (matches) visibleCount++;
                 });
+
+                // Update count
+                if (countElement) {
+                    countElement.textContent = visibleCount + ' ' + (visibleCount === 1 ? 'shop' : 'shops');
+                }
+
+                // Show no results message if needed
+                if (visibleCount === 0) {
+                    if (!tenantList.querySelector('.no-results')) {
+                        const noResultsMsg = document.createElement('p');
+                        noResultsMsg.className = 'no-results text-sm text-slate-400 text-center py-6';
+                        noResultsMsg.textContent = 'No tenants found';
+                        tenantList.appendChild(noResultsMsg);
+                    }
+                } else {
+                    const noResultsMsg = tenantList.querySelector('.no-results');
+                    if (noResultsMsg) {
+                        noResultsMsg.remove();
+                    }
+                }
+            }
+
+            if (activeSearchInput) {
+                const activeTenantsList = activeSearchInput.closest('.rounded-xl').querySelector('.active-tenants-list');
+                const activeCount = activeSearchInput.closest('.rounded-xl').querySelector('.active-count');
+                activeSearchInput.addEventListener('input', () => filterTenants(activeSearchInput, activeTenantsList, activeCount));
+            }
+
+            if (inactiveSearchInput) {
+                const inactiveTenantsList = inactiveSearchInput.closest('.rounded-xl').querySelector('.inactive-tenants-list');
+                const inactiveCount = inactiveSearchInput.closest('.rounded-xl').querySelector('.inactive-count');
+                inactiveSearchInput.addEventListener('input', () => filterTenants(inactiveSearchInput, inactiveTenantsList, inactiveCount));
             }
         });
     </script>

@@ -429,7 +429,7 @@ if ($stats['active_subscriptions'] > 0) {
 ?>
 <!DOCTYPE html>
 
-<html lang="en">
+<html class="light" lang="en">
 
 <head>
     <meta charset="utf-8" />

@@ -37,7 +37,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
 ?>
 
 <!DOCTYPE html>
-<html lang="en">
+<html class="light" lang="en">
 
 <head>
     <meta charset="utf-8">
@@ -48,25 +48,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
     <link
         href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap"
         rel="stylesheet">
-    <script id="tailwind-config">
-        tailwind.config = {
-            darkMode: "class",
-            theme: {
-                extend: {
-                    colors: {
-                        "primary": "#dc2626",
-                        "navy-deep": "#111111",
-                        "background-light": "#ffffff",
-                        "background-dark": "#000000",
-                    },
-                    fontFamily: {
-                        "display": ["Inter"]
-                    },
-                    borderRadius: { "DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px" },
-                },
-            },
-        }
-    </script>
+        
     <style>
         body { font-family: 'Inter', sans-serif; }
     </style>
@@ -105,7 +87,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                         <label class="block text-sm font-medium text-slate-700 dark:text-slate-300" for="password">Password</label>
                         <div class="relative">
                             <span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xl">lock</span>
-                            <input type="password" name="password" id="password" placeholder="••••••••" required
+                            <input type="password" name="password" id="password" placeholder="Ã¢â‚¬Â¢Ã¢â‚¬Â¢Ã¢â‚¬Â¢Ã¢â‚¬Â¢Ã¢â‚¬Â¢Ã¢â‚¬Â¢Ã¢â‚¬Â¢Ã¢â‚¬Â¢" required
                                 class="w-full pl-10 pr-12 py-3 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all placeholder:text-slate-400">
                         </div>
                     </div>

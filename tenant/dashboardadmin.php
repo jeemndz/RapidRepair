@@ -46,8 +46,8 @@
     <div class="flex h-screen overflow-hidden">
         <!-- Sidebar -->
         <aside
-            class="w-64 flex-shrink-0 border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-y-auto">
-            <div class="p-6">
+            class="w-64 flex-shrink-0 border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 h-screen sticky top-0 flex flex-col overflow-y-auto">
+            <div class="p-6 flex-1">
                 <div class="flex items-center gap-3 mb-8">
                     <div class="bg-primary rounded-lg p-2 text-white">
                         <span class="material-symbols-outlined">directions_car</span>
@@ -59,40 +59,55 @@
                 </div>
                 <nav class="space-y-1">
                     <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-primary/10 text-primary font-medium"
-                        href="#">
+                        href="dashboardadmin.php">
                         <span class="material-symbols-outlined text-[22px]">dashboard</span>
                         Dashboard
                     </a>
-                    <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-                        href="#">
+                    <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 hover:bg-slate-100 transition-colors font-medium"
+                        href="repairjobsadmin.php">
                         <span class="material-symbols-outlined text-[22px]">build</span>
                         Repair Jobs
                     </a>
-                    <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-                        href="#">
-                        <span class="material-symbols-outlined text-[22px]">group</span>
-                        Customers
+                    <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 hover:bg-slate-100 transition-colors"
+                        href="vehicleadmin.php">
+                        <span class="material-symbols-outlined text-[22px]">directions_car</span>
+                        Vehicles
                     </a>
-                    <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-                        href="#">
-                        <span class="material-symbols-outlined text-[22px]">inventory_2</span>
-                        Inventory
-                    </a>
-                    <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-                        href="#">
+                    <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 hover:bg-slate-100 transition-colors"
+                        href="appointmentadmin.php">
                         <span class="material-symbols-outlined text-[22px]">event</span>
                         Appointments
                     </a>
-                    <div class="pt-4 mt-4 border-t border-slate-100 dark:border-slate-800">
-                        <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-                            href="#">
+                    <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 hover:bg-slate-100 transition-colors"
+                        href="reportsadmin.php">
+                        <span class="material-symbols-outlined text-[22px]">description</span>
+                        Reports
+                    </a>
+                    <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 hover:bg-slate-100 transition-colors"
+                        href="inventoryadmin.php">
+                        <span class="material-symbols-outlined text-[22px]">inventory_2</span>
+                        Inventory
+                    </a>
+                    <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 hover:bg-slate-100 transition-colors"
+                        href="customeradmin.php">
+                        <span class="material-symbols-outlined text-[22px]">group</span>
+                        Customers
+                    </a>
+                    <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 hover:bg-slate-100 transition-colors"
+                        href="paymentsadmin.php">
+                        <span class="material-symbols-outlined text-[22px]">payments</span>
+                        Payments
+                    </a>
+                    <div class="pt-4 mt-4 border-t border-slate-100">
+                        <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 hover:bg-slate-100 transition-colors"
+                            href="settingsadmin.php">
                             <span class="material-symbols-outlined text-[22px]">settings</span>
                             Settings
                         </a>
                     </div>
                 </nav>
             </div>
-            <div class="absolute bottom-0 w-64 p-4 border-t border-slate-200 dark:border-slate-800">
+            <div class="p-4 border-t border-slate-200 dark:border-slate-800">
                 <div class="flex items-center gap-3">
                     <div
                         class="size-10 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center overflow-hidden">
@@ -104,35 +119,43 @@
                         <p class="text-sm font-semibold truncate">Marcus Smith</p>
                         <p class="text-xs text-slate-500 truncate">Shop Manager</p>
                     </div>
+                    <button class="text-slate-400 hover:text-error transition-colors">
+                        <span class="material-symbols-outlined text-xl">logout</span>
+                    </button>
                 </div>
             </div>
         </aside>
         <!-- Main Content -->
         <main class="flex-1 overflow-y-auto">
-            <!-- Header -->
+            <!-- Top Nav Bar -->
             <header
-                class="sticky top-0 z-10 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 px-8 py-4">
-                <div class="flex items-center justify-between">
-                    <h2 class="text-xl font-bold tracking-tight">Dashboard Overview</h2>
-                    <div class="flex items-center gap-4">
-                        <div class="relative">
-                            <span
-                                class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">search</span>
-                            <input
-                                class="pl-10 pr-4 py-2 bg-slate-100 dark:bg-slate-800 border-none rounded-lg text-sm focus:ring-2 focus:ring-primary w-64"
-                                placeholder="Search orders, parts..." type="text" />
+                class="sticky top-0 z-40 w-full border-b border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md flex items-center justify-between px-8 h-16">
+                <div class="flex items-center gap-6">
+                    <h2 class="text-lg font-black text-slate-900 dark:white tracking-tight">Dashboard Overview</h2>
+                    <div class="relative hidden lg:block">
+                        <span
+                            class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">search</span>
+                        <input
+                            class="bg-surface-variant border-none rounded-lg pl-10 pr-4 py-1.5 text-sm w-64 focus:ring-2 focus:ring-primary/20"
+                            placeholder="Search dashboard..." type="text" />
+                    </div>
+                </div>
+                <div class="flex items-center gap-4">
+                    <button class="p-2 text-slate-500 hover:text-primary transition-all">
+                        <span class="material-symbols-outlined">notifications</span>
+                    </button>
+                    <button class="p-2 text-slate-500 hover:text-primary transition-all">
+                        <span class="material-symbols-outlined">help_outline</span>
+                    </button>
+                    <div class="h-8 w-px bg-slate-200 mx-2"></div>
+                    <div class="flex items-center gap-3">
+                        <div class="text-right hidden sm:block">
+                            <p class="text-xs font-bold text-on-background">Alex Rivet</p>
+                            <p class="text-[10px] text-slate-500 uppercase font-semibold">Service Lead</p>
                         </div>
-                        <a href="../logout/logout.php"
-                            class="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300 text-sm font-semibold hover:bg-red-100 dark:hover:bg-red-900/35 transition-colors">
-                            <span class="material-symbols-outlined text-[20px]">logout</span>
-                            Logout
-                        </a>
-                        <button
-                            class="p-2 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 relative">
-                            <span class="material-symbols-outlined">notifications</span>
-                            <span
-                                class="absolute top-2 right-2 size-2 bg-red-500 rounded-full ring-2 ring-white dark:ring-slate-900"></span>
-                        </button>
+                        <img alt="Manager Avatar" class="h-10 w-10 rounded-full border-2 border-primary/20 object-cover"
+                            data-alt="professional male service manager portrait in modern automotive office environment"
+                            src="https://lh3.googleusercontent.com/aida-public/AB6AXuC_w4TZYv-DoCr0hxBNhV2Z-nUsRKiJWSSjgi__Y4oVCvZsEnAXH-GvsZk4qUV8VfyOd_rN5mqWnBeNlMb7An_00pBDPbF7FGZDqw2HhZ4MbeNkgRRsmuE6r3t2yOO4P5sHcWAMkVgXaheA3Z2LKA0Fo_mIUP0qh9KRyragtZ_zvLR-U7pm-kWc645Yi3rN0Mm0P9km9Kt3Fp4fKCU5i33aRJsonLoG5k45EuFpDDTP2CbZiarn81pTDjiPcRHLtpdJg1O47dGsJUD2" />
                     </div>
                 </div>
             </header>
