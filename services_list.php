@@ -10,11 +10,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     exit;
 }
 
-require_once __DIR__ . '/../db.php';
+
+// Try to include db.php from the same folder or parent (robust for API use)
+if (file_exists(__DIR__ . '/../db.php')) {
+    require_once __DIR__ . '/../db.php';
+} elseif (file_exists(__DIR__ . '/db.php')) {
+    require_once __DIR__ . '/db.php';
+} else {
+    http_response_code(500);
+    echo json_encode(['status' => 'error', 'message' => 'db.php not found.']);
+    exit;
+}
 
 if (!isset($conn) || !($conn instanceof mysqli)) {
     http_response_code(500);
     echo json_encode(['status' => 'error', 'message' => 'Database connection not available.']);
+    exit;
+}
+
+
+// Health check for root GET
+if ($_SERVER['REQUEST_METHOD'] === 'GET' && empty($_GET)) {
+    echo json_encode(['status' => 'ok', 'message' => 'Service API is running.']);
     exit;
 }
 
