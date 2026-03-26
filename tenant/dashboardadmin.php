@@ -1,3 +1,29 @@
+
+<?php
+session_start();
+include __DIR__ . '/../db.php';
+// Check if user is logged in and has a valid session
+if (!isset($_SESSION['tenantID']) || !isset($_SESSION['login_slug'])) {
+    // Not logged in, redirect to login page
+    header('Location: tenantlogin.php');
+    exit;
+}
+
+// Optionally, fetch the owner's data for this session (for further isolation/validation)
+$tenantID = $_SESSION['tenantID'];
+$login_slug = $_SESSION['login_slug'];
+$stmt = mysqli_prepare($conn, "SELECT * FROM owners WHERE tenantID = ? AND login_slug = ? LIMIT 1");
+mysqli_stmt_bind_param($stmt, "is", $tenantID, $login_slug);
+mysqli_stmt_execute($stmt);
+$result = mysqli_stmt_get_result($stmt);
+$owner = mysqli_fetch_assoc($result);
+if (!$owner) {
+    // Invalid session or tampered, force logout
+    session_destroy();
+    header('Location: tenantlogin.php');
+    exit;
+}
+?>
 <!DOCTYPE html>
 
 <html lang="en">
@@ -119,9 +145,11 @@
                         <p class="text-sm font-semibold truncate">Marcus Smith</p>
                         <p class="text-xs text-slate-500 truncate">Shop Manager</p>
                     </div>
-                    <button class="text-slate-400 hover:text-error transition-colors">
-                        <span class="material-symbols-outlined text-xl">logout</span>
-                    </button>
+                    <form id="logoutForm" method="post" action="../logout/logout.php" class="inline">
+                        <button type="submit" class="text-slate-400 hover:text-error transition-colors" title="Logout">
+                            <span class="material-symbols-outlined text-xl">logout</span>
+                        </button>
+                    </form>
                 </div>
             </div>
         </aside>

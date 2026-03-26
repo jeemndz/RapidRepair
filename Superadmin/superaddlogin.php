@@ -55,7 +55,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
 </head>
 
 <body class="bg-zinc-900 min-h-screen flex items-center justify-center p-4">
-    <div class="w-full max-w-6xl bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+    <div class="w-full max-w-6xl bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden">
         <div class="grid grid-cols-1 lg:grid-cols-2 min-h-[620px]">
             <!-- Left Branding Container -->
             <section class="bg-gradient-to-br from-black via-zinc-900 to-red-900 text-white p-10 lg:p-14 flex flex-col justify-center items-center text-center">
@@ -69,26 +69,26 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
             <!-- Right Login Container -->
             <section class="p-8 md:p-12 flex flex-col justify-center">
                 <div class="mb-8">
-                    <h2 class="text-3xl font-bold text-slate-900 dark:text-slate-100">Log In</h2>
-                    <p class="text-slate-500 dark:text-slate-400 text-sm mt-2">Please enter your credentials to access the SuperAdmin dashboard.</p>
+                    <h2 class="text-3xl font-bold text-slate-900">Log In</h2>
+                    <p class="text-slate-500 text-sm mt-2">Please enter your credentials to access the SuperAdmin dashboard.</p>
                 </div>
 
                 <form class="space-y-5" method="POST" action="">
                     <div class="space-y-2">
-                        <label class="block text-sm font-medium text-slate-700 dark:text-slate-300" for="email">Email address</label>
+                        <label class="block text-sm font-medium text-slate-700" for="email">Email address</label>
                         <div class="relative">
                             <span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xl">mail</span>
                             <input type="email" name="email" id="email" placeholder="admin@gmail.com" required
-                                class="w-full pl-10 pr-4 py-3 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all placeholder:text-slate-400">
+                                class="w-full pl-10 pr-4 py-3 rounded-lg border border-slate-300 bg-white text-slate-900 focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all placeholder:text-slate-400">
                         </div>
                     </div>
 
                     <div class="space-y-2">
-                        <label class="block text-sm font-medium text-slate-700 dark:text-slate-300" for="password">Password</label>
+                        <label class="block text-sm font-medium text-slate-700" for="password">Password</label>
                         <div class="relative">
                             <span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xl">lock</span>
-                            <input type="password" name="password" id="password" placeholder="Ã¢â‚¬Â¢Ã¢â‚¬Â¢Ã¢â‚¬Â¢Ã¢â‚¬Â¢Ã¢â‚¬Â¢Ã¢â‚¬Â¢Ã¢â‚¬Â¢Ã¢â‚¬Â¢" required
-                                class="w-full pl-10 pr-12 py-3 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all placeholder:text-slate-400">
+                            <input type="password" name="password" id="password" placeholder="••••••••" required
+                                class="w-full pl-10 pr-12 py-3 rounded-lg border border-slate-300 bg-white text-slate-900 focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all placeholder:text-slate-400">
                         </div>
                     </div>
 
@@ -99,19 +99,19 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                     <div class="flex items-center justify-between">
                         <label class="flex items-center gap-2 cursor-pointer group">
                             <input type="checkbox" class="rounded border-slate-300 dark:border-slate-700 text-primary focus:ring-primary bg-transparent">
-                            <span class="text-sm text-slate-600 dark:text-slate-400 group-hover:text-slate-900 dark:group-hover:text-slate-200 transition-colors">Remember this session</span>
+                            <span class="text-sm text-slate-600 group-hover:text-slate-900 transition-colors">Remember this session</span>
                         </label>
                         <a class="text-sm font-medium text-primary hover:underline" href="#">Forgot Password?</a>
                     </div>
 
                     <button type="submit"
-                        class="w-full bg-navy-deep hover:bg-slate-800 text-white font-bold py-3.5 rounded-lg transition-all flex items-center justify-center gap-2 shadow-lg hover:shadow-navy-deep/20 active:scale-[0.98]">
+                        class="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-3.5 rounded-lg transition-all flex items-center justify-center gap-2 shadow-lg hover:shadow-red-600/20 active:scale-[0.98]">
                         <span class="material-symbols-outlined text-xl">login</span>
                         Sign In as Superadmin
                     </button>
                 </form>
 
-                <div class="mt-8 pt-6 border-t border-slate-200 dark:border-slate-700 flex items-center justify-between text-xs text-slate-400">
+                <div class="mt-8 pt-6 border-t border-slate-200 flex items-center justify-between text-xs text-slate-400">
                     <span>Encrypted Connection</span>
                     <span>Multi-factor Enabled</span>
                 </div>
