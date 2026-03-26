@@ -18,7 +18,7 @@ if (!isset($conn) || !($conn instanceof mysqli)) {
     exit;
 }
 
-$tenantID = isset($_GET['tenantID']) && is_numeric($_GET['tenantID']) ? (int)$_GET['tenantID'] : 1;
+$tenantID = isset($_GET['tenantID']) && is_numeric($_GET['tenantID']) ? (int) $_GET['tenantID'] : 1;
 
 $sql = "SELECT service_id, tenantID, service_name, description, price, duration_minutes, category, status, created_at, updated_at FROM services WHERE tenantID = ? AND status = 'Active' ORDER BY service_name ASC";
 $stmt = $conn->prepare($sql);
