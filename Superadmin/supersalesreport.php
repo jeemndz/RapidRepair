@@ -67,20 +67,23 @@ function formatCurrency($value)
 
 function formatCount($value)
 {
-    if ($value >= 1000000) return number_format($value / 1000000, 1) . "M";
-    if ($value >= 1000) return number_format($value / 1000, 1) . "k";
+    if ($value >= 1000000)
+        return number_format($value / 1000000, 1) . "M";
+    if ($value >= 1000)
+        return number_format($value / 1000, 1) . "k";
     return number_format($value);
 }
 
 function getPercentChange($current, $previous)
 {
-    if ($previous == 0) return $current > 0 ? 100 : 0;
+    if ($previous == 0)
+        return $current > 0 ? 100 : 0;
     return (($current - $previous) / $previous) * 100;
 }
 
 function initials($name)
 {
-    $name = trim((string)$name);
+    $name = trim((string) $name);
     if ($name === '') {
         return 'NA';
     }
@@ -153,9 +156,11 @@ $totalRevenue = $revenueResult ? ($revenueResult->fetch_assoc()['total_revenue']
 
 // Revenue for previous period
 $prevRevenueWhere = [];
-if ($tenantFilter !== 'all') $prevRevenueWhere[] = "tenantID = " . intval($tenantFilter);
+if ($tenantFilter !== 'all')
+    $prevRevenueWhere[] = "tenantID = " . intval($tenantFilter);
 if ($statusFilter !== 'all') {
-    if ($statusFilter === 'active_only') $prevRevenueWhere[] = "LOWER(status) = 'active'";
+    if ($statusFilter === 'active_only')
+        $prevRevenueWhere[] = "LOWER(status) = 'active'";
 }
 $prevRevenueWhere[] = "plan_price > 0";
 
@@ -187,8 +192,10 @@ $totalTransactions = $txnResult ? ($txnResult->fetch_assoc()['total_txns'] ?? 0)
 
 // Previous period transactions
 $prevTxnWhere = [];
-if ($tenantFilter !== 'all') $prevTxnWhere[] = "tenantID = " . intval($tenantFilter);
-if ($statusFilter !== 'all' && $statusFilter === 'active_only') $prevTxnWhere[] = "LOWER(status) = 'active'";
+if ($tenantFilter !== 'all')
+    $prevTxnWhere[] = "tenantID = " . intval($tenantFilter);
+if ($statusFilter !== 'all' && $statusFilter === 'active_only')
+    $prevTxnWhere[] = "LOWER(status) = 'active'";
 switch ($dateRange) {
     case '7':
         $prevTxnWhere[] = "created_at >= DATE_SUB(NOW(), INTERVAL 14 DAY) AND created_at < DATE_SUB(NOW(), INTERVAL 7 DAY)";
@@ -215,8 +222,10 @@ $avgTxnChangeStr = ($avgTxnChange >= 0 ? "+" : "") . number_format($avgTxnChange
 
 // Fetch revenue trend data (last 12 months)
 $trendWhere = [];
-if ($tenantFilter !== 'all') $trendWhere[] = "tenantID = " . intval($tenantFilter);
-if ($statusFilter !== 'all' && $statusFilter === 'active_only') $trendWhere[] = "LOWER(status) = 'active'";
+if ($tenantFilter !== 'all')
+    $trendWhere[] = "tenantID = " . intval($tenantFilter);
+if ($statusFilter !== 'all' && $statusFilter === 'active_only')
+    $trendWhere[] = "LOWER(status) = 'active'";
 $trendWhere[] = "created_at >= DATE_SUB(NOW(), INTERVAL 12 MONTH)";
 $trendWhere[] = "plan_price > 0";
 
@@ -256,7 +265,7 @@ if ($tenantsDropdownResult) {
 }
 
 // Get date range label
-$dateLabel = match($dateRange) {
+$dateLabel = match ($dateRange) {
     '7' => 'Last 7 Days',
     '30' => 'Last 30 Days',
     '90' => 'Last 90 Days',
@@ -266,7 +275,7 @@ $dateLabel = match($dateRange) {
 
 // Get current date for display
 $dateEnd = date('M d, Y');
-$dateStart = match($dateRange) {
+$dateStart = match ($dateRange) {
     '7' => date('M d, Y', strtotime('-7 days')),
     '30' => date('M d, Y', strtotime('-30 days')),
     '90' => date('M d, Y', strtotime('-90 days')),
@@ -285,6 +294,10 @@ $dateStart = match($dateRange) {
     <title>Sales Reports &amp; Financial Analytics | RapidRepair</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.min.js"></script>
     <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+    <!-- jsPDF for PDF export -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <!-- jsPDF AutoTable plugin for table formatting -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&amp;display=swap"
         rel="stylesheet" />
     <link
@@ -392,55 +405,56 @@ $dateStart = match($dateRange) {
                 </h2>
             </div>
             <!-- Navigation Links -->
-        <nav class="flex-1 px-4 space-y-1 mt-4">
-            <a class="flex items-center gap-3 px-3 py-2.5 text-slate-600 dark:text-slate-400 font-medium hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors rounded-lg active:scale-95"
-                href="superadd.php">
-                <span class="material-symbols-outlined" data-icon="dashboard">dashboard</span>
-                <span class="text-sm">Dashboard</span>
-            </a>
-            <a class="flex items-center gap-3 px-3 py-2.5 text-slate-600 dark:text-slate-400 font-medium hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors rounded-lg active:scale-95"
-                href="superaddtenants.php">
-                <span class="material-symbols-outlined" data-icon="groups">groups</span>
-                <span class="text-sm">Tenants</span>
-            </a>
-            <a class="flex items-center gap-3 px-3 py-2.5 text-slate-600 dark:text-slate-400 font-medium hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors rounded-lg active:scale-95"
-                href="superreports.php">
-                <span class="material-symbols-outlined" data-icon="bar_chart">bar_chart</span>
-                <span class="text-sm">Reports</span>
-            </a>
-            <a class="flex items-center gap-3 px-3 py-2.5 text-slate-600 dark:text-slate-400 font-medium hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors rounded-lg active:scale-95"
-                href="subscriptionmanage.php">
-                <span class="material-symbols-outlined" data-icon="subscriptions">subscriptions</span>
-                <span class="text-sm">Subscriptions</span>
-            </a>
-            <a class="flex items-center gap-3 px-3 py-2.5 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 font-bold border-r-4 border-red-700 dark:border-red-500 rounded-lg active:scale-95"
-                href="supersalesreport.php">
-                <span class="material-symbols-outlined" data-icon="monitoring">monitoring</span>
-                <span class="text-sm">Sales Reports</span>
-            </a>
-            <a class="flex items-center gap-3 px-3 py-2.5 text-slate-600 dark:text-slate-400 font-medium hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors rounded-lg active:scale-95"
-                href="superauditlogs.php">
-                <span class="material-symbols-outlined" data-icon="assignment">assignment</span>
-                <span class="text-sm">Audit Logs</span>
-            </a>
+            <nav class="flex-1 px-4 space-y-1 mt-4">
+                <a class="flex items-center gap-3 px-3 py-2.5 text-slate-600 dark:text-slate-400 font-medium hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors rounded-lg active:scale-95"
+                    href="superadd.php">
+                    <span class="material-symbols-outlined" data-icon="dashboard">dashboard</span>
+                    <span class="text-sm">Dashboard</span>
+                </a>
+                <a class="flex items-center gap-3 px-3 py-2.5 text-slate-600 dark:text-slate-400 font-medium hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors rounded-lg active:scale-95"
+                    href="superaddtenants.php">
+                    <span class="material-symbols-outlined" data-icon="groups">groups</span>
+                    <span class="text-sm">Tenants</span>
+                </a>
+                <a class="flex items-center gap-3 px-3 py-2.5 text-slate-600 dark:text-slate-400 font-medium hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors rounded-lg active:scale-95"
+                    href="superreports.php">
+                    <span class="material-symbols-outlined" data-icon="bar_chart">bar_chart</span>
+                    <span class="text-sm">Reports</span>
+                </a>
+                <a class="flex items-center gap-3 px-3 py-2.5 text-slate-600 dark:text-slate-400 font-medium hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors rounded-lg active:scale-95"
+                    href="subscriptionmanage.php">
+                    <span class="material-symbols-outlined" data-icon="subscriptions">subscriptions</span>
+                    <span class="text-sm">Subscriptions</span>
+                </a>
+                <a class="flex items-center gap-3 px-3 py-2.5 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 font-bold border-r-4 border-red-700 dark:border-red-500 rounded-lg active:scale-95"
+                    href="supersalesreport.php">
+                    <span class="material-symbols-outlined" data-icon="monitoring">monitoring</span>
+                    <span class="text-sm">Sales Reports</span>
+                </a>
+                <a class="flex items-center gap-3 px-3 py-2.5 text-slate-600 dark:text-slate-400 font-medium hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors rounded-lg active:scale-95"
+                    href="superauditlogs.php">
+                    <span class="material-symbols-outlined" data-icon="assignment">assignment</span>
+                    <span class="text-sm">Audit Logs</span>
+                </a>
 
-            <a class="flex items-center gap-3 px-3 py-2.5 text-slate-600 dark:text-slate-400 font-medium hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors rounded-lg active:scale-95"
-                href="superbackup.php">
-                <span class="material-symbols-outlined" data-icon="backup"
-                    style="font-variation-settings: 'FILL' 1;">backup</span>
-                <span class="text-sm">System Backup</span>
-            </a>
+                <a class="flex items-center gap-3 px-3 py-2.5 text-slate-600 dark:text-slate-400 font-medium hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors rounded-lg active:scale-95"
+                    href="superbackup.php">
+                    <span class="material-symbols-outlined" data-icon="backup"
+                        style="font-variation-settings: 'FILL' 1;">backup</span>
+                    <span class="text-sm">System Backup</span>
+                </a>
 
-            <a class="flex items-center gap-3 px-3 py-2.5 text-slate-600 dark:text-slate-400 font-medium hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors rounded-lg active:scale-95"
-                href="supersettings.php">
-                <span class="material-symbols-outlined" data-icon="settings">settings</span>
-                <span class="text-sm">Settings</span>
-            </a>
-        </nav>
-        
+                <a class="flex items-center gap-3 px-3 py-2.5 text-slate-600 dark:text-slate-400 font-medium hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors rounded-lg active:scale-95"
+                    href="supersettings.php">
+                    <span class="material-symbols-outlined" data-icon="settings">settings</span>
+                    <span class="text-sm">Settings</span>
+                </a>
+            </nav>
+
             <div class="p-4 border-t border-slate-100 space-y-2">
                 <div class="flex items-center gap-3 p-2 rounded-lg hover:bg-slate-50 transition-colors">
-                    <div class="w-10 h-10 rounded-full bg-primary-container text-primary flex items-center justify-center font-semibold text-sm">
+                    <div
+                        class="w-10 h-10 rounded-full bg-primary-container text-primary flex items-center justify-center font-semibold text-sm">
                         <?php echo htmlspecialchars(initials($superadminName)); ?>
                     </div>
                     <div class="flex flex-col min-w-0">
@@ -493,7 +507,12 @@ $dateStart = match($dateRange) {
                         <button onclick="exportReport()"
                             class="px-4 py-2 border border-slate-200 bg-white text-xs font-bold rounded-lg hover:bg-slate-50 transition-colors flex items-center gap-2">
                             <span class="material-symbols-outlined text-sm">download</span>
-                            Export Report
+                            Export CSV
+                        </button>
+                        <button onclick="exportReportPDF()"
+                            class="px-4 py-2 bg-tertiary text-white text-xs font-bold rounded-lg hover:bg-yellow-600 transition-all flex items-center gap-2">
+                            <span class="material-symbols-outlined text-sm">picture_as_pdf</span>
+                            Export PDF
                         </button>
                         <button
                             class="px-4 py-2 bg-primary text-white text-xs font-bold rounded-lg hover:bg-primary/90 transition-all flex items-center gap-2">
@@ -502,23 +521,31 @@ $dateStart = match($dateRange) {
                         </button>
                     </div>
                 </div>
-                
+
                 <!-- Filter Controls -->
                 <div class="bg-white border border-slate-200 p-6 rounded-lg shadow-sm">
                     <form method="GET" class="flex flex-col md:flex-row gap-4 items-end">
                         <div class="flex-1">
-                            <label class="text-xs font-bold text-slate-600 uppercase tracking-wider block mb-2">Date Range</label>
-                            <select name="dateRange" class="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-1 focus:ring-primary">
+                            <label class="text-xs font-bold text-slate-600 uppercase tracking-wider block mb-2">Date
+                                Range</label>
+                            <select name="dateRange"
+                                class="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-1 focus:ring-primary">
                                 <option value="7" <?php echo $dateRange === '7' ? 'selected' : ''; ?>>Last 7 Days</option>
-                                <option value="30" <?php echo $dateRange === '30' ? 'selected' : ''; ?>>Last 30 Days</option>
-                                <option value="90" <?php echo $dateRange === '90' ? 'selected' : ''; ?>>Last 90 Days</option>
-                                <option value="ytd" <?php echo $dateRange === 'ytd' ? 'selected' : ''; ?>>Year to Date</option>
-                                <option value="all" <?php echo $dateRange === 'all' ? 'selected' : ''; ?>>All Time</option>
+                                <option value="30" <?php echo $dateRange === '30' ? 'selected' : ''; ?>>Last 30 Days
+                                </option>
+                                <option value="90" <?php echo $dateRange === '90' ? 'selected' : ''; ?>>Last 90 Days
+                                </option>
+                                <option value="ytd" <?php echo $dateRange === 'ytd' ? 'selected' : ''; ?>>Year to Date
+                                </option>
+                                <option value="all" <?php echo $dateRange === 'all' ? 'selected' : ''; ?>>All Time
+                                </option>
                             </select>
                         </div>
                         <div class="flex-1">
-                            <label class="text-xs font-bold text-slate-600 uppercase tracking-wider block mb-2">Tenant</label>
-                            <select name="tenantFilter" class="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-1 focus:ring-primary">
+                            <label
+                                class="text-xs font-bold text-slate-600 uppercase tracking-wider block mb-2">Tenant</label>
+                            <select name="tenantFilter"
+                                class="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-1 focus:ring-primary">
                                 <option value="all">All Tenants</option>
                                 <?php foreach ($tenantsList as $tenant): ?>
                                     <option value="<?php echo $tenant['tenantID']; ?>" <?php echo $tenantFilter == $tenant['tenantID'] ? 'selected' : ''; ?>>
@@ -528,21 +555,27 @@ $dateStart = match($dateRange) {
                             </select>
                         </div>
                         <div class="flex-1">
-                            <label class="text-xs font-bold text-slate-600 uppercase tracking-wider block mb-2">Status</label>
-                            <select name="statusFilter" class="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-1 focus:ring-primary">
-                                <option value="all" <?php echo $statusFilter === 'all' ? 'selected' : ''; ?>>All Status</option>
+                            <label
+                                class="text-xs font-bold text-slate-600 uppercase tracking-wider block mb-2">Status</label>
+                            <select name="statusFilter"
+                                class="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-1 focus:ring-primary">
+                                <option value="all" <?php echo $statusFilter === 'all' ? 'selected' : ''; ?>>All Status
+                                </option>
                                 <option value="active_only" <?php echo $statusFilter === 'active_only' ? 'selected' : ''; ?>>Active Only</option>
-                                <option value="trial" <?php echo $statusFilter === 'trial' ? 'selected' : ''; ?>>Trial</option>
-                                <option value="suspended" <?php echo $statusFilter === 'suspended' ? 'selected' : ''; ?>>Suspended</option>
+                                <option value="trial" <?php echo $statusFilter === 'trial' ? 'selected' : ''; ?>>Trial
+                                </option>
+                                <option value="suspended" <?php echo $statusFilter === 'suspended' ? 'selected' : ''; ?>>
+                                    Suspended</option>
                             </select>
                         </div>
-                        <button type="submit" class="px-6 py-2 bg-primary text-white text-xs font-bold rounded-lg hover:bg-primary/90 transition-colors flex items-center gap-2">
+                        <button type="submit"
+                            class="px-6 py-2 bg-primary text-white text-xs font-bold rounded-lg hover:bg-primary/90 transition-colors flex items-center gap-2">
                             <span class="material-symbols-outlined text-sm">filter_list</span>
                             Apply Filters
                         </button>
                     </form>
                 </div>
-                
+
                 <!-- Top Section: Metric Cards -->
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
                     <!-- Total Revenue -->
@@ -554,13 +587,16 @@ $dateStart = match($dateRange) {
                             </div>
                             <span
                                 class="text-[10px] font-bold px-2 py-1 <?php echo $revenueChange >= 0 ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-600'; ?> rounded-full flex items-center gap-1">
-                                <span class="material-symbols-outlined text-[12px]"><?php echo $revenueChange >= 0 ? 'trending_up' : 'trending_down'; ?></span>
+                                <span
+                                    class="material-symbols-outlined text-[12px]"><?php echo $revenueChange >= 0 ? 'trending_up' : 'trending_down'; ?></span>
                                 <?php echo $revenueChangeStr; ?>%
                             </span>
                         </div>
-                        <p class="text-slate-500 text-xs font-semibold uppercase tracking-wider">Total Sales / Revenue</p>
+                        <p class="text-slate-500 text-xs font-semibold uppercase tracking-wider">Total Sales / Revenue
+                        </p>
                         <h3 class="text-2xl font-black mt-1"><?php echo formatCurrency($totalRevenue); ?></h3>
-                        <p class="text-[10px] text-slate-400 mt-2 font-medium">vs. <?php echo formatCurrency($prevRevenue); ?> previous period</p>
+                        <p class="text-[10px] text-slate-400 mt-2 font-medium">vs.
+                            <?php echo formatCurrency($prevRevenue); ?> previous period</p>
                     </div>
                     <!-- Total Transactions -->
                     <div class="bg-white border border-slate-200 p-6 rounded-lg shadow-sm">
@@ -571,13 +607,16 @@ $dateStart = match($dateRange) {
                             </div>
                             <span
                                 class="text-[10px] font-bold px-2 py-1 <?php echo $txnChange >= 0 ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-600'; ?> rounded-full flex items-center gap-1">
-                                <span class="material-symbols-outlined text-[12px]"><?php echo $txnChange >= 0 ? 'trending_up' : 'trending_down'; ?></span>
+                                <span
+                                    class="material-symbols-outlined text-[12px]"><?php echo $txnChange >= 0 ? 'trending_up' : 'trending_down'; ?></span>
                                 <?php echo $txnChangeStr; ?>%
                             </span>
                         </div>
                         <p class="text-slate-500 text-xs font-semibold uppercase tracking-wider">Total Transactions</p>
                         <h3 class="text-2xl font-black mt-1"><?php echo formatCount($totalTransactions); ?></h3>
-                        <p class="text-[10px] text-slate-400 mt-2 font-medium">Avg. <?php echo round($totalTransactions / ($dateRange == 'all' ? 365 : intval($dateRange))); ?> per day</p>
+                        <p class="text-[10px] text-slate-400 mt-2 font-medium">Avg.
+                            <?php echo round($totalTransactions / ($dateRange == 'all' ? 365 : intval($dateRange))); ?>
+                            per day</p>
                     </div>
                     <!-- Average Transaction Value -->
                     <div class="bg-white border border-slate-200 p-6 rounded-lg shadow-sm">
@@ -588,13 +627,16 @@ $dateStart = match($dateRange) {
                             </div>
                             <span
                                 class="text-[10px] font-bold px-2 py-1 <?php echo $avgTxnChange >= 0 ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-600'; ?> rounded-full flex items-center gap-1">
-                                <span class="material-symbols-outlined text-[12px]"><?php echo $avgTxnChange >= 0 ? 'trending_up' : 'trending_down'; ?></span>
+                                <span
+                                    class="material-symbols-outlined text-[12px]"><?php echo $avgTxnChange >= 0 ? 'trending_up' : 'trending_down'; ?></span>
                                 <?php echo $avgTxnChangeStr; ?>%
                             </span>
                         </div>
-                        <p class="text-slate-500 text-xs font-semibold uppercase tracking-wider">Avg. Transaction Value</p>
+                        <p class="text-slate-500 text-xs font-semibold uppercase tracking-wider">Avg. Transaction Value
+                        </p>
                         <h3 class="text-2xl font-black mt-1"><?php echo formatCurrency($avgTxnValue); ?></h3>
-                        <p class="text-[10px] text-slate-400 mt-2 font-medium">vs. <?php echo formatCurrency($prevAvgTxnValue); ?> previous period</p>
+                        <p class="text-[10px] text-slate-400 mt-2 font-medium">vs.
+                            <?php echo formatCurrency($prevAvgTxnValue); ?> previous period</p>
                     </div>
                 </div>
                 <!-- Middle Section: Analytics Grid -->
@@ -605,7 +647,8 @@ $dateStart = match($dateRange) {
                         <div class="p-6 border-b border-slate-100 flex items-center justify-between">
                             <h4 class="font-bold text-sm">Revenue Trends</h4>
                             <div class="flex bg-slate-100 p-1 rounded-lg">
-                                <button class="px-3 py-1 text-[10px] font-bold rounded shadow-sm bg-white text-primary">Monthly</button>
+                                <button
+                                    class="px-3 py-1 text-[10px] font-bold rounded shadow-sm bg-white text-primary">Monthly</button>
                             </div>
                         </div>
                         <div class="p-6 flex-1 flex flex-col justify-center min-h-[300px]">
@@ -619,20 +662,24 @@ $dateStart = match($dateRange) {
                         </div>
                         <div class="p-6 space-y-6 flex-1 overflow-y-auto max-h-[400px]">
                             <div>
-                                <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">Top Tenant Shops</p>
+                                <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">Top
+                                    Tenant Shops</p>
                                 <div class="space-y-3">
-                                    <?php 
-                                    foreach ($topTenants as $idx => $tenant): 
+                                    <?php
+                                    foreach ($topTenants as $idx => $tenant):
                                         $totalRev = $tenant['total_revenue'];
-                                    ?>
+                                        ?>
                                         <div class="flex items-center justify-between">
                                             <div class="flex items-center gap-2">
-                                                <div class="w-6 h-6 rounded bg-slate-100 text-[10px] font-bold flex items-center justify-center">
+                                                <div
+                                                    class="w-6 h-6 rounded bg-slate-100 text-[10px] font-bold flex items-center justify-center">
                                                     <?php echo $idx + 1; ?>
                                                 </div>
-                                                <span class="text-xs font-bold"><?php echo htmlspecialchars(substr($tenant['shopName'], 0, 25)); ?></span>
+                                                <span
+                                                    class="text-xs font-bold"><?php echo htmlspecialchars(substr($tenant['shopName'], 0, 25)); ?></span>
                                             </div>
-                                            <span class="text-xs font-bold text-primary"><?php echo formatCurrency($totalRev); ?></span>
+                                            <span
+                                                class="text-xs font-bold text-primary"><?php echo formatCurrency($totalRev); ?></span>
                                         </div>
                                     <?php endforeach; ?>
                                     <?php if (count($topTenants) === 0): ?>
@@ -649,14 +696,14 @@ $dateStart = match($dateRange) {
                         class="p-6 border-b border-slate-100 flex flex-col md:flex-row md:items-center justify-between gap-4">
                         <div>
                             <h4 class="font-bold text-sm">Tenant Revenue Breakdown</h4>
-                            <p class="text-[11px] text-slate-500">Overview of revenue by tenant during selected period</p>
+                            <p class="text-[11px] text-slate-500">Overview of revenue by tenant during selected period
+                            </p>
                         </div>
                         <div class="flex gap-2">
                             <div class="relative">
                                 <span
                                     class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">search</span>
-                                <input
-                                    id="tenantSearch"
+                                <input id="tenantSearch"
                                     class="pl-8 pr-4 py-1.5 bg-slate-50 border border-slate-200 rounded text-xs focus:ring-1 focus:ring-primary w-40"
                                     placeholder="Search tenants..." type="text" />
                             </div>
@@ -684,25 +731,29 @@ $dateStart = match($dateRange) {
                                 </tr>
                             </thead>
                             <tbody class="divide-y divide-slate-100">
-                                <?php 
+                                <?php
                                 $rank = 1;
-                                foreach ($topTenants as $tenant): 
+                                foreach ($topTenants as $tenant):
                                     $avgValue = $tenant['tenant_count'] > 0 ? $tenant['total_revenue'] / $tenant['tenant_count'] : 0;
-                                ?>
-                                    <tr class="hover:bg-slate-50 transition-colors tenant-row" data-search="<?php echo strtolower(htmlspecialchars($tenant['shopName'])); ?>">
+                                    ?>
+                                    <tr class="hover:bg-slate-50 transition-colors tenant-row"
+                                        data-search="<?php echo strtolower(htmlspecialchars($tenant['shopName'])); ?>">
                                         <td class="px-6 py-4 text-xs font-bold text-slate-900"><?php echo $rank; ?></td>
-                                        <td class="px-6 py-4 text-xs font-bold"><?php echo htmlspecialchars($tenant['shopName']); ?></td>
-                                        <td class="px-6 py-4 text-xs font-bold text-primary"><?php echo formatCurrency($tenant['total_revenue']); ?></td>
+                                        <td class="px-6 py-4 text-xs font-bold">
+                                            <?php echo htmlspecialchars($tenant['shopName']); ?></td>
+                                        <td class="px-6 py-4 text-xs font-bold text-primary">
+                                            <?php echo formatCurrency($tenant['total_revenue']); ?></td>
                                         <td class="px-6 py-4 text-xs">
                                             <span class="px-2 py-0.5 bg-red-50 text-red-600 rounded text-[10px] font-bold">
                                                 <?php echo $tenant['tenant_count']; ?> active
                                             </span>
                                         </td>
-                                        <td class="px-6 py-4 text-xs text-slate-600"><?php echo formatCurrency($avgValue); ?></td>
+                                        <td class="px-6 py-4 text-xs text-slate-600">
+                                            <?php echo formatCurrency($avgValue); ?></td>
                                     </tr>
-                                <?php 
+                                    <?php
                                     $rank++;
-                                endforeach; 
+                                endforeach;
                                 ?>
                                 <?php if (count($topTenants) === 0): ?>
                                     <tr>
@@ -715,7 +766,9 @@ $dateStart = match($dateRange) {
                         </table>
                     </div>
                     <div class="p-4 border-t border-slate-100 flex items-center justify-between">
-                        <span class="text-[11px] font-bold text-slate-400">Showing <?php echo min(10, count($topTenants)); ?> of <?php echo count($topTenants); ?> tenants</span>
+                        <span class="text-[11px] font-bold text-slate-400">Showing
+                            <?php echo min(10, count($topTenants)); ?> of <?php echo count($topTenants); ?>
+                            tenants</span>
                     </div>
                 </div>
             </div>
@@ -728,7 +781,7 @@ $dateStart = match($dateRange) {
         if (ctx) {
             const trendLabels = <?php echo json_encode($trendLabels); ?>;
             const trendData = <?php echo json_encode($trendData); ?>;
-            
+
             new Chart(ctx, {
                 type: 'line',
                 data: {
@@ -763,7 +816,7 @@ $dateStart = match($dateRange) {
                         y: {
                             beginAtZero: true,
                             ticks: {
-                                callback: function(value) {
+                                callback: function (value) {
                                     return '$' + (value / 1000).toFixed(0) + 'k';
                                 },
                                 font: {
@@ -800,10 +853,10 @@ $dateStart = match($dateRange) {
         // Table search functionality
         const searchInput = document.getElementById('tenantSearch');
         if (searchInput) {
-            searchInput.addEventListener('keyup', function() {
+            searchInput.addEventListener('keyup', function () {
                 const searchTerm = this.value.toLowerCase();
                 const rows = document.querySelectorAll('.tenant-row');
-                
+
                 rows.forEach(row => {
                     const searchData = row.getAttribute('data-search') || '';
                     if (searchData.includes(searchTerm) || searchTerm === '') {
@@ -815,12 +868,11 @@ $dateStart = match($dateRange) {
             });
         }
 
-        // Export report function
+        // Export report as CSV
         function exportReport() {
             const table = document.querySelector('table');
             let csv = 'Tenant Revenue Report\n';
             csv += 'Rank,Tenant Name,Total Revenue,Subscriptions,Avg Value\n';
-            
             const rows = document.querySelectorAll('.tenant-row');
             let rank = 1;
             rows.forEach(row => {
@@ -834,13 +886,56 @@ $dateStart = match($dateRange) {
                     rank++;
                 }
             });
-            
             const blob = new Blob([csv], { type: 'text/csv' });
             const url = window.URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
             a.download = 'sales-report-' + new Date().toISOString().split('T')[0] + '.csv';
             a.click();
+        }
+
+        // Export report as PDF (with table formatting)
+        function exportReportPDF() {
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF();
+            doc.setFontSize(16);
+            doc.text('Tenant Revenue Report', 14, 15);
+            // Prepare table data
+            const rows = document.querySelectorAll('.tenant-row');
+            let data = [];
+            let rank = 1;
+            rows.forEach(row => {
+                if (row.style.display !== 'none') {
+                    const cells = row.querySelectorAll('td');
+                    data.push([
+                        String(rank),
+                        cells[1].textContent,
+                        cells[2].textContent,
+                        cells[3].textContent,
+                        cells[4].textContent
+                    ]);
+                    rank++;
+                }
+            });
+            doc.autoTable({
+                head: [["Rank", "Tenant Name", "Total Revenue", "Subscriptions", "Avg Value"]],
+                body: data,
+                startY: 22,
+                styles: { fontSize: 10, cellPadding: 2 },
+                headStyles: { fillColor: [185, 28, 28], textColor: 255, fontStyle: 'bold' },
+                alternateRowStyles: { fillColor: [245, 245, 245] },
+                margin: { left: 10, right: 10 },
+                tableLineColor: [200, 200, 200],
+                tableLineWidth: 0.1,
+                columnStyles: {
+                    0: { halign: 'center', cellWidth: 18 },
+                    1: { cellWidth: 60 },
+                    2: { halign: 'right', cellWidth: 32 },
+                    3: { halign: 'center', cellWidth: 32 },
+                    4: { halign: 'right', cellWidth: 32 }
+                }
+            });
+            doc.save('sales-report-' + new Date().toISOString().split('T')[0] + '.pdf');
         }
 
     </script>

@@ -518,19 +518,19 @@ if ($stats['active_subscriptions'] > 0) {
     </style>
 </head>
 
-<body class="bg-background text-on-background antialiased selection:bg-primary-fixed selection:text-primary">
+<body class="bg-background text-on-background antialiased selection:bg-primary-fixed selection:text-primary overflow-x-hidden">
     <!-- SideNavBar Shell -->
     <aside
         class="flex flex-col fixed left-0 top-0 h-full z-40 h-screen w-64 border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 font-['Inter'] antialiased tracking-tight shadow-sm dark:shadow-none">
         <!-- Brand Header -->
-        <div class="p-6 flex items-center gap-3">
-            <div class="bg-primary rounded-lg p-2 text-white">
-                <span class="material-symbols-outlined block text-2xl">directions_car</span>
+            <div class="p-6 flex items-center gap-3">
+                <div class="size-12 rounded-lg bg-white p-1 shadow-md dark:bg-slate-900">
+                    <img src="../pictures/RRlogo3.png" alt="Rapid Repair logo" class="h-full w-full object-contain drop-shadow-sm">
+                </div>
+                <h2 class="text-xl font-bold tracking-tight text-slate-900 dark:text-white leading-none">
+                    RapidRepair <span class="text-primary">SuperAdmin</span>
+                </h2>
             </div>
-            <h2 class="text-xl font-bold tracking-tight text-slate-900 dark:text-white leading-none">
-                RapidRepair <span class="text-primary">SuperAdmin</span>
-            </h2>
-        </div>
         <!-- Navigation Links -->
         <nav class="flex-1 px-4 space-y-1 mt-4">
             <a class="flex items-center gap-3 px-3 py-2.5 text-slate-600 dark:text-slate-400 font-medium hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors rounded-lg active:scale-95"
@@ -618,31 +618,18 @@ if ($stats['active_subscriptions'] > 0) {
                     Subs</button>
             </div>
         </div>
-        <div class="flex items-center gap-6">
-            <div class="flex items-center gap-4">
-                <button class="relative text-slate-500 hover:text-red-700 transition-all duration-200">
-                    <span class="material-symbols-outlined" data-icon="notifications">notifications</span>
-                    <span
-                        class="absolute right-0.5 top-0.5 h-2 w-2 rounded-full bg-red-500 ring-2 ring-white dark:ring-slate-900"></span>
-                </button>
-                <button class="text-slate-500 hover:text-red-700 transition-all duration-200">
-                    <span class="material-symbols-outlined" data-icon="help_outline">help_outline</span>
-                </button>
-            </div>
-            <div class="h-8 w-px bg-slate-200 dark:bg-slate-800"></div>
-            <div class="flex items-center gap-3">
-                <div class="text-right">
-                    <div class="text-xs font-bold text-slate-900"><?php echo htmlspecialchars($superadminName); ?></div>
-                    <div class="text-[10px] text-slate-500">Superadmin</div>
-                </div>
-                <div class="h-8 w-8 rounded-lg bg-primary-container text-primary flex items-center justify-center text-xs font-semibold">
-                    <?php echo htmlspecialchars(initials($superadminName)); ?>
-                </div>
-            </div>
+        <div class="flex items-center gap-4">
+            <button class="relative text-slate-500 hover:text-red-700 transition-all duration-200">
+                <span class="material-symbols-outlined" data-icon="notifications">notifications</span>
+                <span class="absolute right-0.5 top-0.5 h-2 w-2 rounded-full bg-red-500 ring-2 ring-white dark:ring-slate-900"></span>
+            </button>
+            <button class="text-slate-500 hover:text-red-700 transition-all duration-200">
+                <span class="material-symbols-outlined" data-icon="help_outline">help_outline</span>
+            </button>
         </div>
     </header>
     <!-- Main Content Area -->
-    <main class="ml-64 p-8">
+    <main class="ml-64 p-8 overflow-x-hidden">
         <?php if ($planNotice !== ''): ?>
             <?php $isSuccessNotice = in_array($planNotice, ['created', 'updated', 'activated', 'deactivated'], true); ?>
             <div

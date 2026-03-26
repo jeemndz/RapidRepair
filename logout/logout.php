@@ -142,24 +142,43 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 	}
 
 	if ($action === 'confirm') {
-		$_SESSION = [];
+		   // --- Tenant logout logging (new ENUM schema) ---
+		   require_once __DIR__ . '/../db.php';
+		   $tenantID = isset($_SESSION['tenantID']) ? (int)$_SESSION['tenantID'] : null;
+		   $user_id = $tenantID;
+		   $user_name = isset($_SESSION['shopName']) ? $_SESSION['shopName'] : '';
+		   $user_role = 'admin'; // Default to admin for tenant logout
+		   $actionLog = 'LOGOUT';
+		   $entity_type = 'tenant';
+		   $entity_id = $tenantID;
+		   $details = 'Tenant logged out';
+		   $ip_address = isset($_SERVER['REMOTE_ADDR']) ? $_SERVER['REMOTE_ADDR'] : '';
+		   $user_agent = isset($_SERVER['HTTP_USER_AGENT']) ? $_SERVER['HTTP_USER_AGENT'] : '';
+		   if ($tenantID) {
+			   $stmt = $conn->prepare("INSERT INTO system_logs (tenantID, user_id, user_name, user_role, action, entity_type, entity_id, details, ip_address, user_agent, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())");
+			   $stmt->bind_param('iissssisss', $tenantID, $user_id, $user_name, $user_role, $actionLog, $entity_type, $entity_id, $details, $ip_address, $user_agent);
+			   $stmt->execute();
+			   $stmt->close();
+		   }
 
-		if (ini_get('session.use_cookies')) {
-			$params = session_get_cookie_params();
-			setcookie(
-				session_name(),
-				'',
-				time() - 42000,
-				$params['path'],
-				$params['domain'],
-				$params['secure'],
-				$params['httponly']
-			);
-		}
+		   $_SESSION = [];
 
-		session_destroy();
-		header('Location: ' . $logoutRedirectTo);
-		exit;
+		   if (ini_get('session.use_cookies')) {
+			   $params = session_get_cookie_params();
+			   setcookie(
+				   session_name(),
+				   '',
+				   time() - 42000,
+				   $params['path'],
+				   $params['domain'],
+				   $params['secure'],
+				   $params['httponly']
+			   );
+		   }
+
+		   session_destroy();
+		   header('Location: ' . $logoutRedirectTo);
+		   exit;
 	}
 }
 ?>

@@ -57,6 +57,24 @@ if (isset($_POST['login'])) {
                     $_SESSION['shopName'] = $user['shopName'];
                     $_SESSION['login_slug'] = isset($user['login_slug']) ? $user['login_slug'] : '';
 
+                    // --- Tenant login logging (new ENUM schema) ---
+                    $tenantID = (int)$user['tenantID'];
+                    $user_id = $tenantID;
+                    $user_name = $user['shopName'];
+                    $user_role = 'admin'; // Default to admin for tenant login
+                    $actionLog = 'LOGIN';
+                    $entity_type = 'tenant';
+                    $entity_id = $tenantID;
+                    $details = 'Tenant logged in (first login)';
+                    $ip_address = isset($_SERVER['REMOTE_ADDR']) ? $_SERVER['REMOTE_ADDR'] : '';
+                    $user_agent = isset($_SERVER['HTTP_USER_AGENT']) ? $_SERVER['HTTP_USER_AGENT'] : '';
+                    if ($tenantID) {
+                        $stmt = $conn->prepare("INSERT INTO system_logs (tenantID, user_id, user_name, user_role, action, entity_type, entity_id, details, ip_address, user_agent, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())");
+                        $stmt->bind_param('iissssisss', $tenantID, $user_id, $user_name, $user_role, $actionLog, $entity_type, $entity_id, $details, $ip_address, $user_agent);
+                        $stmt->execute();
+                        $stmt->close();
+                    }
+
                     // First-time owners must update their temporary password
                     header("Location: changetemppass.php");
                     exit;
@@ -69,6 +87,24 @@ if (isset($_POST['login'])) {
                     $_SESSION['tenantID'] = $user['tenantID'];
                     $_SESSION['shopName'] = $user['shopName'];
                     $_SESSION['login_slug'] = isset($user['login_slug']) ? $user['login_slug'] : '';
+
+                    // --- Tenant login logging (new ENUM schema) ---
+                    $tenantID = (int)$user['tenantID'];
+                    $user_id = $tenantID;
+                    $user_name = $user['shopName'];
+                    $user_role = 'admin'; // Default to admin for tenant login
+                    $actionLog = 'LOGIN';
+                    $entity_type = 'tenant';
+                    $entity_id = $tenantID;
+                    $details = 'Tenant logged in';
+                    $ip_address = isset($_SERVER['REMOTE_ADDR']) ? $_SERVER['REMOTE_ADDR'] : '';
+                    $user_agent = isset($_SERVER['HTTP_USER_AGENT']) ? $_SERVER['HTTP_USER_AGENT'] : '';
+                    if ($tenantID) {
+                        $stmt = $conn->prepare("INSERT INTO system_logs (tenantID, user_id, user_name, user_role, action, entity_type, entity_id, details, ip_address, user_agent, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())");
+                        $stmt->bind_param('iissssisss', $tenantID, $user_id, $user_name, $user_role, $actionLog, $entity_type, $entity_id, $details, $ip_address, $user_agent);
+                        $stmt->execute();
+                        $stmt->close();
+                    }
 
                     // Returning owners proceed directly to dashboard
                     header("Location: dashboardadmin.php");
