@@ -672,7 +672,7 @@ $barChartJson = json_encode([
 <head>
     <meta charset="utf-8" />
     <meta content="width=device-width, initial-scale=1.0" name="viewport" />
-    <title>System Reports | Cobalt Precision</title>
+    <title>System Reports | RapidRepair</title>
     <script>
         tailwind.config = {
             theme: {
