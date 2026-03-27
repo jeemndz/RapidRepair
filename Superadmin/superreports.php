@@ -958,7 +958,7 @@ $barChartJson = json_encode([
                     <div class="mt-4">
                         <p class="text-sm font-medium text-on-surface-variant">Monthly Recurring Revenue</p>
                         <h3 class="text-2xl font-black text-on-background mt-1">
-                            $<?php echo number_format($baseMrr, 2); ?></h3>
+                            ₱<?php echo number_format($baseMrr, 2); ?></h3>
                     </div>
                 </div>
 
