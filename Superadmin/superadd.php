@@ -301,7 +301,7 @@ function initials($name)
                 extend: {
                     colors: {
                         "primary": "#b91c1c",
-                        "background-light": "#f6f6f8",
+                        "background-light": "#ffffff",
                         "background-dark": "#101622",
                     },
                     fontFamily: {
