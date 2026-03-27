@@ -637,7 +637,7 @@ function initials($name)
                                                     </div>
                                                 </td>
                                                 <td class="px-4 py-3 text-right font-semibold text-primary">
-                                                    $<?php echo number_format($revenue, 0); ?>
+                                                    ₱<?php echo number_format($revenue, 0); ?>
                                                 </td>
                                             </tr>
                                         <?php endforeach;
@@ -655,7 +655,7 @@ function initials($name)
                                         </td>
                                         <td class="px-4 py-3 text-right text-slate-900 dark:text-slate-100">100%</td>
                                         <td class="px-4 py-3 text-right text-primary">
-                                            $<?php echo number_format($totalActivePlanRevenue, 0); ?>
+                                            ₱<?php echo number_format($totalActivePlanRevenue, 0); ?>
                                         </td>
                                     </tr>
                                 </tfoot>
