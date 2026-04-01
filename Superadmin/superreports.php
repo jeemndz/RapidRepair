@@ -44,7 +44,7 @@ if ($superadminStmt) {
 
 function initials($name)
 {
-    $name = trim((string)$name);
+    $name = trim((string) $name);
     if ($name === '') {
         return 'NA';
     }
@@ -688,6 +688,7 @@ $barChartJson = json_encode([
                         "surface-variant": "#e2e8f0",
                         "on-surface-variant": "#64748b",
                         outline: "#cbd5e1"
+
                     }
                 }
             }
@@ -700,7 +701,7 @@ $barChartJson = json_encode([
     <link
         href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap"
         rel="stylesheet" />
-        
+
     <style>
         body {
             font-family: 'Inter', sans-serif;
@@ -724,7 +725,8 @@ $barChartJson = json_encode([
         class="flex flex-col fixed left-0 top-0 h-full z-50 w-64 border-r border-slate-200 bg-white font-['Inter'] antialiased tracking-tight shadow-sm">
         <div class="p-6 flex items-center gap-3">
             <div class="size-12 rounded-lg bg-white p-1 shadow-md">
-                <img src="../pictures/RRlogo3.png" alt="Rapid Repair logo" class="h-full w-full object-contain drop-shadow-sm">
+                <img src="../pictures/RRlogo3.png" alt="Rapid Repair logo"
+                    class="h-full w-full object-contain drop-shadow-sm">
             </div>
             <h2 class="text-xl font-bold tracking-tight text-slate-900 leading-none">
                 RapidRepair <span class="text-primary">SuperAdmin</span>
@@ -776,7 +778,8 @@ $barChartJson = json_encode([
         </nav>
         <div class="p-4 border-t border-slate-100 space-y-2">
             <div class="flex items-center gap-3 p-2 rounded-lg hover:bg-slate-50 transition-colors">
-                <div class="w-10 h-10 rounded-full bg-primary-container text-primary flex items-center justify-center font-semibold text-sm">
+                <div
+                    class="w-10 h-10 rounded-full bg-primary-container text-primary flex items-center justify-center font-semibold text-sm">
                     <?php echo htmlspecialchars(initials($superadminName)); ?>
                 </div>
                 <div class="flex flex-col min-w-0">
@@ -911,7 +914,8 @@ $barChartJson = json_encode([
             </section>
 
             <section class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                <div class="bg-slate-50/80 p-6 rounded-xl border border-outline shadow-sm flex flex-col justify-between">
+                <div
+                    class="bg-slate-50/80 p-6 rounded-xl border border-outline shadow-sm flex flex-col justify-between">
                     <div class="flex justify-between items-start">
                         <div class="p-2 bg-primary-container rounded-lg text-primary">
                             <span class="material-symbols-outlined" data-icon="groups">groups</span>
@@ -924,11 +928,13 @@ $barChartJson = json_encode([
                     <div class="mt-4">
                         <p class="text-sm font-medium text-on-surface-variant">Total Active Tenants</p>
                         <h3 class="text-2xl font-black text-on-background mt-1">
-                            <?php echo formatCount($baseActiveTenants); ?></h3>
+                            <?php echo formatCount($baseActiveTenants); ?>
+                        </h3>
                     </div>
                 </div>
 
-                <div class="bg-slate-50/80 p-6 rounded-xl border border-outline shadow-sm flex flex-col justify-between">
+                <div
+                    class="bg-slate-50/80 p-6 rounded-xl border border-outline shadow-sm flex flex-col justify-between">
                     <div class="flex justify-between items-start">
                         <div class="p-2 bg-primary-container rounded-lg text-primary">
                             <span class="material-symbols-outlined" data-icon="person_add">person_add</span>
@@ -941,11 +947,13 @@ $barChartJson = json_encode([
                     <div class="mt-4">
                         <p class="text-sm font-medium text-on-surface-variant"><?php echo $registrationLabel; ?></p>
                         <h3 class="text-2xl font-black text-on-background mt-1">
-                            <?php echo formatCount($newRegistrationsCurrent); ?></h3>
+                            <?php echo formatCount($newRegistrationsCurrent); ?>
+                        </h3>
                     </div>
                 </div>
 
-                <div class="bg-slate-50/80 p-6 rounded-xl border border-outline shadow-sm flex flex-col justify-between">
+                <div
+                    class="bg-slate-50/80 p-6 rounded-xl border border-outline shadow-sm flex flex-col justify-between">
                     <div class="flex justify-between items-start">
                         <div class="p-2 bg-primary-container rounded-lg text-primary">
                             <span class="material-symbols-outlined" data-icon="payments">payments</span>
@@ -962,7 +970,8 @@ $barChartJson = json_encode([
                     </div>
                 </div>
 
-                <div class="bg-slate-50/80 p-6 rounded-xl border border-outline shadow-sm flex flex-col justify-between">
+                <div
+                    class="bg-slate-50/80 p-6 rounded-xl border border-outline shadow-sm flex flex-col justify-between">
                     <div class="flex justify-between items-start">
                         <div class="p-2 bg-primary-container rounded-lg text-primary">
                             <span class="material-symbols-outlined" data-icon="task_alt">task_alt</span>
@@ -972,7 +981,8 @@ $barChartJson = json_encode([
                     <div class="mt-4">
                         <p class="text-sm font-medium text-on-surface-variant">Retention Rate</p>
                         <h3 class="text-2xl font-black text-on-background mt-1">
-                            <?php echo formatPercent($baseRetentionRate); ?></h3>
+                            <?php echo formatPercent($baseRetentionRate); ?>
+                        </h3>
                     </div>
                 </div>
             </section>
@@ -1054,14 +1064,16 @@ $barChartJson = json_encode([
                                                 </div>
                                                 <?php if ((int) $tenant["tenant_id"] > 0): ?>
                                                     <div class="text-xs text-slate-400">Tenant ID:
-                                                        <?php echo (int) $tenant["tenant_id"]; ?></div>
+                                                        <?php echo (int) $tenant["tenant_id"]; ?>
+                                                    </div>
                                                 <?php endif; ?>
                                             </div>
                                         </div>
                                     </td>
                                     <td class="px-6 py-4 text-center">
                                         <div class="flex flex-col gap-1 items-center">
-                                            <span class="text-xs font-medium"><?php echo formatStorageBytes($tenant["storage_bytes"] ?? 0); ?></span>
+                                            <span
+                                                class="text-xs font-medium"><?php echo formatStorageBytes($tenant["storage_bytes"] ?? 0); ?></span>
                                             <div class="w-20 h-1.5 bg-slate-100 rounded-full overflow-hidden">
                                                 <div class="bg-primary h-full"
                                                     style="width: <?php echo number_format($storagePercent, 1); ?>%;"></div>
@@ -1069,7 +1081,8 @@ $barChartJson = json_encode([
                                         </div>
                                     </td>
                                     <td class="px-6 py-4 text-center font-medium text-sm">
-                                        <?php echo number_format((int) $tenant["active_customers"]); ?></td>
+                                        <?php echo number_format((int) $tenant["active_customers"]); ?>
+                                    </td>
                                     <td class="px-6 py-4">
                                         <span
                                             class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase <?php echo getStatusBadgeClass($tenant["status"]); ?>">
@@ -1094,109 +1107,109 @@ $barChartJson = json_encode([
     </main>
 
     <script>
-            (function () {
-                const lineData = <?php echo $lineChartJson ?: '{"labels":[],"values":[]}'; ?>;
-                const barData = <?php echo $barChartJson ?: '{"labels":[],"values":[]}'; ?>;
+        (function () {
+            const lineData = <?php echo $lineChartJson ?: '{"labels":[],"values":[]}'; ?>;
+            const barData = <?php echo $barChartJson ?: '{"labels":[],"values":[]}'; ?>;
 
-                const lineCtx = document.getElementById("tenantActivityChart");
-                const barCtx = document.getElementById("statusBreakdownChart");
+            const lineCtx = document.getElementById("tenantActivityChart");
+            const barCtx = document.getElementById("statusBreakdownChart");
 
-                if (lineCtx) {
-                    new Chart(lineCtx, {
-                        type: "line",
-                        data: {
-                            labels: lineData.labels,
-                            datasets: [{
-                                label: "New Tenant Registrations",
-                                data: lineData.values,
-                                borderColor: "#b91c1c",
-                                backgroundColor: "rgba(185, 28, 28, 0.16)",
-                                fill: true,
-                                tension: 0.3,
-                                pointRadius: 3,
-                                pointBackgroundColor: "#b91c1c"
-                            }]
+            if (lineCtx) {
+                new Chart(lineCtx, {
+                    type: "line",
+                    data: {
+                        labels: lineData.labels,
+                        datasets: [{
+                            label: "New Tenant Registrations",
+                            data: lineData.values,
+                            borderColor: "#b91c1c",
+                            backgroundColor: "rgba(185, 28, 28, 0.16)",
+                            fill: true,
+                            tension: 0.3,
+                            pointRadius: 3,
+                            pointBackgroundColor: "#b91c1c"
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: {
+                                display: false
+                            }
                         },
-                        options: {
-                            responsive: true,
-                            maintainAspectRatio: false,
-                            plugins: {
-                                legend: {
+                        scales: {
+                            x: {
+                                grid: {
                                     display: false
+                                },
+                                ticks: {
+                                    maxRotation: 0,
+                                    autoSkip: true
                                 }
                             },
-                            scales: {
-                                x: {
-                                    grid: {
-                                        display: false
-                                    },
-                                    ticks: {
-                                        maxRotation: 0,
-                                        autoSkip: true
-                                    }
-                                },
-                                y: {
-                                    beginAtZero: true,
-                                    ticks: {
-                                        precision: 0
-                                    }
+                            y: {
+                                beginAtZero: true,
+                                ticks: {
+                                    precision: 0
                                 }
                             }
                         }
-                    });
-                }
+                    }
+                });
+            }
 
-                if (barCtx) {
-                    new Chart(barCtx, {
-                        type: "bar",
-                        data: {
-                            labels: barData.labels,
-                            datasets: [{
-                                label: "Tenants",
-                                data: barData.values,
-                                backgroundColor: ["#b91c1c", "#dc2626", "#525252", "#a3a3a3"],
-                                borderRadius: 8,
-                                borderSkipped: false
-                            }]
+            if (barCtx) {
+                new Chart(barCtx, {
+                    type: "bar",
+                    data: {
+                        labels: barData.labels,
+                        datasets: [{
+                            label: "Tenants",
+                            data: barData.values,
+                            backgroundColor: ["#b91c1c", "#dc2626", "#525252", "#a3a3a3"],
+                            borderRadius: 8,
+                            borderSkipped: false
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: {
+                                display: false
+                            }
                         },
-                        options: {
-                            responsive: true,
-                            maintainAspectRatio: false,
-                            plugins: {
-                                legend: {
+                        scales: {
+                            x: {
+                                grid: {
                                     display: false
                                 }
                             },
-                            scales: {
-                                x: {
-                                    grid: {
-                                        display: false
-                                    }
-                                },
-                                y: {
-                                    beginAtZero: true,
-                                    ticks: {
-                                        precision: 0
-                                    }
+                            y: {
+                                beginAtZero: true,
+                                ticks: {
+                                    precision: 0
                                 }
                             }
                         }
-                    });
-                }
+                    }
+                });
+            }
 
-                const searchInput = document.getElementById("tenantSearchInput");
-                const rows = Array.from(document.querySelectorAll(".tenant-searchable-row"));
+            const searchInput = document.getElementById("tenantSearchInput");
+            const rows = Array.from(document.querySelectorAll(".tenant-searchable-row"));
 
-                if (searchInput && rows.length > 0) {
-                    searchInput.addEventListener("input", function () {
-                        const query = searchInput.value.trim().toLowerCase();
-                        rows.forEach(function (row) {
-                            const haystack = (row.getAttribute("data-search") || "").toLowerCase();
-                            row.style.display = query === "" || haystack.includes(query) ? "" : "none";
-                        });
+            if (searchInput && rows.length > 0) {
+                searchInput.addEventListener("input", function () {
+                    const query = searchInput.value.trim().toLowerCase();
+                    rows.forEach(function (row) {
+                        const haystack = (row.getAttribute("data-search") || "").toLowerCase();
+                        row.style.display = query === "" || haystack.includes(query) ? "" : "none";
                     });
-                }
-            })();
+                });
+            }
+        })();
     </script>
 </body>
 

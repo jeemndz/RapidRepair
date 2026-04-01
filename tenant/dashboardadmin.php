@@ -23,6 +23,10 @@ if (!$owner) {
     header('Location: tenantlogin.php');
     exit;
 }
+
+$shopName = isset($owner['shopName']) && $owner['shopName'] !== '' ? $owner['shopName'] : 'AutoFix Pro';
+$shopSlug = $login_slug;
+$shopQuery = urlencode($shopSlug);
 ?>
 <!DOCTYPE html>
 
@@ -79,54 +83,54 @@ if (!$owner) {
                         <span class="material-symbols-outlined">directions_car</span>
                     </div>
                     <div>
-                        <h1 class="text-lg font-bold leading-none">AutoFix Pro</h1>
+                        <h1 class="text-lg font-bold leading-none"><?php echo htmlspecialchars($shopName, ENT_QUOTES, 'UTF-8'); ?></h1>
                         <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Repair Management</p>
                     </div>
                 </div>
                 <nav class="space-y-1">
                     <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-primary/10 text-primary font-medium"
-                        href="dashboardadmin.php">
+                        href="dashboardadmin.php?shop=<?php echo $shopQuery; ?>">
                         <span class="material-symbols-outlined text-[22px]">dashboard</span>
                         Dashboard
                     </a>
                     <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 hover:bg-slate-100 transition-colors font-medium"
-                        href="repairjobsadmin.php">
+                        href="repairjobsadmin.php?shop=<?php echo $shopQuery; ?>">
                         <span class="material-symbols-outlined text-[22px]">build</span>
                         Repair Jobs
                     </a>
                     <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 hover:bg-slate-100 transition-colors"
-                        href="vehicleadmin.php">
+                        href="vehicleadmin.php?shop=<?php echo $shopQuery; ?>">
                         <span class="material-symbols-outlined text-[22px]">directions_car</span>
                         Vehicles
                     </a>
                     <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 hover:bg-slate-100 transition-colors"
-                        href="appointmentadmin.php">
+                        href="appointmentadmin.php?shop=<?php echo $shopQuery; ?>">
                         <span class="material-symbols-outlined text-[22px]">event</span>
                         Appointments
                     </a>
                     <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 hover:bg-slate-100 transition-colors"
-                        href="reportsadmin.php">
+                        href="reportsadmin.php?shop=<?php echo $shopQuery; ?>">
                         <span class="material-symbols-outlined text-[22px]">description</span>
                         Reports
                     </a>
                     <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 hover:bg-slate-100 transition-colors"
-                        href="inventoryadmin.php">
+                        href="inventoryadmin.php?shop=<?php echo $shopQuery; ?>">
                         <span class="material-symbols-outlined text-[22px]">inventory_2</span>
                         Inventory
                     </a>
                     <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 hover:bg-slate-100 transition-colors"
-                        href="customeradmin.php">
+                        href="customeradmin.php?shop=<?php echo $shopQuery; ?>">
                         <span class="material-symbols-outlined text-[22px]">group</span>
                         Customers
                     </a>
                     <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 hover:bg-slate-100 transition-colors"
-                        href="paymentsadmin.php">
+                        href="paymentsadmin.php?shop=<?php echo $shopQuery; ?>">
                         <span class="material-symbols-outlined text-[22px]">payments</span>
                         Payments
                     </a>
                     <div class="pt-4 mt-4 border-t border-slate-100">
                         <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 hover:bg-slate-100 transition-colors"
-                            href="settingsadmin.php">
+                            href="settingsadmin.php?shop=<?php echo $shopQuery; ?>">
                             <span class="material-symbols-outlined text-[22px]">settings</span>
                             Settings
                         </a>
@@ -146,6 +150,8 @@ if (!$owner) {
                         <p class="text-xs text-slate-500 truncate">Shop Manager</p>
                     </div>
                     <form id="logoutForm" method="post" action="../logout/logout.php" class="inline">
+                        <input type="hidden" name="action" value="confirm" />
+                        <input type="hidden" name="shop" value="<?php echo htmlspecialchars($shopSlug, ENT_QUOTES, 'UTF-8'); ?>" />
                         <button type="submit" class="text-slate-400 hover:text-error transition-colors" title="Logout">
                             <span class="material-symbols-outlined text-xl">logout</span>
                         </button>
@@ -167,6 +173,9 @@ if (!$owner) {
                             class="bg-surface-variant border-none rounded-lg pl-10 pr-4 py-1.5 text-sm w-64 focus:ring-2 focus:ring-primary/20"
                             placeholder="Search dashboard..." type="text" />
                     </div>
+                    <span class="hidden xl:inline-flex items-center px-2.5 py-1 rounded-full bg-blue-50 text-blue-700 text-[11px] font-bold uppercase tracking-wide">
+                        <?php echo htmlspecialchars($shopSlug, ENT_QUOTES, 'UTF-8'); ?>
+                    </span>
                 </div>
                 <div class="flex items-center gap-4">
                     <button class="p-2 text-slate-500 hover:text-primary transition-all">
@@ -178,8 +187,8 @@ if (!$owner) {
                     <div class="h-8 w-px bg-slate-200 mx-2"></div>
                     <div class="flex items-center gap-3">
                         <div class="text-right hidden sm:block">
-                            <p class="text-xs font-bold text-on-background">Alex Rivet</p>
-                            <p class="text-[10px] text-slate-500 uppercase font-semibold">Service Lead</p>
+                            <p class="text-xs font-bold text-on-background"><?php echo htmlspecialchars($shopName, ENT_QUOTES, 'UTF-8'); ?></p>
+                            <p class="text-[10px] text-slate-500 uppercase font-semibold">Slug: <?php echo htmlspecialchars($shopSlug, ENT_QUOTES, 'UTF-8'); ?></p>
                         </div>
                         <img alt="Manager Avatar" class="h-10 w-10 rounded-full border-2 border-primary/20 object-cover"
                             data-alt="professional male service manager portrait in modern automotive office environment"

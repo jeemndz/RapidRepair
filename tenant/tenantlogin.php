@@ -33,16 +33,24 @@ $hero_image = $hero_image_path !== '' ? '../pictures/' . $hero_image_path : 'htt
 
 if (isset($_POST['login'])) {
 
-    $email = isset($_POST['email']) ? trim($_POST['email']) : '';
+    $loginInput = isset($_POST['login_input']) ? trim($_POST['login_input']) : '';
     $password = isset($_POST['password']) ? $_POST['password'] : '';
     $requestedShop = strtolower(trim($requestedShop));
 
     if ($requestedShop === '') {
         $error = "Invalid login link. Please use your shop's login page.";
+    } elseif ($loginInput === '') {
+        $error = "Enter your username or email.";
     } else {
         // Validate login within the exact shop context to block cross-tenant access.
-        $stmt = mysqli_prepare($conn, "SELECT * FROM owners WHERE email = ? AND login_slug = ? LIMIT 1");
-        mysqli_stmt_bind_param($stmt, "ss", $email, $requestedShop);
+        $stmt = mysqli_prepare(
+            $conn,
+            "SELECT * FROM owners 
+             WHERE login_slug = ? 
+             AND (email = ? OR username = ?)
+             LIMIT 1"
+        );
+        mysqli_stmt_bind_param($stmt, "sss", $requestedShop, $loginInput, $loginInput);
         mysqli_stmt_execute($stmt);
         $query = mysqli_stmt_get_result($stmt);
         $user = mysqli_fetch_assoc($query);
@@ -58,7 +66,7 @@ if (isset($_POST['login'])) {
                     $_SESSION['login_slug'] = isset($user['login_slug']) ? $user['login_slug'] : '';
 
                     // --- Tenant login logging (new ENUM schema) ---
-                    $tenantID = (int)$user['tenantID'];
+                    $tenantID = (int) $user['tenantID'];
                     $user_id = $tenantID;
                     $user_name = $user['shopName'];
                     $user_role = 'admin'; // Default to admin for tenant login
@@ -89,7 +97,7 @@ if (isset($_POST['login'])) {
                     $_SESSION['login_slug'] = isset($user['login_slug']) ? $user['login_slug'] : '';
 
                     // --- Tenant login logging (new ENUM schema) ---
-                    $tenantID = (int)$user['tenantID'];
+                    $tenantID = (int) $user['tenantID'];
                     $user_id = $tenantID;
                     $user_name = $user['shopName'];
                     $user_role = 'admin'; // Default to admin for tenant login
@@ -97,7 +105,7 @@ if (isset($_POST['login'])) {
                     $entity_type = 'tenant';
                     $entity_id = $tenantID;
                     $details = 'Tenant logged in';
-                    $ip_address = isset($_SERVER['REMOTE_ADDR']) ? $_SERVER['REMOTE_ADDR'] : '';
+                    $ip_address = isset($_SERVER['REMOTE_ADDR']) ? $_SERVER['REMOTE_USER'] : '';
                     $user_agent = isset($_SERVER['HTTP_USER_AGENT']) ? $_SERVER['HTTP_USER_AGENT'] : '';
                     if ($tenantID) {
                         $stmt = $conn->prepare("INSERT INTO system_logs (tenantID, user_id, user_name, user_role, action, entity_type, entity_id, details, ip_address, user_agent, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())");
@@ -115,7 +123,7 @@ if (isset($_POST['login'])) {
             }
 
         } else {
-            $error = "This email is not authorized for this shop login page.";
+            $error = "This username or email is not authorized for this shop login page.";
         }
     }
 }
@@ -168,29 +176,32 @@ if (isset($_POST['login'])) {
         .primary-glow {
             box-shadow: 0 0 15px rgba(63, 117, 235, 0.4);
         }
-        
-        /* Dynamic primary color */
+
         :root {
-            --primary-color: <?php echo $primary_color; ?>;
-            --accent-color: <?php echo $accent_color; ?>;
+            --primary-color:
+                <?php echo $primary_color; ?>
+            ;
+            --accent-color:
+                <?php echo $accent_color; ?>
+            ;
         }
-        
+
         .bg-primary {
             background-color: var(--primary-color) !important;
         }
-        
+
         .text-primary {
             color: var(--primary-color) !important;
         }
-        
+
         .border-primary {
             border-color: var(--primary-color) !important;
         }
-        
+
         .focus-within\\:border-primary:focus-within {
             border-color: var(--primary-color) !important;
         }
-        
+
         .hover\\:bg-primary\\/90:hover {
             background-color: color-mix(in srgb, var(--primary-color) 90%, black) !important;
         }
@@ -202,7 +213,6 @@ if (isset($_POST['login'])) {
 
     <div class="flex min-h-screen">
 
-        <!-- LEFT SIDE -->
         <div class="hidden lg:flex lg:w-1/2 relative overflow-hidden bg-slate-100">
 
             <div class="absolute inset-0 z-10 bg-gradient-to-t from-slate-900/60 via-transparent to-transparent"></div>
@@ -221,7 +231,8 @@ if (isset($_POST['login'])) {
                         </div>
 
                         <span class="text-2xl font-black tracking-tight text-white">
-                            <?php echo htmlspecialchars(substr($shop_name, 0, 12)); ?><span class="text-primary"><?php echo htmlspecialchars(substr($shop_name, 12)); ?></span>
+                            <?php echo htmlspecialchars(substr($shop_name, 0, 12)); ?><span
+                                class="text-primary"><?php echo htmlspecialchars(substr($shop_name, 12)); ?></span>
                         </span>
 
                     </div>
@@ -238,7 +249,6 @@ if (isset($_POST['login'])) {
             </div>
         </div>
 
-        <!-- RIGHT LOGIN -->
         <div class="w-full lg:w-1/2 flex items-center justify-center p-8 sm:p-12 md:p-16 bg-white">
 
             <div class="w-full max-w-[440px]">
@@ -250,7 +260,8 @@ if (isset($_POST['login'])) {
                     </div>
 
                     <span class="text-xl font-black tracking-tight text-slate-900">
-                        <?php echo htmlspecialchars(substr($shop_name, 0, 12)); ?><span class="text-primary"><?php echo htmlspecialchars(substr($shop_name, 12)); ?></span>
+                        <?php echo htmlspecialchars(substr($shop_name, 0, 12)); ?><span
+                            class="text-primary"><?php echo htmlspecialchars(substr($shop_name, 12)); ?></span>
                     </span>
 
                 </div>
@@ -268,42 +279,27 @@ if (isset($_POST['login'])) {
                 </div>
 
                 <?php if ($error != "") { ?>
-
                     <div class="mb-4 text-red-500 text-sm font-semibold">
                         <?php echo $error; ?>
                     </div>
-
                 <?php } ?>
-
                 <form method="POST" class="space-y-5">
-
-                    <!-- Hidden shop parameter to maintain shop validation -->
                     <input type="hidden" name="shop" value="<?php echo htmlspecialchars($requestedShop); ?>" />
-
-                    <!-- EMAIL -->
                     <div class="space-y-2">
-
                         <label class="text-sm font-semibold text-slate-700">
-                            Email Address
+                            Username or Email
                         </label>
-
                         <div
                             class="flex items-stretch rounded-xl overflow-hidden border border-slate-200 focus-within:border-primary transition-colors bg-slate-50">
-
                             <div class="flex items-center justify-center bg-slate-100 px-3 border-r border-slate-200">
-                                <span class="material-symbols-outlined text-gray-custom text-xl">mail</span>
+                                <span class="material-symbols-outlined text-gray-custom text-xl">person</span>
                             </div>
-
-                            <input name="email"
+                            <input name="login_input"
                                 class="w-full border-none text-slate-900 px-4 py-3 focus:ring-0 text-sm bg-transparent"
-                                placeholder="name@company.com" type="email" required />
-
+                                placeholder="Enter username or email" type="text" required />
                         </div>
                     </div>
-
-                    <!-- PASSWORD -->
                     <div class="space-y-2">
-
                         <div class="flex justify-between items-center">
                             <label class="text-sm font-semibold text-slate-700">Password</label>
                             <a class="text-xs font-bold text-primary hover:underline" href="#">
@@ -318,14 +314,18 @@ if (isset($_POST['login'])) {
                                 <span class="material-symbols-outlined text-gray-custom text-xl">lock</span>
                             </div>
 
-                            <input name="password"
+                            <input id="passwordInput" name="password"
                                 class="w-full border-none text-slate-900 px-4 py-3 focus:ring-0 text-sm bg-transparent"
                                 placeholder="••••••••" type="password" required />
 
+                            <button type="button" id="togglePassword"
+                                class="flex items-center justify-center bg-slate-100 px-3 border-l border-slate-200 text-slate-500 hover:text-primary transition-colors"
+                                aria-label="Show password">
+                                <span id="togglePasswordIcon"
+                                    class="material-symbols-outlined text-xl">visibility</span>
+                            </button>
                         </div>
                     </div>
-
-                    <!-- LOGIN BUTTON -->
 
                     <div class="pt-4">
 
@@ -391,6 +391,22 @@ if (isset($_POST['login'])) {
         </button>
 
     </a>
+
+    <script>
+    const passwordInput = document.getElementById('passwordInput');
+    const togglePassword = document.getElementById('togglePassword');
+    const togglePasswordIcon = document.getElementById('togglePasswordIcon');
+
+    if (passwordInput && togglePassword && togglePasswordIcon) {
+        togglePassword.addEventListener('click', function () {
+            const isPassword = passwordInput.getAttribute('type') === 'password';
+
+            passwordInput.setAttribute('type', isPassword ? 'text' : 'password');
+            togglePasswordIcon.textContent = isPassword ? 'visibility_off' : 'visibility';
+            togglePassword.setAttribute('aria-label', isPassword ? 'Hide password' : 'Show password');
+        });
+    }
+</script>
 
 </body>
 

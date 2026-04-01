@@ -31,13 +31,15 @@ if (!isset($_SESSION['tenantID'])) {
 $tenantID = $_SESSION['tenantID'];
 $email = "";
 $shopName = "";
+$login_slug = "";
 $error = "";
 
-// Get tenant email and shop name
-$query = mysqli_query($conn, "SELECT email, shopName FROM owners WHERE tenantID='$tenantID'");
+// Get tenant email, shop name, and login slug
+$query = mysqli_query($conn, "SELECT email, shopName, login_slug FROM owners WHERE tenantID='$tenantID'");
 if ($row = mysqli_fetch_assoc($query)) {
     $email = $row['email'];
     $shopName = $row['shopName'];
+    $login_slug = $row['login_slug'];
 }
 
 // Handle password change submission
@@ -146,9 +148,11 @@ if (isset($_POST['submit'])) {
                 class="w-full max-w-2xl bg-white dark:bg-navy-dark rounded-xl shadow-xl border border-slate-200 dark:border-slate-800 overflow-hidden">
                 <div
                     class="relative h-32 w-full bg-primary/10 flex items-center px-8 border-b border-slate-100 dark:border-slate-800 overflow-hidden">
-                    <h1 class="text-2xl font-bold text-slate-900 dark:text-white">Change Your Password</h1>
-                    <p class="text-slate-500 dark:text-slate-400 mt-1">Keep your account secure with a strong password.
-                    </p>
+                    <div>
+                        <h1 class="text-2xl font-bold text-slate-900 dark:text-white">Change Your Password</h1>
+                        <p class="text-slate-500 dark:text-slate-400 mt-1">Keep your account secure with a strong
+                            password.</p>
+                    </div>
                     <div class="absolute right-8 hidden sm:block">
                         <span class="material-symbols-outlined text-6xl text-primary/20">lock_reset</span>
                     </div>
@@ -200,7 +204,7 @@ if (isset($_POST['submit'])) {
                                 class="w-full sm:flex-1 h-12 bg-primary hover:bg-primary/90 text-white font-bold rounded-lg flex items-center justify-center gap-2">
                                 <span class="material-symbols-outlined text-[20px]">save</span> Save Changes
                             </button>
-                            <a href="dashboardadmin.php"
+                            <a href="tenantlogin.php?shop=<?= urlencode($login_slug) ?>"
                                 class="w-full sm:w-32 h-12 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold rounded-lg flex items-center justify-center">Cancel</a>
                         </div>
                     </form>
@@ -209,7 +213,8 @@ if (isset($_POST['submit'])) {
                 <!-- Footer -->
                 <div class="px-8 py-4 bg-slate-50 dark:bg-slate-800/50 border-t border-slate-100 dark:border-slate-800">
                     <h3 class="text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-2">
-                        Password Requirements</h3>
+                        Password Requirements
+                    </h3>
                     <ul class="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1">
                         <li class="flex items-center gap-2 text-xs text-slate-500">
                             <span class="material-symbols-outlined text-[14px] text-green-500">check_circle</span> At

@@ -106,7 +106,14 @@ $allowedRedirects = [
 	'index.php' => '../index.php'
 ];
 
-$tenantLoginSlug = isset($_SESSION['login_slug']) ? (string)$_SESSION['login_slug'] : '';
+$requestedShopSlug = '';
+if (isset($_POST['shop'])) {
+	$requestedShopSlug = trim((string)$_POST['shop']);
+} elseif (isset($_GET['shop'])) {
+	$requestedShopSlug = trim((string)$_GET['shop']);
+}
+
+$tenantLoginSlug = $requestedShopSlug !== '' ? $requestedShopSlug : (isset($_SESSION['login_slug']) ? (string)$_SESSION['login_slug'] : '');
 $logoutRedirect = buildTenantLoginUrl($tenantLoginSlug);
 if (isset($_SESSION['superadmin_id'])) {
 	$logoutRedirect = '../superadmin/superaddlogin.php';

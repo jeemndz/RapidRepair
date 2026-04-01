@@ -6,7 +6,7 @@ if (!isset($_SESSION['superadmin_id'])) {
     exit();
 }
 
-// âœ… Load environment variables from .env file
+// ✅ Load environment variables from .env file
 if (file_exists(__DIR__ . '/../.env')) {
     $envLines = file(__DIR__ . '/../.env', FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
     foreach ($envLines as $line) {
@@ -118,6 +118,25 @@ function getBillingCycleDivisor($billingCycle)
     }
 
     return 1;
+}
+
+function calculateNextBillingDate($startDate, $billingCycle)
+{
+    $monthsToAdd = getBillingCycleDivisor($billingCycle);
+    $date = new DateTime($startDate);
+    $date->modify("+{$monthsToAdd} month");
+    return $date->format('Y-m-d');
+}
+
+function calculateSubscriptionDates($startDate, $billingCycle)
+{
+    $nextBillingDate = calculateNextBillingDate($startDate, $billingCycle);
+
+    return [
+        'subscription_start' => $startDate,
+        'subscription_end' => $nextBillingDate,
+        'next_billing_date' => $nextBillingDate
+    ];
 }
 
 function subscriptionsTableExists($conn)
@@ -571,10 +590,12 @@ if (isset($_POST['updateTenantStatus'])) {
         }
 
         $subscriptionStart = date('Y-m-d');
+        $subscriptionDates = calculateSubscriptionDates($subscriptionStart, $billingCycle);
+        $subscriptionEnd = $subscriptionDates['subscription_end'];
+        $nextBillingDate = $subscriptionDates['next_billing_date'];
+
         $billingDivisor = getBillingCycleDivisor($billingCycle);
-        $subscriptionEnd = date('Y-m-d', strtotime('+' . $billingDivisor . ' months'));
         $planTotalPrice = $subscriptionPlans[$subscriptionPlan]['monthly_price'] * $billingDivisor;
-        $nextBillingDate = $subscriptionEnd;
         $resolvedPlanId = resolvePlanIdForSubscription($conn, $subscriptionPlan, $subscriptionPlans[$subscriptionPlan]['name']);
 
         $updateSql = "UPDATE owners SET 
@@ -746,7 +767,7 @@ $rowsPerPage = 5;
 $tenantPage = isset($_GET['tenant_page']) ? max(1, (int) $_GET['tenant_page']) : 1;
 $pendingPage = isset($_GET['pending_page']) ? max(1, (int) $_GET['pending_page']) : 1;
 
-// âœ… Generate unique login slug
+// ✅ Generate unique login slug
 function generateSlug($conn, $shopName)
 {
     $slug = strtolower(trim($shopName));
@@ -765,6 +786,33 @@ function generateSlug($conn, $shopName)
     }
 
     return $slug;
+}
+
+function generateUsername($conn, $shopName)
+{
+    // Convert shop name to lowercase username
+    $username = strtolower(trim($shopName));
+    $username = preg_replace('/[^a-z0-9]/', '', $username); // remove spaces & symbols
+
+    // fallback if empty
+    if ($username === '') {
+        $username = 'user';
+    }
+
+    $originalUsername = $username;
+    $counter = 1;
+
+    // Ensure UNIQUE username
+    while (true) {
+        $check = mysqli_query($conn, "SELECT tenantID FROM owners WHERE username='$username'");
+        if (mysqli_num_rows($check) == 0)
+            break;
+
+        $username = $originalUsername . $counter;
+        $counter++;
+    }
+
+    return $username;
 }
 
 function generateTemporaryPassword($length = 12)
@@ -819,9 +867,20 @@ if (isset($_POST['updateTenant'])) {
     }
 
     if ($status === 'Active') {
-        $subscriptionStart = date('Y-m-d');
+        $existingSubscriptionStart = '';
+
+        $existingOwnerRes = mysqli_query($conn, "SELECT subscription_start FROM owners WHERE tenantID = '$tenantID' LIMIT 1");
+        if ($existingOwnerRes && mysqli_num_rows($existingOwnerRes) > 0) {
+            $existingOwnerRow = mysqli_fetch_assoc($existingOwnerRes);
+            $existingSubscriptionStart = trim((string) ($existingOwnerRow['subscription_start'] ?? ''));
+        }
+
+        $subscriptionStart = $existingSubscriptionStart !== '' ? $existingSubscriptionStart : date('Y-m-d');
+        $subscriptionDates = calculateSubscriptionDates($subscriptionStart, $billingCycle);
+        $subscriptionEnd = $subscriptionDates['subscription_end'];
+        $nextBillingDate = $subscriptionDates['next_billing_date'];
+
         $billingDivisor = getBillingCycleDivisor($billingCycle);
-        $subscriptionEnd = date('Y-m-d', strtotime('+' . $billingDivisor . ' months'));
         $planTotalPrice = $subscriptionPlans[$subscriptionPlan]['monthly_price'] * $billingDivisor;
 
         if (ownersColumnExists($conn, 'subscription_start')) {
@@ -833,7 +892,7 @@ if (isset($_POST['updateTenant'])) {
         }
 
         if (ownersColumnExists($conn, 'next_billing_date')) {
-            $updateFields[] = "next_billing_date = '" . mysqli_real_escape_string($conn, $subscriptionEnd) . "'";
+            $updateFields[] = "next_billing_date = '" . mysqli_real_escape_string($conn, $nextBillingDate) . "'";
         }
 
         if (ownersColumnExists($conn, 'plan_price')) {
@@ -858,22 +917,24 @@ if (isset($_POST['createTenant'])) {
     $shopAddress = mysqli_real_escape_string($conn, $_POST['shopAddress']);
     $ownerName = mysqli_real_escape_string($conn, $_POST['ownerName']);
     $email = trim($_POST['email']);
+    $username = generateUsername($conn, $shopName);
+    $username = mysqli_real_escape_string($conn, $username);
     $contactNumber = mysqli_real_escape_string($conn, $_POST['contactNumber']);
     $tempPassword = trim((string) ($_POST['tempPassword'] ?? ''));
     if ($tempPassword === '') {
         $tempPassword = generateTemporaryPassword();
     }
 
-    // âœ… VALIDATE EMAIL (VERY IMPORTANT)
+    // ✅ VALIDATE EMAIL (VERY IMPORTANT)
     if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
         die("Invalid email address.");
     }
 
-    // âœ… DO NOT HASH PASSWORD YET - Store as plain text for first login only
+    // ✅ DO NOT HASH PASSWORD YET - Store as plain text for first login only
     // Hash will happen after user changes password on first login
-    $hashedPassword = $tempPassword;  // Store temporarily as plain text
+    $hashedPassword = $tempPassword;
 
-    // âœ… Generate tenant ID
+    // ✅ Generate tenant ID
     $getID = mysqli_query($conn, "SELECT tenantID FROM owners ORDER BY tenantID DESC LIMIT 1");
 
     if (mysqli_num_rows($getID) > 0) {
@@ -885,15 +946,16 @@ if (isset($_POST['createTenant'])) {
 
     $tenantID = str_pad($newID, 3, "0", STR_PAD_LEFT);
 
-    // âœ… Generate slug
+    // ✅ Generate slug
     $login_slug = generateSlug($conn, $shopName);
 
-    // âœ… INSERT (subscription fields will be populated when tenant is approved)
+    // ✅ INSERT (subscription fields will be populated when tenant is approved)
     $insertColumns = [
         'tenantID',
         'ownerName',
         'shopName',
         'login_slug',
+        'username', // 👈 ADD THIS
         'email',
         'contactNumber',
         'shopAddress',
@@ -907,6 +969,7 @@ if (isset($_POST['createTenant'])) {
         "'" . mysqli_real_escape_string($conn, $ownerName) . "'",
         "'" . mysqli_real_escape_string($conn, $shopName) . "'",
         "'" . mysqli_real_escape_string($conn, $login_slug) . "'",
+        "'" . $username . "'", // 👈 ADD THIS
         "'" . mysqli_real_escape_string($conn, $email) . "'",
         "'" . mysqli_real_escape_string($conn, $contactNumber) . "'",
         "'" . mysqli_real_escape_string($conn, $shopAddress) . "'",
@@ -914,7 +977,6 @@ if (isset($_POST['createTenant'])) {
         "1",
         "'Pending'"
     ];
-
     $insertSql = "INSERT INTO owners (" . implode(', ', $insertColumns) . ") VALUES (" . implode(', ', $insertValues) . ")";
     $insert = mysqli_query($conn, $insertSql);
 
@@ -923,7 +985,7 @@ if (isset($_POST['createTenant'])) {
 
     if ($insert) {
 
-        // âœ… LOGIN LINK
+        // ✅ LOGIN LINK
         $baseURL = "https://rapidrepair-gygpcbczgyg0czek.southeastasia-01.azurewebsites.net";
         $loginLink = $baseURL . "/tenant/tenantlogin.php?shop=" . urlencode($login_slug);
 
@@ -980,102 +1042,116 @@ if (isset($_POST['createTenant'])) {
         $safeLoginLink = htmlspecialchars($loginLink, ENT_QUOTES, 'UTF-8');
         $safeTempPassword = htmlspecialchars($tempPassword, ENT_QUOTES, 'UTF-8');
         $safeLoginEmail = htmlspecialchars($email, ENT_QUOTES, 'UTF-8');
+        $safeUsername = htmlspecialchars($username, ENT_QUOTES, 'UTF-8');
 
         $mail->Body = "
-                <!DOCTYPE html>
-                <html lang='en'>
-                <head>
-                    <meta charset='UTF-8'>
-                    <meta name='viewport' content='width=device-width, initial-scale=1.0'>
-                    <title>Rapid Repair Tenant Access</title>
-                </head>
-                <body style='margin:0;padding:0;background:#f1f5f9;font-family:Arial,Helvetica,sans-serif;color:#0f172a;'>
-                    <div style='display:none;max-height:0;overflow:hidden;opacity:0;'>
-                        Your Rapid Repair tenant account has been created and is pending approval.
-                    </div>
-                    <table role='presentation' cellpadding='0' cellspacing='0' border='0' width='100%' style='background:#f1f5f9;padding:24px 0;'>
+    <!DOCTYPE html>
+    <html lang='en'>
+    <head>
+        <meta charset='UTF-8'>
+        <meta name='viewport' content='width=device-width, initial-scale=1.0'>
+        <title>Rapid Repair Tenant Access</title>
+    </head>
+    <body style='margin:0;padding:0;background:#f1f5f9;font-family:Arial,Helvetica,sans-serif;color:#0f172a;'>
+        <div style='display:none;max-height:0;overflow:hidden;opacity:0;'>
+            Your Rapid Repair tenant account has been created and is pending approval.
+        </div>
+        <table role='presentation' cellpadding='0' cellspacing='0' border='0' width='100%' style='background:#f1f5f9;padding:24px 0;'>
+            <tr>
+                <td align='center'>
+                    <table role='presentation' cellpadding='0' cellspacing='0' border='0' width='100%' style='max-width:640px;background:#ffffff;border:1px solid #dbe1ea;border-radius:14px;overflow:hidden;'>
                         <tr>
-                            <td align='center'>
-                                <table role='presentation' cellpadding='0' cellspacing='0' border='0' width='100%' style='max-width:640px;background:#ffffff;border:1px solid #dbe1ea;border-radius:14px;overflow:hidden;'>
+                            <td style='padding:22px 24px;background:linear-gradient(135deg,#123b69,#0b1f42);color:#e2e8f0;'>
+                                <h1 style='margin:0;font-size:28px;line-height:32px;font-weight:700;color:#ffffff;'>RapidRepair</h1>
+                                <p style='margin:6px 0 0 0;font-size:15px;line-height:20px;'>Tenant onboarding details</p>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td style='padding:24px;'>
+                                <p style='margin:0 0 12px 0;font-size:27px;line-height:34px;font-weight:700;color:#0f172a;'>Hi {$safeOwnerName},</p>
+                                <p style='margin:0 0 18px 0;font-size:25px;line-height:32px;color:#1e293b;'>
+                                    Your Car Repair Shop <strong>{$safeShopName}</strong> has been set up in RapidRepair.
+                                </p>
+
+                                <table role='presentation' cellpadding='0' cellspacing='0' border='0' width='100%' style='border:1px solid #d1d5db;border-radius:12px;background:#f8fafc;margin:0 0 16px 0;'>
                                     <tr>
-                                        <td style='padding:22px 24px;background:linear-gradient(135deg,#123b69,#0b1f42);color:#e2e8f0;'>
-                                            <h1 style='margin:0;font-size:28px;line-height:32px;font-weight:700;color:#ffffff;'>RapidRepair</h1>
-                                            <p style='margin:6px 0 0 0;font-size:15px;line-height:20px;'>Tenant onboarding details</p>
-                                        </td>
-                                    </tr>
-                                    <tr>
-                                        <td style='padding:24px;'>
-                                            <p style='margin:0 0 12px 0;font-size:27px;line-height:34px;font-weight:700;color:#0f172a;'>Hi {$safeOwnerName},</p>
-                                            <p style='margin:0 0 18px 0;font-size:25px;line-height:32px;color:#1e293b;'>
-                                                Your Car Repair Shop <strong>{$safeShopName}</strong> has been set up in RapidRepair.
+                                        <td style='padding:16px;'>
+                                            <p style='margin:0 0 8px 0;font-size:14px;line-height:20px;color:#64748b;font-weight:700;'>Your tenant login link</p>
+                                            <p style='margin:0 0 12px 0;font-size:17px;line-height:24px;word-break:break-all;'>
+                                                <a href='{$safeLoginLink}' style='color:#1d4ed8;text-decoration:underline;'>{$safeLoginLink}</a>
+                                            </p>
+                                            <p style='margin:0 0 14px 0;font-size:12px;line-height:18px;color:#64748b;'>
+                                                Tip: to copy, highlight the link and press Ctrl+C (or tap-and-hold on mobile).
                                             </p>
 
-                                            <table role='presentation' cellpadding='0' cellspacing='0' border='0' width='100%' style='border:1px solid #d1d5db;border-radius:12px;background:#f8fafc;margin:0 0 16px 0;'>
+                                            <table role='presentation' cellpadding='0' cellspacing='0' border='0'>
                                                 <tr>
-                                                    <td style='padding:16px;'>
-                                                        <p style='margin:0 0 8px 0;font-size:14px;line-height:20px;color:#64748b;font-weight:700;'>Your tenant login link</p>
-                                                        <p style='margin:0 0 12px 0;font-size:17px;line-height:24px;word-break:break-all;'>
-                                                            <a href='{$safeLoginLink}' style='color:#1d4ed8;text-decoration:underline;'>{$safeLoginLink}</a>
-                                                        </p>
-                                                        <p style='margin:0 0 14px 0;font-size:12px;line-height:18px;color:#64748b;'>
-                                                            Tip: to copy, highlight the link and press Ctrl+C (or tap-and-hold on mobile).
-                                                        </p>
-
-                                                        <table role='presentation' cellpadding='0' cellspacing='0' border='0'>
-                                                            <tr>
-                                                                <td style='border-radius:999px;background:#22c55e;'>
-                                                                    <a href='{$safeLoginLink}' style='display:inline-block;padding:12px 20px;font-size:22px;font-weight:700;color:#083344;text-decoration:none;'>Open RapidRepair Portal</a>
-                                                                </td>
-                                                            </tr>
-                                                        </table>
+                                                    <td style='border-radius:999px;background:#22c55e;'>
+                                                        <a href='{$safeLoginLink}' style='display:inline-block;padding:12px 20px;font-size:22px;font-weight:700;color:#083344;text-decoration:none;'>Open RapidRepair Portal</a>
                                                     </td>
                                                 </tr>
                                             </table>
-
-                                            <table role='presentation' cellpadding='0' cellspacing='0' border='0' width='100%' style='border:1px solid #bbf7d0;border-radius:12px;background:#dcfce7;margin:0 0 16px 0;'>
-                                                <tr>
-                                                    <td style='padding:16px;'>
-                                                        <p style='margin:0 0 6px 0;font-size:14px;line-height:20px;color:#166534;font-weight:700;'>Temporary password</p>
-                                                        <p style='margin:0;font-size:30px;line-height:36px;letter-spacing:1.2px;color:#14532d;font-weight:700;'>{$safeTempPassword}</p>
-                                                    </td>
-                                                </tr>
-                                            </table>
-
-                                            <p style='margin:0 0 8px 0;font-size:25px;line-height:30px;color:#0f172a;font-weight:700;'>Next steps</p>
-                                            <ul style='margin:0 0 12px 22px;padding:0;font-size:15px;line-height:24px;color:#0f172a;'>
-                                                <li>Open the link above and log in using this email address: <strong>{$safeLoginEmail}</strong></li>
-                                                <li>Use the temporary password, then change it immediately after you sign in.</li>
-                                                <li>Bookmark your login link for quick access.</li>
-                                            </ul>
-
-                                            <p style='margin:0;font-size:13px;line-height:20px;color:#64748b;'>
-                                                If the button does not work, copy and paste the URL into your browser.
-                                            </p>
-                                        </td>
-                                    </tr>
-                                    <tr>
-                                        <td style='padding:14px 24px;border-top:1px solid #e5e7eb;background:#f8fafc;font-size:11px;line-height:18px;color:#64748b;'>
-                                            This email was sent by RapidRepair System.<br>
-                                            If you did not request this, ignore this email.
                                         </td>
                                     </tr>
                                 </table>
+
+                                <table role='presentation' cellpadding='0' cellspacing='0' border='0' width='100%' style='border:1px solid #d1d5db;border-radius:12px;background:#f8fafc;margin:0 0 16px 0;'>
+                                    <tr>
+                                        <td style='padding:16px;'>
+                                            <p style='margin:0 0 6px 0;font-size:14px;line-height:20px;color:#64748b;font-weight:700;'>Username</p>
+                                            <p style='margin:0;font-size:24px;line-height:30px;color:#0f172a;font-weight:700;'>{$safeUsername}</p>
+                                        </td>
+                                    </tr>
+                                </table>
+
+                                <table role='presentation' cellpadding='0' cellspacing='0' border='0' width='100%' style='border:1px solid #bbf7d0;border-radius:12px;background:#dcfce7;margin:0 0 16px 0;'>
+                                    <tr>
+                                        <td style='padding:16px;'>
+                                            <p style='margin:0 0 6px 0;font-size:14px;line-height:20px;color:#166534;font-weight:700;'>Temporary password</p>
+                                            <p style='margin:0;font-size:30px;line-height:36px;letter-spacing:1.2px;color:#14532d;font-weight:700;'>{$safeTempPassword}</p>
+                                        </td>
+                                    </tr>
+                                </table>
+
+                                <p style='margin:0 0 8px 0;font-size:25px;line-height:30px;color:#0f172a;font-weight:700;'>Next steps</p>
+                                <ul style='margin:0 0 12px 22px;padding:0;font-size:15px;line-height:24px;color:#0f172a;'>
+                                    <li>Open the link above and log in using this username: <strong>{$safeUsername}</strong></li>
+                                    <li>You can also log in using this email address: <strong>{$safeLoginEmail}</strong></li>
+                                    <li>Use the temporary password, then change it immediately after you sign in.</li>
+                                    <li>Bookmark your login link for quick access.</li>
+                                </ul>
+
+                                <p style='margin:0;font-size:13px;line-height:20px;color:#64748b;'>
+                                    If the button does not work, copy and paste the URL into your browser.
+                                </p>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td style='padding:14px 24px;border-top:1px solid #e5e7eb;background:#f8fafc;font-size:11px;line-height:18px;color:#64748b;'>
+                                This email was sent by RapidRepair System.<br>
+                                If you did not request this, ignore this email.
                             </td>
                         </tr>
                     </table>
-                </body>
-                </html>
-            ";
+                </td>
+            </tr>
+        </table>
+    </body>
+    </html>
+";
 
         $mail->AltBody = "Rapid Repair Tenant Account Information\n\n"
             . "Hello {$ownerName},\n\n"
             . "Your tenant account for {$shopName} has been set up and is pending approval.\n\n"
             . "Your tenant login link: {$loginLink}\n"
             . "Tip: copy and paste the link into your browser if needed.\n\n"
+            . "Username: {$username}\n"
+            . "Login Email: {$email}\n"
             . "Temporary Password: {$tempPassword}\n"
             . "Status: Pending Approval\n\n"
             . "Next steps:\n"
-            . "- Open the link above and log in using this email address: {$email}\n"
+            . "- Open the link above and log in using this username: {$username}\n"
+            . "- You can also log in using this email address: {$email}\n"
             . "- Use the temporary password, then change it immediately after you sign in.\n"
             . "- Bookmark your login link for quick access.\n\n"
             . "This email was sent by RapidRepair System\n"
@@ -1161,7 +1237,7 @@ if (isset($_POST['createTenant'])) {
         }
     }
 
-    // âœ… REDIRECT
+    // ✅ REDIRECT
     if ($insert && $emailSent) {
         header("Location: superaddtenants.php?notice=tenant_created_email_sent");
     } elseif ($insert && $emailFailureReason === 'quota') {
@@ -1182,8 +1258,7 @@ if (isset($_POST['createTenant'])) {
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Tenant Management | RapidRepair
-    </title>
+    <title>Tenant Management | RapidRepair</title>
     <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap"
         rel="stylesheet" />
@@ -1206,24 +1281,22 @@ if (isset($_POST['createTenant'])) {
             },
         }
     </script>
-    
 </head>
 
 <body class="bg-background-light dark:bg-background-dark font-display text-slate-900 dark:text-slate-100">
 
-    <!-- Side Navigation -->
     <aside
         class="flex flex-col fixed left-0 top-0 h-full z-40 h-screen w-64 border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 font-['Inter'] antialiased tracking-tight shadow-sm dark:shadow-none">
-        <!-- Brand Header -->
-            <div class="p-6 flex items-center gap-3">
-                <div class="size-12 rounded-lg bg-white p-1 shadow-md dark:bg-slate-900">
-                    <img src="../pictures/RRlogo3.png" alt="Rapid Repair logo" class="h-full w-full object-contain drop-shadow-sm">
-                </div>
-                <h2 class="text-xl font-bold tracking-tight text-slate-900 dark:text-white leading-none">
-                    RapidRepair <span class="text-primary">SuperAdmin</span>
-                </h2>
+        <div class="p-6 flex items-center gap-3">
+            <div class="size-12 rounded-lg bg-white p-1 shadow-md dark:bg-slate-900">
+                <img src="../pictures/RRlogo3.png" alt="Rapid Repair logo"
+                    class="h-full w-full object-contain drop-shadow-sm">
             </div>
-        <!-- Navigation Links -->
+            <h2 class="text-xl font-bold tracking-tight text-slate-900 dark:text-white leading-none">
+                RapidRepair <span class="text-primary">SuperAdmin</span>
+            </h2>
+        </div>
+
         <nav class="flex-1 px-4 space-y-1 mt-4">
             <a class="flex items-center gap-3 px-3 py-2.5 text-slate-600 dark:text-slate-400 font-medium hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors rounded-lg active:scale-95"
                 href="superadd.php">
@@ -1255,21 +1328,19 @@ if (isset($_POST['createTenant'])) {
                 <span class="material-symbols-outlined" data-icon="assignment">assignment</span>
                 <span class="text-sm">Audit Logs</span>
             </a>
-            
             <a class="flex items-center gap-3 px-3 py-2.5 text-slate-600 dark:text-slate-400 font-medium hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors rounded-lg active:scale-95"
                 href="superbackup.php">
                 <span class="material-symbols-outlined" data-icon="backup"
                     style="font-variation-settings: 'FILL' 1;">backup</span>
                 <span class="text-sm">System Backup</span>
             </a>
-
             <a class="flex items-center gap-3 px-3 py-2.5 text-slate-600 dark:text-slate-400 font-medium hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors rounded-lg active:scale-95"
                 href="supersettings.php">
                 <span class="material-symbols-outlined" data-icon="settings">settings</span>
                 <span class="text-sm">Settings</span>
             </a>
-        
         </nav>
+
         <div class="p-4 border-t border-slate-100 dark:border-slate-800 space-y-2">
             <div
                 class="flex items-center gap-3 p-2 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
@@ -1278,7 +1349,9 @@ if (isset($_POST['createTenant'])) {
                     <?php echo htmlspecialchars(initials($superadminName)); ?>
                 </div>
                 <div class="flex flex-col min-w-0">
-                    <h3 class="text-sm font-semibold truncate text-slate-900 dark:text-white"><?php echo htmlspecialchars($superadminName); ?></h3>
+                    <h3 class="text-sm font-semibold truncate text-slate-900 dark:text-white">
+                        <?php echo htmlspecialchars($superadminName); ?>
+                    </h3>
                     <p class="text-xs text-slate-500 dark:text-slate-400 truncate">Superadmin</p>
                 </div>
             </div>
@@ -1292,9 +1365,7 @@ if (isset($_POST['createTenant'])) {
         </div>
     </aside>
 
-    <!-- Main Content -->
     <main class="flex-1 flex flex-col min-w-0 bg-background-light dark:bg-background-dark ml-64">
-        <!-- TopAppBar -->
         <header
             class="flex items-center justify-between px-8 sticky top-0 z-30 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md w-full h-16 border-b border-slate-200 dark:border-slate-800">
             <div class="flex items-center gap-4">
@@ -1334,7 +1405,6 @@ if (isset($_POST['createTenant'])) {
         </header>
 
         <div class="p-8">
-            <!-- Header -->
             <header class="mb-8 flex justify-between items-center">
                 <div>
                     <h1 class="text-3xl font-black text-slate-900 dark:text-white tracking-tight">Tenant Management</h1>
@@ -1347,7 +1417,6 @@ if (isset($_POST['createTenant'])) {
                 </button>
             </header>
 
-            <!-- Tenant Table -->
             <div
                 class="bg-white dark:bg-background-dark rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
                 <div class="overflow-x-auto">
@@ -1365,14 +1434,12 @@ if (isset($_POST['createTenant'])) {
                         </thead>
                         <tbody id="tenantsTableBody" class="divide-y divide-slate-100 dark:divide-slate-800">
                             <?php
-                            // Get total count for pagination
                             $totalQuery = "SELECT COUNT(*) as total FROM owners";
                             $totalResult = mysqli_query($conn, $totalQuery);
                             $totalRow = mysqli_fetch_assoc($totalResult);
                             $totalTenants = $totalRow['total'];
                             $totalTenantPages = ceil($totalTenants / $rowsPerPage);
 
-                            // Ensure valid page
                             if ($tenantPage > $totalTenantPages && $totalTenantPages > 0) {
                                 $tenantPage = $totalTenantPages;
                             }
@@ -1412,6 +1479,8 @@ if (isset($_POST['createTenant'])) {
                                 $tenantNextBillingRaw = '';
                                 if (isset($row['next_billing_date']) && $row['next_billing_date'] !== '') {
                                     $tenantNextBillingRaw = $row['next_billing_date'];
+                                } elseif (isset($row['subscription_start']) && $row['subscription_start'] !== '') {
+                                    $tenantNextBillingRaw = calculateNextBillingDate($row['subscription_start'], $tenantCycleKey);
                                 } elseif (isset($row['subscription_end']) && $row['subscription_end'] !== '') {
                                     $tenantNextBillingRaw = $row['subscription_end'];
                                 } elseif (isset($row['created_at']) && $row['created_at'] !== '') {
@@ -1421,6 +1490,7 @@ if (isset($_POST['createTenant'])) {
                                 $tenantNextBilling = $tenantNextBillingRaw !== ''
                                     ? date('M d, Y', strtotime($tenantNextBillingRaw))
                                     : 'N/A';
+
                                 $tenantSearchHaystack = strtolower(trim((string) ($row['shopName'] ?? '') . ' ' . (string) ($row['ownerName'] ?? '') . ' ' . (string) ($row['email'] ?? '') . ' ' . (string) $tenantPlan . ' ' . (string) $tenantCycle . ' ' . (string) ($row['status'] ?? '') . ' ' . (string) ($row['tenantID'] ?? '') . ' ' . (string) $tenantNextBilling));
                                 ?>
                                 <tr class="searchable-tenant hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors"
@@ -1434,11 +1504,9 @@ if (isset($_POST['createTenant'])) {
                                         <span
                                             class="text-sm font-semibold text-slate-700 dark:text-slate-200"><?php echo htmlspecialchars($tenantPlan); ?></span><br>
                                         <span
-                                            class="text-xs text-slate-500 dark:text-slate-400"><?php echo htmlspecialchars($tenantCycle); ?></span>
-                                        <br>
+                                            class="text-xs text-slate-500 dark:text-slate-400"><?php echo htmlspecialchars($tenantCycle); ?></span><br>
                                         <span class="text-xs text-slate-500 dark:text-slate-400">PHP
-                                            <?php echo number_format($tenantPrice, 2); ?></span>
-                                        <br>
+                                            <?php echo number_format($tenantPrice, 2); ?></span><br>
                                         <span class="text-xs text-slate-500 dark:text-slate-400">Next Billing:
                                             <?php echo htmlspecialchars($tenantNextBilling); ?></span>
                                     </td>
@@ -1452,8 +1520,9 @@ if (isset($_POST['createTenant'])) {
                                     <td class="px-6 py-4 text-right">
                                         <button
                                             onclick="openEditModal('<?php echo $row['tenantID']; ?>', '<?php echo addslashes($row['shopName']); ?>', '<?php echo addslashes($row['shopAddress']); ?>', '<?php echo addslashes($row['ownerName']); ?>', '<?php echo addslashes($row['email']); ?>', '<?php echo addslashes($row['contactNumber']); ?>', '<?php echo $row['status']; ?>', '<?php echo addslashes($tenantPlanKey); ?>', '<?php echo addslashes($tenantCycleKey); ?>')"
-                                            class="text-slate-400 hover:text-primary transition-colors"><span
-                                                class="material-symbols-outlined">more_vert</span></button>
+                                            class="text-slate-400 hover:text-primary transition-colors">
+                                            <span class="material-symbols-outlined">more_vert</span>
+                                        </button>
                                     </td>
                                 </tr>
                             <?php } ?>
@@ -1469,7 +1538,7 @@ if (isset($_POST['createTenant'])) {
                         </tbody>
                     </table>
                 </div>
-                <!-- Tenants Table Pagination -->
+
                 <div
                     class="px-6 py-4 bg-slate-50 dark:bg-slate-800/50 border-t border-slate-100 dark:border-slate-800 flex justify-between items-center">
                     <div class="text-sm text-slate-600 dark:text-slate-400">
@@ -1505,7 +1574,6 @@ if (isset($_POST['createTenant'])) {
                 </div>
             </div>
 
-            <!-- Pending Applications Table -->
             <div
                 class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden mt-8">
                 <div class="p-6 border-b border-slate-200 dark:border-slate-800">
@@ -1527,14 +1595,12 @@ if (isset($_POST['createTenant'])) {
                         </thead>
                         <tbody id="pendingTableBody" class="divide-y divide-slate-100 dark:divide-slate-800">
                             <?php
-                            // Get total count for pending applications pagination
                             $totalPendingQuery = "SELECT COUNT(*) as total FROM owners WHERE status='Pending'";
                             $totalPendingResult = mysqli_query($conn, $totalPendingQuery);
                             $totalPendingRow = mysqli_fetch_assoc($totalPendingResult);
                             $totalPendingApps = $totalPendingRow['total'];
                             $totalPendingPages = ceil($totalPendingApps / $rowsPerPage);
 
-                            // Ensure valid page
                             if ($pendingPage > $totalPendingPages && $totalPendingPages > 0) {
                                 $pendingPage = $totalPendingPages;
                             }
@@ -1584,7 +1650,8 @@ if (isset($_POST['createTenant'])) {
                                         </td>
                                         <td class="px-6 py-4 text-right">
                                             <div class="flex justify-end gap-2">
-                                                <button onclick="approveTenant('<?php echo $pendingRow['tenantID']; ?>', '<?php echo htmlspecialchars($pendingPlanKey, ENT_QUOTES, 'UTF-8'); ?>')"
+                                                <button
+                                                    onclick="approveTenant('<?php echo $pendingRow['tenantID']; ?>', '<?php echo htmlspecialchars($pendingPlanKey, ENT_QUOTES, 'UTF-8'); ?>')"
                                                     class="px-3 py-1.5 bg-red-600 text-white text-xs font-bold rounded-lg hover:bg-red-700 transition-colors">Accept</button>
                                                 <button onclick="rejectTenant('<?php echo $pendingRow['tenantID']; ?>')"
                                                     class="px-3 py-1.5 border border-red-200 text-red-600 text-xs font-bold rounded-lg hover:bg-red-50 dark:hover:bg-red-900/10 transition-colors">Reject</button>
@@ -1614,7 +1681,7 @@ if (isset($_POST['createTenant'])) {
                         </tbody>
                     </table>
                 </div>
-                <!-- Pending Applications Table Pagination -->
+
                 <div
                     class="px-6 py-4 bg-slate-50 dark:bg-slate-800/50 border-t border-slate-100 dark:border-slate-800 flex justify-between items-center">
                     <div class="text-sm text-slate-600 dark:text-slate-400">
@@ -1650,7 +1717,6 @@ if (isset($_POST['createTenant'])) {
                 </div>
             </div>
 
-            <!-- Edit Tenant Modal -->
             <div id="editTenantModal"
                 class="hidden fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
                 <div
@@ -1730,7 +1796,6 @@ if (isset($_POST['createTenant'])) {
                 </div>
             </div>
 
-            <!-- Approval Modal (for approving pending applications) -->
             <div id="approvalModal"
                 class="hidden fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
                 <div
@@ -1780,7 +1845,6 @@ if (isset($_POST['createTenant'])) {
                 </div>
             </div>
 
-            <!-- Add Tenant Modal -->
             <div id="tenantModal"
                 class="hidden fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
                 <div class="bg-white w-full max-w-xl rounded-xl shadow-2xl border flex flex-col overflow-hidden">
@@ -1814,6 +1878,11 @@ if (isset($_POST['createTenant'])) {
                                 <label class="text-xs font-bold uppercase text-gray-500">Email</label>
                                 <input name="email" type="email" class="border rounded-lg p-3"
                                     placeholder="owner@email.com" required>
+                            </div>
+                            <div class="flex flex-col gap-2">
+                                <label class="text-xs font-bold uppercase text-gray-500">Username</label>
+                                <input id="usernameInput" name="username" class="border rounded-lg p-3 bg-slate-100"
+                                    placeholder="Auto-generated username" readonly required>
                             </div>
                             <div class="flex flex-col gap-2 md:col-span-2">
                                 <label class="text-xs font-bold uppercase text-gray-500">Contact Number</label>
@@ -1855,9 +1924,7 @@ if (isset($_POST['createTenant'])) {
                     </button>
                 </div>
             <?php endif; ?>
-
         </div>
-
     </main>
 
     <script>
@@ -1896,9 +1963,7 @@ if (isset($_POST['createTenant'])) {
                         const matches = query === '' || (row.dataset.search || '').includes(query);
                         const visible = shouldSearch ? matches : true;
                         row.classList.toggle('hidden', !visible);
-                        if (visible) {
-                            visibleTenants++;
-                        }
+                        if (visible) visibleTenants++;
                     });
 
                     pendingRows.forEach(function (row) {
@@ -1906,9 +1971,7 @@ if (isset($_POST['createTenant'])) {
                         const matches = query === '' || (row.dataset.search || '').includes(query);
                         const visible = shouldSearch ? matches : true;
                         row.classList.toggle('hidden', !visible);
-                        if (visible) {
-                            visiblePending++;
-                        }
+                        if (visible) visiblePending++;
                     });
 
                     if (tenantsEmpty) {
@@ -2003,9 +2066,7 @@ if (isset($_POST['createTenant'])) {
 
         function regenerateTempPassword() {
             const input = document.getElementById("tempPasswordInput");
-            if (!input) {
-                return;
-            }
+            if (!input) return;
             input.value = generateTempPassword(12);
         }
 
@@ -2013,7 +2074,10 @@ if (isset($_POST['createTenant'])) {
             document.getElementById("tenantModal").classList.remove("hidden");
             regenerateTempPassword();
         }
-        function closeModal() { document.getElementById("tenantModal").classList.add("hidden"); }
+
+        function closeModal() {
+            document.getElementById("tenantModal").classList.add("hidden");
+        }
 
         function openEditModal(tenantID, shopName, shopAddress, ownerName, email, contactNumber, status, subscriptionPlan, billingCycle) {
             document.getElementById("editTenantID").value = tenantID;
@@ -2136,7 +2200,6 @@ if (isset($_POST['createTenant'])) {
             notif.classList.remove('translate-y-20', 'opacity-0');
             notif.classList.add('translate-y-0', 'opacity-100');
 
-            // Auto-hide after 5 seconds
             setTimeout(() => closeNotification(), 5000);
         }
 
@@ -2148,8 +2211,24 @@ if (isset($_POST['createTenant'])) {
         }
 
         <?php if ($noticeTitle !== ''): ?>
-            window.onload = function () { showNotification(); }
+            window.onload = function () {
+                showNotification();
+            }
         <?php endif; ?>
+    </script>
+
+    <script>
+        const shopNameInput = document.querySelector('input[name="shopName"]');
+        const usernameInput = document.getElementById('usernameInput');
+
+        if (shopNameInput && usernameInput) {
+            shopNameInput.addEventListener('input', function () {
+                let username = shopNameInput.value.toLowerCase()
+                    .replace(/[^a-z0-9]/g, '');
+
+                usernameInput.value = username || 'user';
+            });
+        }
     </script>
 </body>
 
