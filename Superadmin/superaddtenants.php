@@ -373,7 +373,7 @@ function buildMailTransports()
     return $mailTransports;
 }
 
-function sendTenantActivationDetailsEmail($ownerRow, $planName, $billingCycle, $subscriptionStart, $subscriptionEnd, $nextBillingDate, $planTotalPrice)
+function sendTenantActivationDetailsEmail($ownerRow, $planName, $billingCycle, $subscriptionStart, $subscriptionEnd, $nextBillingDate, $planTotalPrice, $username = '', $tempPassword = '')
 {
     $email = trim((string) ($ownerRow['email'] ?? ''));
     if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
@@ -398,6 +398,8 @@ function sendTenantActivationDetailsEmail($ownerRow, $planName, $billingCycle, $
     $safeNextBillingDate = htmlspecialchars((string) $nextBillingDate, ENT_QUOTES, 'UTF-8');
     $safePlanPrice = htmlspecialchars(number_format((float) $planTotalPrice, 2), ENT_QUOTES, 'UTF-8');
     $safeLoginLink = htmlspecialchars($loginLink, ENT_QUOTES, 'UTF-8');
+    $safeUsername = htmlspecialchars((string) $username, ENT_QUOTES, 'UTF-8');
+    $safeTempPassword = htmlspecialchars((string) $tempPassword, ENT_QUOTES, 'UTF-8');
 
     $mail = new \PHPMailer\PHPMailer\PHPMailer(true);
     $mail->isHTML(true);
@@ -437,9 +439,19 @@ function sendTenantActivationDetailsEmail($ownerRow, $planName, $billingCycle, $
                                         <tr><td style='padding:0 16px 16px 16px;font-size:14px;color:#0f172a;'><strong>Amount:</strong> PHP {$safePlanPrice}</td></tr>
                                     </table>
 
-                                    <p style='margin:0 0 8px 0;font-size:14px;line-height:22px;color:#334155;'>Login email: <strong>{$safeEmail}</strong></p>
+                                    <p style='margin:0 0 18px 0;font-size:16px;font-weight:600;color:#0f172a;'>Login Credentials:</p>
+                                    <table role='presentation' cellpadding='0' cellspacing='0' border='0' width='100%' style='border:1px solid #d1d5db;border-radius:12px;background:#f8fafc;margin:0 0 18px 0;'>
+                                        <tr><td style='padding:14px 16px;font-size:14px;color:#0f172a;'><strong>Email:</strong> {$safeEmail}</td></tr>
+                                        <tr><td style='padding:0 16px 14px 16px;font-size:14px;color:#0f172a;'><strong>Username:</strong> {$safeUsername}</td></tr>
+                                        <tr><td style='padding:0 16px 16px 16px;font-size:14px;color:#0f172a;'><strong>Temporary Password:</strong> {$safeTempPassword}</td></tr>
+                                    </table>
+
                                     <p style='margin:0 0 18px 0;font-size:14px;line-height:22px;word-break:break-all;'>
-                                        Tenant login link: <a href='{$safeLoginLink}' style='color:#1d4ed8;text-decoration:underline;'>{$safeLoginLink}</a>
+                                        <strong>Tenant login link:</strong> <a href='{$safeLoginLink}' style='color:#1d4ed8;text-decoration:underline;'>{$safeLoginLink}</a>
+                                    </p>
+                                    
+                                    <p style='margin:0 0 0 0;font-size:12px;line-height:18px;color:#666666;'>
+                                        <strong>Note:</strong> Please change your temporary password on your first login.
                                     </p>
                                 </td>
                             </tr>
@@ -458,14 +470,19 @@ function sendTenantActivationDetailsEmail($ownerRow, $planName, $billingCycle, $
     $mail->AltBody = "RapidRepair Application Approved\n\n"
         . "Hello {$ownerName},\n\n"
         . "Your application for {$shopName} is approved and your tenant is now active.\n\n"
+        . "=== SUBSCRIPTION DETAILS ===\n"
         . "Plan: {$planName}\n"
         . "Billing Cycle: " . ucfirst((string) $billingCycle) . "\n"
         . "Subscription Start: {$subscriptionStart}\n"
         . "Subscription End: {$subscriptionEnd}\n"
         . "Next Billing Date: {$nextBillingDate}\n"
         . "Amount: PHP " . number_format((float) $planTotalPrice, 2) . "\n\n"
-        . "Login Email: {$email}\n"
-        . "Tenant Login Link: {$loginLink}\n";
+        . "=== LOGIN CREDENTIALS ===\n"
+        . "Email: {$email}\n"
+        . "Username: {$username}\n"
+        . "Temporary Password: {$tempPassword}\n\n"
+        . "Tenant Login Link: {$loginLink}\n\n"
+        . "Note: Please change your temporary password on your first login.\n";
 
     $emailFailureReason = '';
     $mailTransports = buildMailTransports();
@@ -624,7 +641,7 @@ if (isset($_POST['updateTenantStatus'])) {
         if ($ownersUpdated && $subscriptionSynced) {
             mysqli_commit($conn);
 
-            $ownerRes = mysqli_query($conn, "SELECT ownerName, shopName, email, login_slug FROM owners WHERE tenantID = '$tenantID' LIMIT 1");
+            $ownerRes = mysqli_query($conn, "SELECT ownerName, shopName, email, login_slug, username, password FROM owners WHERE tenantID = '$tenantID' LIMIT 1");
             $ownerRow = $ownerRes && mysqli_num_rows($ownerRes) > 0 ? mysqli_fetch_assoc($ownerRes) : [];
             $emailResult = sendTenantActivationDetailsEmail(
                 $ownerRow,
@@ -633,7 +650,9 @@ if (isset($_POST['updateTenantStatus'])) {
                 $subscriptionStart,
                 $subscriptionEnd,
                 $nextBillingDate,
-                $planTotalPrice
+                $planTotalPrice,
+                $ownerRow['username'] ?? '',
+                $ownerRow['password'] ?? ''
             );
 
             if ($emailResult['sent']) {
@@ -921,20 +940,43 @@ if (isset($_POST['createTenant'])) {
     $username = mysqli_real_escape_string($conn, $username);
     $contactNumber = mysqli_real_escape_string($conn, $_POST['contactNumber']);
     $tempPassword = trim((string) ($_POST['tempPassword'] ?? ''));
+
     if ($tempPassword === '') {
         $tempPassword = generateTemporaryPassword();
     }
 
-    // ✅ VALIDATE EMAIL (VERY IMPORTANT)
     if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
         die("Invalid email address.");
     }
 
-    // ✅ DO NOT HASH PASSWORD YET - Store as plain text for first login only
-    // Hash will happen after user changes password on first login
+    // Superadmin-created tenants should be ACTIVE immediately
+    $status = 'Active';
+
+    // Use default subscription values for superadmin-created tenants
+    $subscriptionPlan = $defaultPlanKey;
+    $billingCycle = 'monthly';
+
+    if (!isset($subscriptionPlans[$subscriptionPlan])) {
+        $subscriptionPlan = $defaultPlanKey;
+    }
+
+    if (!isset($billingCycles[$billingCycle])) {
+        $billingCycle = 'monthly';
+    }
+
+    $subscriptionStart = date('Y-m-d');
+    $subscriptionDates = calculateSubscriptionDates($subscriptionStart, $billingCycle);
+    $subscriptionEnd = $subscriptionDates['subscription_end'];
+    $nextBillingDate = $subscriptionDates['next_billing_date'];
+
+    $billingDivisor = getBillingCycleDivisor($billingCycle);
+    $planTotalPrice = $subscriptionPlans[$subscriptionPlan]['monthly_price'] * $billingDivisor;
+    $resolvedPlanId = resolvePlanIdForSubscription($conn, $subscriptionPlan, $subscriptionPlans[$subscriptionPlan]['name']);
+
+    // First login password stays plain text until changed
     $hashedPassword = $tempPassword;
 
-    // ✅ Generate tenant ID
+    // Generate tenant ID
     $getID = mysqli_query($conn, "SELECT tenantID FROM owners ORDER BY tenantID DESC LIMIT 1");
 
     if (mysqli_num_rows($getID) > 0) {
@@ -946,16 +988,16 @@ if (isset($_POST['createTenant'])) {
 
     $tenantID = str_pad($newID, 3, "0", STR_PAD_LEFT);
 
-    // ✅ Generate slug
+    // Generate slug
     $login_slug = generateSlug($conn, $shopName);
 
-    // ✅ INSERT (subscription fields will be populated when tenant is approved)
+    // Build insert dynamically so it works even if some columns are missing
     $insertColumns = [
         'tenantID',
         'ownerName',
         'shopName',
         'login_slug',
-        'username', // 👈 ADD THIS
+        'username',
         'email',
         'contactNumber',
         'shopAddress',
@@ -969,23 +1011,69 @@ if (isset($_POST['createTenant'])) {
         "'" . mysqli_real_escape_string($conn, $ownerName) . "'",
         "'" . mysqli_real_escape_string($conn, $shopName) . "'",
         "'" . mysqli_real_escape_string($conn, $login_slug) . "'",
-        "'" . $username . "'", // 👈 ADD THIS
+        "'" . $username . "'",
         "'" . mysqli_real_escape_string($conn, $email) . "'",
         "'" . mysqli_real_escape_string($conn, $contactNumber) . "'",
         "'" . mysqli_real_escape_string($conn, $shopAddress) . "'",
         "'" . mysqli_real_escape_string($conn, $hashedPassword) . "'",
         "1",
-        "'Pending'"
+        "'$status'"
     ];
+
+    if (ownersColumnExists($conn, 'subscription_plan')) {
+        $insertColumns[] = 'subscription_plan';
+        $insertValues[] = "'" . mysqli_real_escape_string($conn, $subscriptionPlan) . "'";
+    }
+
+    if (ownersColumnExists($conn, 'billing_cycle')) {
+        $insertColumns[] = 'billing_cycle';
+        $insertValues[] = "'" . mysqli_real_escape_string($conn, $billingCycle) . "'";
+    }
+
+    if (ownersColumnExists($conn, 'subscription_start')) {
+        $insertColumns[] = 'subscription_start';
+        $insertValues[] = "'" . mysqli_real_escape_string($conn, $subscriptionStart) . "'";
+    }
+
+    if (ownersColumnExists($conn, 'subscription_end')) {
+        $insertColumns[] = 'subscription_end';
+        $insertValues[] = "'" . mysqli_real_escape_string($conn, $subscriptionEnd) . "'";
+    }
+
+    if (ownersColumnExists($conn, 'next_billing_date')) {
+        $insertColumns[] = 'next_billing_date';
+        $insertValues[] = "'" . mysqli_real_escape_string($conn, $nextBillingDate) . "'";
+    }
+
+    if (ownersColumnExists($conn, 'plan_price')) {
+        $insertColumns[] = 'plan_price';
+        $insertValues[] = "'" . mysqli_real_escape_string($conn, number_format($planTotalPrice, 2, '.', '')) . "'";
+    }
+
     $insertSql = "INSERT INTO owners (" . implode(', ', $insertColumns) . ") VALUES (" . implode(', ', $insertValues) . ")";
+
+    mysqli_begin_transaction($conn);
+
     $insert = mysqli_query($conn, $insertSql);
+
+    $subscriptionSynced = $insert && syncApprovedTenantSubscription(
+        $conn,
+        $tenantID,
+        $resolvedPlanId,
+        $billingCycle,
+        $subscriptionStart,
+        $subscriptionEnd,
+        $nextBillingDate,
+        $planTotalPrice
+    );
 
     $emailSent = false;
     $emailFailureReason = '';
 
-    if ($insert) {
+    if ($insert && $subscriptionSynced) {
+        mysqli_commit($conn);
 
-        // ✅ LOGIN LINK
+        // LOGIN LINK
         $baseURL = "https://rapidrepair-gygpcbczgyg0czek.southeastasia-01.azurewebsites.net";
         $loginLink = $baseURL . "/tenant/tenantlogin.php?shop=" . urlencode($login_slug);
 
@@ -1045,122 +1133,95 @@ if (isset($_POST['createTenant'])) {
         $safeUsername = htmlspecialchars($username, ENT_QUOTES, 'UTF-8');
 
         $mail->Body = "
-    <!DOCTYPE html>
-    <html lang='en'>
-    <head>
-        <meta charset='UTF-8'>
-        <meta name='viewport' content='width=device-width, initial-scale=1.0'>
-        <title>Rapid Repair Tenant Access</title>
-    </head>
-    <body style='margin:0;padding:0;background:#f1f5f9;font-family:Arial,Helvetica,sans-serif;color:#0f172a;'>
-        <div style='display:none;max-height:0;overflow:hidden;opacity:0;'>
-            Your Rapid Repair tenant account has been created and is pending approval.
-        </div>
-        <table role='presentation' cellpadding='0' cellspacing='0' border='0' width='100%' style='background:#f1f5f9;padding:24px 0;'>
-            <tr>
-                <td align='center'>
-                    <table role='presentation' cellpadding='0' cellspacing='0' border='0' width='100%' style='max-width:640px;background:#ffffff;border:1px solid #dbe1ea;border-radius:14px;overflow:hidden;'>
-                        <tr>
-                            <td style='padding:22px 24px;background:linear-gradient(135deg,#123b69,#0b1f42);color:#e2e8f0;'>
-                                <h1 style='margin:0;font-size:28px;line-height:32px;font-weight:700;color:#ffffff;'>RapidRepair</h1>
-                                <p style='margin:6px 0 0 0;font-size:15px;line-height:20px;'>Tenant onboarding details</p>
-                            </td>
-                        </tr>
-                        <tr>
-                            <td style='padding:24px;'>
-                                <p style='margin:0 0 12px 0;font-size:27px;line-height:34px;font-weight:700;color:#0f172a;'>Hi {$safeOwnerName},</p>
-                                <p style='margin:0 0 18px 0;font-size:25px;line-height:32px;color:#1e293b;'>
-                                    Your Car Repair Shop <strong>{$safeShopName}</strong> has been set up in RapidRepair.
-                                </p>
+        <!DOCTYPE html>
+        <html lang='en'>
+        <head>
+            <meta charset='UTF-8'>
+            <meta name='viewport' content='width=device-width, initial-scale=1.0'>
+            <title>Rapid Repair Tenant Access</title>
+        </head>
+        <body style='margin:0;padding:0;background:#f1f5f9;font-family:Arial,Helvetica,sans-serif;color:#0f172a;'>
+            <div style='display:none;max-height:0;overflow:hidden;opacity:0;'>
+                Your Rapid Repair tenant account has been created and activated.
+            </div>
+            <table role='presentation' cellpadding='0' cellspacing='0' border='0' width='100%' style='background:#f1f5f9;padding:24px 0;'>
+                <tr>
+                    <td align='center'>
+                        <table role='presentation' cellpadding='0' cellspacing='0' border='0' width='100%' style='max-width:640px;background:#ffffff;border:1px solid #dbe1ea;border-radius:14px;overflow:hidden;'>
+                            <tr>
+                                <td style='padding:22px 24px;background:linear-gradient(135deg,#123b69,#0b1f42);color:#e2e8f0;'>
+                                    <h1 style='margin:0;font-size:28px;line-height:32px;font-weight:700;color:#ffffff;'>RapidRepair</h1>
+                                    <p style='margin:6px 0 0 0;font-size:15px;line-height:20px;'>Tenant access details</p>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td style='padding:24px;'>
+                                    <p style='margin:0 0 12px 0;font-size:27px;line-height:34px;font-weight:700;color:#0f172a;'>Hi {$safeOwnerName},</p>
+                                    <p style='margin:0 0 18px 0;font-size:20px;line-height:28px;color:#1e293b;'>
+                                        Your Car Repair Shop <strong>{$safeShopName}</strong> has been created and is now active in RapidRepair.
+                                    </p>
 
-                                <table role='presentation' cellpadding='0' cellspacing='0' border='0' width='100%' style='border:1px solid #d1d5db;border-radius:12px;background:#f8fafc;margin:0 0 16px 0;'>
-                                    <tr>
-                                        <td style='padding:16px;'>
-                                            <p style='margin:0 0 8px 0;font-size:14px;line-height:20px;color:#64748b;font-weight:700;'>Your tenant login link</p>
-                                            <p style='margin:0 0 12px 0;font-size:17px;line-height:24px;word-break:break-all;'>
-                                                <a href='{$safeLoginLink}' style='color:#1d4ed8;text-decoration:underline;'>{$safeLoginLink}</a>
-                                            </p>
-                                            <p style='margin:0 0 14px 0;font-size:12px;line-height:18px;color:#64748b;'>
-                                                Tip: to copy, highlight the link and press Ctrl+C (or tap-and-hold on mobile).
-                                            </p>
+                                    <table role='presentation' cellpadding='0' cellspacing='0' border='0' width='100%' style='border:1px solid #d1d5db;border-radius:12px;background:#f8fafc;margin:0 0 16px 0;'>
+                                        <tr>
+                                            <td style='padding:16px;'>
+                                                <p style='margin:0 0 8px 0;font-size:14px;line-height:20px;color:#64748b;font-weight:700;'>Your tenant login link</p>
+                                                <p style='margin:0 0 12px 0;font-size:17px;line-height:24px;word-break:break-all;'>
+                                                    <a href='{$safeLoginLink}' style='color:#1d4ed8;text-decoration:underline;'>{$safeLoginLink}</a>
+                                                </p>
+                                            </td>
+                                        </tr>
+                                    </table>
 
-                                            <table role='presentation' cellpadding='0' cellspacing='0' border='0'>
-                                                <tr>
-                                                    <td style='border-radius:999px;background:#22c55e;'>
-                                                        <a href='{$safeLoginLink}' style='display:inline-block;padding:12px 20px;font-size:22px;font-weight:700;color:#083344;text-decoration:none;'>Open RapidRepair Portal</a>
-                                                    </td>
-                                                </tr>
-                                            </table>
-                                        </td>
-                                    </tr>
-                                </table>
+                                    <table role='presentation' cellpadding='0' cellspacing='0' border='0' width='100%' style='border:1px solid #d1d5db;border-radius:12px;background:#f8fafc;margin:0 0 16px 0;'>
+                                        <tr>
+                                            <td style='padding:16px;'>
+                                                <p style='margin:0 0 6px 0;font-size:14px;line-height:20px;color:#64748b;font-weight:700;'>Username</p>
+                                                <p style='margin:0;font-size:24px;line-height:30px;color:#0f172a;font-weight:700;'>{$safeUsername}</p>
+                                            </td>
+                                        </tr>
+                                    </table>
 
-                                <table role='presentation' cellpadding='0' cellspacing='0' border='0' width='100%' style='border:1px solid #d1d5db;border-radius:12px;background:#f8fafc;margin:0 0 16px 0;'>
-                                    <tr>
-                                        <td style='padding:16px;'>
-                                            <p style='margin:0 0 6px 0;font-size:14px;line-height:20px;color:#64748b;font-weight:700;'>Username</p>
-                                            <p style='margin:0;font-size:24px;line-height:30px;color:#0f172a;font-weight:700;'>{$safeUsername}</p>
-                                        </td>
-                                    </tr>
-                                </table>
+                                    <table role='presentation' cellpadding='0' cellspacing='0' border='0' width='100%' style='border:1px solid #bbf7d0;border-radius:12px;background:#dcfce7;margin:0 0 16px 0;'>
+                                        <tr>
+                                            <td style='padding:16px;'>
+                                                <p style='margin:0 0 6px 0;font-size:14px;line-height:20px;color:#166534;font-weight:700;'>Temporary password</p>
+                                                <p style='margin:0;font-size:30px;line-height:36px;letter-spacing:1.2px;color:#14532d;font-weight:700;'>{$safeTempPassword}</p>
+                                            </td>
+                                        </tr>
+                                    </table>
 
-                                <table role='presentation' cellpadding='0' cellspacing='0' border='0' width='100%' style='border:1px solid #bbf7d0;border-radius:12px;background:#dcfce7;margin:0 0 16px 0;'>
-                                    <tr>
-                                        <td style='padding:16px;'>
-                                            <p style='margin:0 0 6px 0;font-size:14px;line-height:20px;color:#166534;font-weight:700;'>Temporary password</p>
-                                            <p style='margin:0;font-size:30px;line-height:36px;letter-spacing:1.2px;color:#14532d;font-weight:700;'>{$safeTempPassword}</p>
-                                        </td>
-                                    </tr>
-                                </table>
-
-                                <p style='margin:0 0 8px 0;font-size:25px;line-height:30px;color:#0f172a;font-weight:700;'>Next steps</p>
-                                <ul style='margin:0 0 12px 22px;padding:0;font-size:15px;line-height:24px;color:#0f172a;'>
-                                    <li>Open the link above and log in using this username: <strong>{$safeUsername}</strong></li>
-                                    <li>You can also log in using this email address: <strong>{$safeLoginEmail}</strong></li>
-                                    <li>Use the temporary password, then change it immediately after you sign in.</li>
-                                    <li>Bookmark your login link for quick access.</li>
-                                </ul>
-
-                                <p style='margin:0;font-size:13px;line-height:20px;color:#64748b;'>
-                                    If the button does not work, copy and paste the URL into your browser.
-                                </p>
-                            </td>
-                        </tr>
-                        <tr>
-                            <td style='padding:14px 24px;border-top:1px solid #e5e7eb;background:#f8fafc;font-size:11px;line-height:18px;color:#64748b;'>
-                                This email was sent by RapidRepair System.<br>
-                                If you did not request this, ignore this email.
-                            </td>
-                        </tr>
-                    </table>
-                </td>
-            </tr>
-        </table>
-    </body>
-    </html>
-";
+                                    <p style='margin:0 0 8px 0;font-size:25px;line-height:30px;color:#0f172a;font-weight:700;'>Next steps</p>
+                                    <ul style='margin:0 0 12px 22px;padding:0;font-size:15px;line-height:24px;color:#0f172a;'>
+                                        <li>Open the link above and log in using this username: <strong>{$safeUsername}</strong></li>
+                                        <li>You can also log in using this email address: <strong>{$safeLoginEmail}</strong></li>
+                                        <li>Use the temporary password, then change it immediately after you sign in.</li>
+                                        <li>Your account is already active.</li>
+                                    </ul>
+                                </td>
+                            </tr>
+                        </table>
+                    </td>
+                </tr>
+            </table>
+        </body>
+        </html>
+        ";
 
         $mail->AltBody = "Rapid Repair Tenant Account Information\n\n"
             . "Hello {$ownerName},\n\n"
-            . "Your tenant account for {$shopName} has been set up and is pending approval.\n\n"
+            . "Your tenant account for {$shopName} has been created and is now active.\n\n"
             . "Your tenant login link: {$loginLink}\n"
-            . "Tip: copy and paste the link into your browser if needed.\n\n"
             . "Username: {$username}\n"
             . "Login Email: {$email}\n"
             . "Temporary Password: {$tempPassword}\n"
-            . "Status: Pending Approval\n\n"
+            . "Status: Active\n\n"
             . "Next steps:\n"
             . "- Open the link above and log in using this username: {$username}\n"
             . "- You can also log in using this email address: {$email}\n"
-            . "- Use the temporary password, then change it immediately after you sign in.\n"
-            . "- Bookmark your login link for quick access.\n\n"
-            . "This email was sent by RapidRepair System\n"
-            . "If you did not request this, ignore this email.";
+            . "- Use the temporary password, then change it immediately after you sign in.\n";
 
         foreach ($mailTransports as $index => $transport) {
             try {
-                error_log("SMTP Config ({$transport['label']}) - Host: {$transport['host']}, Port: {$transport['port']}, Encryption: {$transport['encryption']}, Username: {$transport['username']}");
-
                 $mail->isSMTP();
                 $mail->Host = $transport['host'];
                 $mail->SMTPAuth = true;
@@ -1177,22 +1238,6 @@ if (isset($_POST['createTenant'])) {
 
                 $mail->Port = (int) $transport['port'];
 
-                $smtpDebug = (int) (getenv('SMTP_DEBUG') ?: 0);
-                if ($smtpDebug > 0) {
-                    $mail->SMTPDebug = $smtpDebug;
-                }
-
-                $allowSelfSigned = strtolower((string) (getenv('SMTP_ALLOW_SELF_SIGNED') ?: 'false')) === 'true';
-                if ($allowSelfSigned) {
-                    $mail->SMTPOptions = [
-                        'ssl' => [
-                            'verify_peer' => false,
-                            'verify_peer_name' => false,
-                            'allow_self_signed' => true
-                        ]
-                    ];
-                }
-
                 $mail->clearAddresses();
                 $mail->clearReplyTos();
                 $mail->clearCustomHeaders();
@@ -1204,13 +1249,11 @@ if (isset($_POST['createTenant'])) {
                 $mail->Encoding = 'base64';
                 $mail->WordWrap = 78;
                 $mail->addCustomHeader('X-Mailer', 'RapidRepair/Tenant-Onboarding');
-
                 $mail->addAddress($email, $ownerName);
                 $mail->isHTML(true);
                 $mail->Subject = 'Rapid Repair Tenant Access Details';
-
                 $mail->send();
-                error_log("Mailer Accepted ({$transport['label']}) for recipient {$email} | Message-ID: {$mail->getLastMessageID()}");
+
                 $emailSent = true;
                 break;
             } catch (Exception $e) {
@@ -1219,30 +1262,25 @@ if (isset($_POST['createTenant'])) {
                     || (strpos($combinedError, '5.4.5') !== false)
                     || (strpos($combinedError, 'quota') !== false);
 
-                $errorMsg = "Mailer Error ({$transport['label']}) for recipient {$email}: " . $mail->ErrorInfo . " | Exception: " . $e->getMessage();
-                error_log($errorMsg);
-
                 if ($isQuotaError) {
                     $emailFailureReason = 'quota';
                 }
 
                 $hasNextTransport = ($index < count($mailTransports) - 1);
-                if (!$hasNextTransport) {
-                    if ($emailFailureReason === '') {
-                        $emailFailureReason = 'general';
-                    }
-                    break;
+                if (!$hasNextTransport && $emailFailureReason === '') {
+                    $emailFailureReason = 'general';
                 }
             }
         }
+    } else {
+        mysqli_rollback($conn);
     }
 
-    // ✅ REDIRECT
-    if ($insert && $emailSent) {
+    if ($insert && $subscriptionSynced && $emailSent) {
         header("Location: superaddtenants.php?notice=tenant_created_email_sent");
-    } elseif ($insert && $emailFailureReason === 'quota') {
+    } elseif ($insert && $subscriptionSynced && $emailFailureReason === 'quota') {
         header("Location: superaddtenants.php?notice=tenant_created_email_quota_exceeded");
-    } elseif ($insert) {
+    } elseif ($insert && $subscriptionSynced) {
         header("Location: superaddtenants.php?notice=tenant_created_email_failed");
     } else {
         header("Location: superaddtenants.php?notice=tenant_create_failed");

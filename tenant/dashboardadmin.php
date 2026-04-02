@@ -1,35 +1,62 @@
-
 <?php
 session_start();
 include __DIR__ . '/../db.php';
-// Check if user is logged in and has a valid session
-if (!isset($_SESSION['tenantID']) || !isset($_SESSION['login_slug'])) {
-    // Not logged in, redirect to login page
+
+// Check if tenant is logged in
+if (!isset($_SESSION['tenantID'])) {
     header('Location: tenantlogin.php');
     exit;
 }
 
-// Optionally, fetch the owner's data for this session (for further isolation/validation)
-$tenantID = $_SESSION['tenantID'];
-$login_slug = $_SESSION['login_slug'];
-$stmt = mysqli_prepare($conn, "SELECT * FROM owners WHERE tenantID = ? AND login_slug = ? LIMIT 1");
-mysqli_stmt_bind_param($stmt, "is", $tenantID, $login_slug);
-mysqli_stmt_execute($stmt);
-$result = mysqli_stmt_get_result($stmt);
-$owner = mysqli_fetch_assoc($result);
-if (!$owner) {
-    // Invalid session or tampered, force logout
+$tenantID = (int) $_SESSION['tenantID'];
+
+// Try session slug first, then URL slug
+$login_slug = '';
+if (isset($_SESSION['login_slug']) && trim((string) $_SESSION['login_slug']) !== '') {
+    $login_slug = trim((string) $_SESSION['login_slug']);
+} elseif (isset($_GET['shop']) && trim((string) $_GET['shop']) !== '') {
+    $login_slug = trim((string) $_GET['shop']);
+    $_SESSION['login_slug'] = $login_slug; // restore into session
+}
+
+// If still no slug, force login
+if ($login_slug === '') {
+    session_unset();
     session_destroy();
     header('Location: tenantlogin.php');
     exit;
 }
 
+// Validate tenant + slug
+$stmt = mysqli_prepare($conn, "SELECT * FROM owners WHERE tenantID = ? AND login_slug = ? LIMIT 1");
+mysqli_stmt_bind_param($stmt, "is", $tenantID, $login_slug);
+mysqli_stmt_execute($stmt);
+$result = mysqli_stmt_get_result($stmt);
+$owner = mysqli_fetch_assoc($result);
+mysqli_stmt_close($stmt);
+
+if (!$owner) {
+    session_unset();
+    session_destroy();
+    header('Location: tenantlogin.php');
+    exit;
+}
+
+// Re-store correct slug in session to keep it persistent
+$_SESSION['login_slug'] = $login_slug;
+
 $shopName = isset($owner['shopName']) && $owner['shopName'] !== '' ? $owner['shopName'] : 'AutoFix Pro';
 $shopSlug = $login_slug;
 $shopQuery = urlencode($shopSlug);
+
+// Keep URL consistent
+$currentScript = basename($_SERVER['PHP_SELF']);
+if (!isset($_GET['shop']) || trim((string) $_GET['shop']) !== $shopSlug) {
+    header('Location: ' . $currentScript . '?shop=' . $shopQuery);
+    exit;
+}
 ?>
 <!DOCTYPE html>
-
 <html lang="en">
 
 <head>
@@ -159,9 +186,9 @@ $shopQuery = urlencode($shopSlug);
                 </div>
             </div>
         </aside>
+
         <!-- Main Content -->
         <main class="flex-1 overflow-y-auto">
-            <!-- Top Nav Bar -->
             <header
                 class="sticky top-0 z-40 w-full border-b border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md flex items-center justify-between px-8 h-16">
                 <div class="flex items-center gap-6">
@@ -196,154 +223,118 @@ $shopQuery = urlencode($shopSlug);
                     </div>
                 </div>
             </header>
+
             <div class="p-8">
                 <!-- Stats Grid -->
                 <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-                    <div
-                        class="bg-white dark:bg-slate-900 p-6 rounded-xl border border-slate-200 dark:border-slate-800">
+                    <div class="bg-white dark:bg-slate-900 p-6 rounded-xl border border-slate-200 dark:border-slate-800">
                         <div class="flex items-center justify-between mb-4">
                             <div class="p-2 bg-primary/10 rounded-lg text-primary">
                                 <span class="material-symbols-outlined">payments</span>
                             </div>
-                            <span
-                                class="text-xs font-semibold text-green-600 bg-green-100 dark:bg-green-900/30 px-2 py-1 rounded">+12.5%</span>
+                            <span class="text-xs font-semibold text-green-600 bg-green-100 dark:bg-green-900/30 px-2 py-1 rounded">+12.5%</span>
                         </div>
                         <p class="text-sm text-slate-500 dark:text-slate-400 font-medium">Monthly Revenue</p>
                         <p class="text-2xl font-bold mt-1">$48,250.00</p>
                     </div>
-                    <div
-                        class="bg-white dark:bg-slate-900 p-6 rounded-xl border border-slate-200 dark:border-slate-800">
+                    <div class="bg-white dark:bg-slate-900 p-6 rounded-xl border border-slate-200 dark:border-slate-800">
                         <div class="flex items-center justify-between mb-4">
                             <div class="p-2 bg-orange-100 dark:bg-orange-900/20 rounded-lg text-orange-600">
                                 <span class="material-symbols-outlined">car_repair</span>
                             </div>
-                            <span
-                                class="text-xs font-semibold text-slate-500 bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded">8
-                                In Progress</span>
+                            <span class="text-xs font-semibold text-slate-500 bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded">8 In Progress</span>
                         </div>
                         <p class="text-sm text-slate-500 dark:text-slate-400 font-medium">Active Repair Jobs</p>
                         <p class="text-2xl font-bold mt-1">24</p>
                     </div>
-                    <div
-                        class="bg-white dark:bg-slate-900 p-6 rounded-xl border border-slate-200 dark:border-slate-800">
+                    <div class="bg-white dark:bg-slate-900 p-6 rounded-xl border border-slate-200 dark:border-slate-800">
                         <div class="flex items-center justify-between mb-4">
                             <div class="p-2 bg-purple-100 dark:bg-purple-900/20 rounded-lg text-purple-600">
                                 <span class="material-symbols-outlined">calendar_month</span>
                             </div>
-                            <span
-                                class="text-xs font-semibold text-slate-500 bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded">Next
-                                48h</span>
+                            <span class="text-xs font-semibold text-slate-500 bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded">Next 48h</span>
                         </div>
                         <p class="text-sm text-slate-500 dark:text-slate-400 font-medium">Upcoming Appts</p>
                         <p class="text-2xl font-bold mt-1">18</p>
                     </div>
-                    <div
-                        class="bg-white dark:bg-slate-900 p-6 rounded-xl border border-slate-200 dark:border-slate-800">
+                    <div class="bg-white dark:bg-slate-900 p-6 rounded-xl border border-slate-200 dark:border-slate-800">
                         <div class="flex items-center justify-between mb-4">
                             <div class="p-2 bg-red-100 dark:bg-red-900/20 rounded-lg text-red-600">
                                 <span class="material-symbols-outlined">warning</span>
                             </div>
-                            <span
-                                class="text-xs font-semibold text-red-600 bg-red-100 dark:bg-red-900/30 px-2 py-1 rounded">Urgent</span>
+                            <span class="text-xs font-semibold text-red-600 bg-red-100 dark:bg-red-900/30 px-2 py-1 rounded">Urgent</span>
                         </div>
                         <p class="text-sm text-slate-500 dark:text-slate-400 font-medium">Inventory Alerts</p>
                         <p class="text-2xl font-bold mt-1 text-red-600">5 Low Stock</p>
                     </div>
                 </div>
-                <!-- Charts & Lists -->
+
                 <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                    <!-- Weekly Revenue Chart -->
-                    <div
-                        class="lg:col-span-2 bg-white dark:bg-slate-900 p-6 rounded-xl border border-slate-200 dark:border-slate-800">
+                    <div class="lg:col-span-2 bg-white dark:bg-slate-900 p-6 rounded-xl border border-slate-200 dark:border-slate-800">
                         <div class="flex items-center justify-between mb-8">
                             <div>
                                 <h3 class="text-lg font-bold">Weekly Performance</h3>
                                 <p class="text-sm text-slate-500">Revenue tracking for the last 7 days</p>
                             </div>
-                            <select
-                                class="bg-slate-100 dark:bg-slate-800 border-none rounded-lg text-xs font-semibold focus:ring-primary">
+                            <select class="bg-slate-100 dark:bg-slate-800 border-none rounded-lg text-xs font-semibold focus:ring-primary">
                                 <option>This Week</option>
                                 <option>Last Week</option>
                             </select>
                         </div>
                         <div class="h-64 flex items-end gap-3 px-2">
                             <div class="flex-1 flex flex-col items-center gap-2 group">
-                                <div
-                                    class="w-full bg-slate-100 dark:bg-slate-800 rounded-t-lg relative h-32 overflow-hidden">
-                                    <div
-                                        class="absolute bottom-0 w-full bg-primary/40 h-1/2 group-hover:bg-primary/60 transition-all">
-                                    </div>
+                                <div class="w-full bg-slate-100 dark:bg-slate-800 rounded-t-lg relative h-32 overflow-hidden">
+                                    <div class="absolute bottom-0 w-full bg-primary/40 h-1/2 group-hover:bg-primary/60 transition-all"></div>
                                 </div>
                                 <span class="text-xs font-medium text-slate-500">Mon</span>
                             </div>
                             <div class="flex-1 flex flex-col items-center gap-2 group">
-                                <div
-                                    class="w-full bg-slate-100 dark:bg-slate-800 rounded-t-lg relative h-48 overflow-hidden">
-                                    <div
-                                        class="absolute bottom-0 w-full bg-primary/40 h-3/4 group-hover:bg-primary/60 transition-all">
-                                    </div>
+                                <div class="w-full bg-slate-100 dark:bg-slate-800 rounded-t-lg relative h-48 overflow-hidden">
+                                    <div class="absolute bottom-0 w-full bg-primary/40 h-3/4 group-hover:bg-primary/60 transition-all"></div>
                                 </div>
                                 <span class="text-xs font-medium text-slate-500">Tue</span>
                             </div>
                             <div class="flex-1 flex flex-col items-center gap-2 group">
-                                <div
-                                    class="w-full bg-slate-100 dark:bg-slate-800 rounded-t-lg relative h-40 overflow-hidden">
-                                    <div
-                                        class="absolute bottom-0 w-full bg-primary/40 h-2/3 group-hover:bg-primary/60 transition-all">
-                                    </div>
+                                <div class="w-full bg-slate-100 dark:bg-slate-800 rounded-t-lg relative h-40 overflow-hidden">
+                                    <div class="absolute bottom-0 w-full bg-primary/40 h-2/3 group-hover:bg-primary/60 transition-all"></div>
                                 </div>
                                 <span class="text-xs font-medium text-slate-500">Wed</span>
                             </div>
                             <div class="flex-1 flex flex-col items-center gap-2 group">
-                                <div
-                                    class="w-full bg-slate-100 dark:bg-slate-800 rounded-t-lg relative h-56 overflow-hidden">
-                                    <div
-                                        class="absolute bottom-0 w-full bg-primary/40 h-full group-hover:bg-primary/60 transition-all">
-                                    </div>
+                                <div class="w-full bg-slate-100 dark:bg-slate-800 rounded-t-lg relative h-56 overflow-hidden">
+                                    <div class="absolute bottom-0 w-full bg-primary/40 h-full group-hover:bg-primary/60 transition-all"></div>
                                 </div>
                                 <span class="text-xs font-medium text-slate-500">Thu</span>
                             </div>
                             <div class="flex-1 flex flex-col items-center gap-2 group">
-                                <div
-                                    class="w-full bg-slate-100 dark:bg-slate-800 rounded-t-lg relative h-44 overflow-hidden">
-                                    <div
-                                        class="absolute bottom-0 w-full bg-primary/40 h-4/5 group-hover:bg-primary/60 transition-all">
-                                    </div>
+                                <div class="w-full bg-slate-100 dark:bg-slate-800 rounded-t-lg relative h-44 overflow-hidden">
+                                    <div class="absolute bottom-0 w-full bg-primary/40 h-4/5 group-hover:bg-primary/60 transition-all"></div>
                                 </div>
                                 <span class="text-xs font-medium text-slate-500">Fri</span>
                             </div>
                             <div class="flex-1 flex flex-col items-center gap-2 group">
-                                <div
-                                    class="w-full bg-slate-100 dark:bg-slate-800 rounded-t-lg relative h-24 overflow-hidden">
-                                    <div
-                                        class="absolute bottom-0 w-full bg-primary/40 h-1/3 group-hover:bg-primary/60 transition-all">
-                                    </div>
+                                <div class="w-full bg-slate-100 dark:bg-slate-800 rounded-t-lg relative h-24 overflow-hidden">
+                                    <div class="absolute bottom-0 w-full bg-primary/40 h-1/3 group-hover:bg-primary/60 transition-all"></div>
                                 </div>
                                 <span class="text-xs font-medium text-slate-500">Sat</span>
                             </div>
                             <div class="flex-1 flex flex-col items-center gap-2 group">
-                                <div
-                                    class="w-full bg-slate-100 dark:bg-slate-800 rounded-t-lg relative h-20 overflow-hidden">
-                                    <div
-                                        class="absolute bottom-0 w-full bg-primary/40 h-1/4 group-hover:bg-primary/60 transition-all">
-                                    </div>
+                                <div class="w-full bg-slate-100 dark:bg-slate-800 rounded-t-lg relative h-20 overflow-hidden">
+                                    <div class="absolute bottom-0 w-full bg-primary/40 h-1/4 group-hover:bg-primary/60 transition-all"></div>
                                 </div>
                                 <span class="text-xs font-medium text-slate-500">Sun</span>
                             </div>
                         </div>
                     </div>
-                    <!-- Recent Activity -->
-                    <div
-                        class="bg-white dark:bg-slate-900 p-6 rounded-xl border border-slate-200 dark:border-slate-800 flex flex-col">
+
+                    <div class="bg-white dark:bg-slate-900 p-6 rounded-xl border border-slate-200 dark:border-slate-800 flex flex-col">
                         <div class="flex items-center justify-between mb-6">
                             <h3 class="text-lg font-bold">Recent Activity</h3>
                             <button class="text-xs text-primary font-semibold hover:underline">View All</button>
                         </div>
                         <div class="space-y-6 flex-1">
                             <div class="flex gap-4">
-                                <div
-                                    class="size-2 mt-2 rounded-full bg-green-500 ring-4 ring-green-100 dark:ring-green-900/20 shrink-0">
-                                </div>
+                                <div class="size-2 mt-2 rounded-full bg-green-500 ring-4 ring-green-100 dark:ring-green-900/20 shrink-0"></div>
                                 <div>
                                     <p class="text-sm font-semibold">Service Completed</p>
                                     <p class="text-xs text-slate-500">BMW X5 Oil Change for David Miller</p>
@@ -351,9 +342,7 @@ $shopQuery = urlencode($shopSlug);
                                 </div>
                             </div>
                             <div class="flex gap-4">
-                                <div
-                                    class="size-2 mt-2 rounded-full bg-blue-500 ring-4 ring-blue-100 dark:ring-blue-900/20 shrink-0">
-                                </div>
+                                <div class="size-2 mt-2 rounded-full bg-blue-500 ring-4 ring-blue-100 dark:ring-blue-900/20 shrink-0"></div>
                                 <div>
                                     <p class="text-sm font-semibold">New Appointment</p>
                                     <p class="text-xs text-slate-500">Sarah Johnson - Brake Inspection</p>
@@ -361,9 +350,7 @@ $shopQuery = urlencode($shopSlug);
                                 </div>
                             </div>
                             <div class="flex gap-4">
-                                <div
-                                    class="size-2 mt-2 rounded-full bg-orange-500 ring-4 ring-orange-100 dark:ring-orange-900/20 shrink-0">
-                                </div>
+                                <div class="size-2 mt-2 rounded-full bg-orange-500 ring-4 ring-orange-100 dark:ring-orange-900/20 shrink-0"></div>
                                 <div>
                                     <p class="text-sm font-semibold">Inventory Alert</p>
                                     <p class="text-xs text-slate-500">Brake pads (SKU: BP-04) low stock</p>
@@ -371,9 +358,7 @@ $shopQuery = urlencode($shopSlug);
                                 </div>
                             </div>
                             <div class="flex gap-4">
-                                <div
-                                    class="size-2 mt-2 rounded-full bg-slate-300 ring-4 ring-slate-100 dark:ring-slate-800/20 shrink-0">
-                                </div>
+                                <div class="size-2 mt-2 rounded-full bg-slate-300 ring-4 ring-slate-100 dark:ring-slate-800/20 shrink-0"></div>
                                 <div>
                                     <p class="text-sm font-semibold">Payment Received</p>
                                     <p class="text-xs text-slate-500">Invoice #20492 - $1,240.00</p>
@@ -381,18 +366,15 @@ $shopQuery = urlencode($shopSlug);
                                 </div>
                             </div>
                         </div>
-                        <button
-                            class="w-full py-2.5 mt-6 border border-slate-200 dark:border-slate-800 rounded-lg text-sm font-semibold hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
+                        <button class="w-full py-2.5 mt-6 border border-slate-200 dark:border-slate-800 rounded-lg text-sm font-semibold hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
                             Generate Daily Report
                         </button>
                     </div>
                 </div>
-                <!-- Inventory Alerts & Ongoing Jobs (Optional Extra Layer) -->
+
                 <div class="mt-8 grid grid-cols-1 gap-6">
-                    <div
-                        class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden">
-                        <div
-                            class="px-6 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+                    <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+                        <div class="px-6 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
                             <h3 class="text-lg font-bold">Active Repair Status</h3>
                             <div class="flex gap-2">
                                 <span class="size-3 rounded-full bg-blue-500"></span>
@@ -403,8 +385,7 @@ $shopQuery = urlencode($shopSlug);
                         </div>
                         <div class="overflow-x-auto">
                             <table class="w-full text-left">
-                                <thead
-                                    class="bg-slate-50 dark:bg-slate-800/50 text-slate-500 text-xs font-bold uppercase tracking-wider">
+                                <thead class="bg-slate-50 dark:bg-slate-800/50 text-slate-500 text-xs font-bold uppercase tracking-wider">
                                     <tr>
                                         <th class="px-6 py-4">Customer</th>
                                         <th class="px-6 py-4">Vehicle</th>
@@ -420,12 +401,10 @@ $shopQuery = urlencode($shopSlug);
                                         <td class="px-6 py-4 text-sm">2020 Toyota Camry</td>
                                         <td class="px-6 py-4 text-sm">Mike Ross</td>
                                         <td class="px-6 py-4">
-                                            <span
-                                                class="px-2 py-1 bg-orange-100 dark:bg-orange-900/30 text-orange-600 rounded text-[10px] font-bold">REPAIRING</span>
+                                            <span class="px-2 py-1 bg-orange-100 dark:bg-orange-900/30 text-orange-600 rounded text-[10px] font-bold">REPAIRING</span>
                                         </td>
                                         <td class="px-6 py-4">
-                                            <div
-                                                class="w-32 h-1.5 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
+                                            <div class="w-32 h-1.5 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
                                                 <div class="bg-orange-500 h-full w-[65%]"></div>
                                             </div>
                                         </td>
@@ -440,12 +419,10 @@ $shopQuery = urlencode($shopSlug);
                                         <td class="px-6 py-4 text-sm">2022 Tesla Model 3</td>
                                         <td class="px-6 py-4 text-sm">Chris P.</td>
                                         <td class="px-6 py-4">
-                                            <span
-                                                class="px-2 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-600 rounded text-[10px] font-bold">DIAGNOSTIC</span>
+                                            <span class="px-2 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-600 rounded text-[10px] font-bold">DIAGNOSTIC</span>
                                         </td>
                                         <td class="px-6 py-4">
-                                            <div
-                                                class="w-32 h-1.5 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
+                                            <div class="w-32 h-1.5 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
                                                 <div class="bg-blue-500 h-full w-[30%]"></div>
                                             </div>
                                         </td>

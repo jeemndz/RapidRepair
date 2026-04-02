@@ -426,6 +426,40 @@ if ($stats['active_subscriptions'] > 0) {
     $stats['churn_rate'] = round(($inactiveCount / ($stats['active_subscriptions'] + $inactiveCount)) * 100, 1);
 }
 
+// Generate MRR trend data (last 12 months)
+$mrrLabels = [];
+$mrrData = [];
+
+for ($i = 11; $i >= 0; $i--) {
+    $monthDate = strtotime("first day of -$i month");
+    $mrrLabels[] = date("M Y", $monthDate);
+    $mrrData[] = 0;
+}
+
+// Query MRR data by month
+$mrrQuery = "SELECT DATE_FORMAT(subscription_start, '%Y-%m') AS month_key, SUM(plan_price / CASE 
+    WHEN LOWER(billing_cycle) IN ('annual', 'annually', 'yearly') THEN 12
+    WHEN LOWER(billing_cycle) IN ('semiannual', 'semi-annual', 'biannual') THEN 6
+    WHEN LOWER(billing_cycle) IN ('quarterly', 'quarter') THEN 3
+    ELSE 1
+END) AS monthly_revenue
+FROM owners 
+WHERE status = 'Active' AND subscription_start >= DATE_SUB(DATE_FORMAT(NOW(), '%Y-%m-01'), INTERVAL 11 MONTH) 
+GROUP BY month_key ORDER BY month_key ASC";
+
+$mrrResult = mysqli_query($conn, $mrrQuery);
+if ($mrrResult) {
+    $mrrLookup = [];
+    while ($row = mysqli_fetch_assoc($mrrResult)) {
+        $mrrLookup[(string) $row['month_key']] = round((float) $row['monthly_revenue'], 2);
+    }
+
+    foreach ($mrrLabels as $idx => $label) {
+        $monthKey = date("Y-m", strtotime("1 " . $label));
+        $mrrData[$idx] = $mrrLookup[$monthKey] ?? 0;
+    }
+}
+
 ?>
 <!DOCTYPE html>
 
@@ -435,6 +469,7 @@ if ($stats['active_subscriptions'] > 0) {
     <meta charset="utf-8" />
     <meta content="width=device-width, initial-scale=1.0" name="viewport" />
     <title>Subscription Management | RapidRepair</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
     <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
     <link
         href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&amp;family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap"
@@ -514,6 +549,13 @@ if ($stats['active_subscriptions'] > 0) {
 
         body {
             font-family: 'Inter', sans-serif;
+        }
+
+        .chart-wrapper {
+            position: relative;
+            height: 300px;
+            width: 100%;
+            display: block;
         }
     </style>
 </head>
@@ -792,37 +834,19 @@ if ($stats['active_subscriptions'] > 0) {
             <div class="bg-white border border-slate-200 rounded-xl overflow-hidden">
                 <div class="px-6 py-4 border-b border-slate-100 flex justify-between items-center">
                     <h2 class="text-sm font-bold text-on-surface uppercase tracking-tight">Revenue Stream Analysis</h2>
-                    <div class="flex gap-2">
-                        <button
-                            class="px-3 py-1 text-[10px] font-bold text-slate-500 bg-slate-100 rounded uppercase">Last
-                            30 Days</button>
-                        <button
-                            class="px-3 py-1 text-[10px] font-bold text-primary bg-primary-container rounded uppercase">Custom</button>
+                    <div class="flex gap-2" id="billingCycleFilters">
+                        <button type="button" data-cycle="monthly"
+                            class="billing-filter px-3 py-1 text-[10px] font-bold rounded uppercase bg-primary text-white">Monthly</button>
+                        <button type="button" data-cycle="quarterly"
+                            class="billing-filter px-3 py-1 text-[10px] font-bold rounded uppercase bg-slate-100 text-slate-500 hover:bg-slate-200">Quarterly</button>
+                        <button type="button" data-cycle="yearly"
+                            class="billing-filter px-3 py-1 text-[10px] font-bold rounded uppercase bg-slate-100 text-slate-500 hover:bg-slate-200">Yearly</button>
                     </div>
                 </div>
                 <div class="p-6">
-                    <!-- Technical Pattern Placeholder for Chart -->
-                    <div
-                        class="h-48 w-full bg-slate-50 rounded-lg border border-dashed border-slate-200 relative overflow-hidden">
-                        <div class="absolute inset-0 opacity-10"
-                            style="background-image: radial-gradient(#b91c1c 1px, transparent 0); background-size: 20px 20px;">
-                        </div>
-                        <div
-                            class="absolute bottom-0 left-0 w-full h-32 bg-gradient-to-t from-primary/10 to-transparent">
-                        </div>
-                        <div class="absolute inset-0 flex items-center justify-center">
-                            <div class="text-center">
-                                <span class="material-symbols-outlined text-slate-300 text-4xl mb-2"
-                                    data-icon="monitoring">monitoring</span>
-                                <p class="text-xs font-medium text-slate-400">Aggregated Subscription Revenue
-                                    Visualization</p>
-                            </div>
-                        </div>
-                        <!-- Decorative SVG Line -->
-                        <svg class="absolute bottom-10 left-0 w-full h-24" preserveaspectratio="none">
-                            <path d="M0 60 Q 150 10, 300 50 T 600 20 T 900 70 T 1200 40" fill="transparent"
-                                stroke="#b91c1c" stroke-width="2"></path>
-                        </svg>
+                    <!-- MRR Chart -->
+                    <div class="chart-wrapper">
+                        <canvas id="mrrChart"></canvas>
                     </div>
                     <div class="grid grid-cols-4 gap-6 mt-6">
                         <div class="p-4 rounded-lg bg-slate-50">
@@ -1480,6 +1504,119 @@ if ($stats['active_subscriptions'] > 0) {
                 }
             });
         })();
+
+        // Initialize MRR Chart with Billing Cycle Filters
+        let currentChart = null;
+        const chartLabels = <?php echo json_encode($mrrLabels); ?>;
+        const monthlyData = <?php echo json_encode($mrrData); ?>;
+        
+        // Generate quarterly data (multiply monthly by 3 to show actual quarterly rate)
+        const quarterlyData = [];
+        for (let i = 0; i < monthlyData.length; i += 3) {
+            const q = ((monthlyData[i] || 0) + (monthlyData[i + 1] || 0) + (monthlyData[i + 2] || 0)) * 3;
+            quarterlyData.push(Math.round(q));
+        }
+        
+        // Generate quarterly labels
+        const quarterlyLabels = [];
+        for (let i = 0; i < chartLabels.length; i += 3) {
+            quarterlyLabels.push('Q' + Math.ceil((i / 3) + 1));
+        }
+        
+        // Generate yearly data (multiply monthly by 12 to show actual yearly rate)
+        const yearlyData = [Math.round(monthlyData.reduce((a, b) => a + (b || 0), 0) * 12)];
+        const yearlyLabels = ['Year Total'];
+        
+        document.addEventListener('DOMContentLoaded', function() {
+            const ctx = document.getElementById('mrrChart');
+            if (ctx) {
+                try {
+                    currentChart = new Chart(ctx, {
+                        type: 'line',
+                        data: {
+                            labels: chartLabels,
+                            datasets: [{
+                                label: 'Monthly Recurring Revenue',
+                                data: monthlyData.map(function(val) {
+                                    return parseFloat(val) || 0;
+                                }),
+                                borderColor: '#b91c1c',
+                                backgroundColor: 'rgba(185, 28, 28, 0.16)',
+                                fill: true,
+                                tension: 0.3,
+                                pointRadius: 4,
+                                pointBackgroundColor: '#b91c1c',
+                                pointBorderColor: '#ffffff',
+                                pointBorderWidth: 2,
+                                pointHoverRadius: 6
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            plugins: {
+                                legend: {
+                                    display: false
+                                }
+                            },
+                            scales: {
+                                x: {
+                                    grid: {
+                                        display: false
+                                    },
+                                    ticks: {
+                                        maxRotation: 0,
+                                        autoSkip: true
+                                    }
+                                },
+                                y: {
+                                    beginAtZero: true,
+                                    ticks: {
+                                        precision: 0
+                                    }
+                                }
+                            }
+                        }
+                    });
+                } catch(e) {
+                    console.error('Chart initialization error:', e);
+                }
+            }
+            
+            // Setup billing cycle filter buttons
+            const filterButtons = document.querySelectorAll('.billing-filter');
+            filterButtons.forEach(function(button) {
+                button.addEventListener('click', function() {
+                    const cycle = this.dataset.cycle;
+                    
+                    // Update button styles
+                    filterButtons.forEach(function(btn) {
+                        btn.className = 'billing-filter px-3 py-1 text-[10px] font-bold rounded uppercase bg-slate-100 text-slate-500 hover:bg-slate-200';
+                    });
+                    this.className = 'billing-filter px-3 py-1 text-[10px] font-bold rounded uppercase bg-primary text-white';
+                    
+                    // Update chart data
+                    if (currentChart) {
+                        if (cycle === 'monthly') {
+                            currentChart.data.labels = chartLabels;
+                            currentChart.data.datasets[0].data = monthlyData.map(function(val) {
+                                return parseFloat(val) || 0;
+                            });
+                            currentChart.data.datasets[0].label = 'Monthly Recurring Revenue';
+                        } else if (cycle === 'quarterly') {
+                            currentChart.data.labels = quarterlyLabels;
+                            currentChart.data.datasets[0].data = quarterlyData;
+                            currentChart.data.datasets[0].label = 'Quarterly Recurring Revenue';
+                        } else if (cycle === 'yearly') {
+                            currentChart.data.labels = yearlyLabels;
+                            currentChart.data.datasets[0].data = yearlyData;
+                            currentChart.data.datasets[0].label = 'Yearly Recurring Revenue';
+                        }
+                        currentChart.update();
+                    }
+                });
+            });
+        });
     </script>
 </body>
 

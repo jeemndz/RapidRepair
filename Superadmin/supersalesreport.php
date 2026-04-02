@@ -221,23 +221,45 @@ $avgTxnChange = getPercentChange($avgTxnValue, $prevAvgTxnValue);
 $avgTxnChangeStr = ($avgTxnChange >= 0 ? "+" : "") . number_format($avgTxnChange, 1);
 
 // Fetch revenue trend data (last 12 months)
+// Initialize arrays for 12 months
+$trendLabels = [];
+$trendData = [];
+
+for ($i = 11; $i >= 0; $i--) {
+    $monthDate = strtotime("first day of -$i month");
+    $trendLabels[] = date("M Y", $monthDate);
+    $trendData[] = 0;
+}
+
+// Query revenue data
 $trendWhere = [];
 if ($tenantFilter !== 'all')
     $trendWhere[] = "tenantID = " . intval($tenantFilter);
-if ($statusFilter !== 'all' && $statusFilter === 'active_only')
-    $trendWhere[] = "LOWER(status) = 'active'";
-$trendWhere[] = "created_at >= DATE_SUB(NOW(), INTERVAL 12 MONTH)";
+if ($statusFilter !== 'all') {
+    if ($statusFilter === 'active_only')
+        $trendWhere[] = "LOWER(status) = 'active'";
+    elseif ($statusFilter === 'trial')
+        $trendWhere[] = "LOWER(status) = 'trial'";
+    elseif ($statusFilter === 'suspended')
+        $trendWhere[] = "LOWER(status) = 'suspended'";
+}
+$trendWhere[] = "created_at >= DATE_SUB(DATE_FORMAT(NOW(), '%Y-%m-01'), INTERVAL 11 MONTH)";
 $trendWhere[] = "plan_price > 0";
 
 $trendSql = "SELECT DATE_FORMAT(created_at, '%Y-%m') AS month_key, SUM(plan_price) AS monthly_revenue 
              FROM owners " . buildWhereSql($trendWhere) . " GROUP BY month_key ORDER BY month_key ASC";
 $trendResult = $conn->query($trendSql);
-$trendData = [];
-$trendLabels = [];
+
 if ($trendResult) {
+    $trendLookup = [];
     while ($row = $trendResult->fetch_assoc()) {
-        $trendLabels[] = $row['month_key'];
-        $trendData[] = round($row['monthly_revenue'], 2);
+        $trendLookup[(string) $row['month_key']] = round((float) $row['monthly_revenue'], 2);
+    }
+
+    // Map data to the 12 months
+    foreach ($trendLabels as $idx => $label) {
+        $monthKey = date("Y-m", strtotime("1 " . $label));
+        $trendData[$idx] = $trendLookup[$monthKey] ?? 0;
     }
 }
 
@@ -292,7 +314,7 @@ $dateStart = match ($dateRange) {
     <meta charset="utf-8" />
     <meta content="width=device-width, initial-scale=1.0" name="viewport" />
     <title>Sales Reports &amp; Financial Analytics | RapidRepair</title>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
     <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
     <!-- jsPDF for PDF export -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -387,6 +409,13 @@ $dateStart = match ($dateRange) {
 
         .chart-gradient {
             background: linear-gradient(to bottom, rgba(185, 28, 28, 0.1), rgba(185, 28, 28, 0));
+        }
+
+        .chart-wrapper {
+            position: relative;
+            height: 300px;
+            width: 100%;
+            display: block;
         }
     </style>
 </head>
@@ -643,7 +672,7 @@ $dateStart = match ($dateRange) {
                 <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
                     <!-- Revenue Trends Chart -->
                     <div
-                        class="lg:col-span-2 bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden flex flex-col">
+                        class="lg:col-span-2 bg-white border border-slate-200 rounded-lg shadow-sm flex flex-col">
                         <div class="p-6 border-b border-slate-100 flex items-center justify-between">
                             <h4 class="font-bold text-sm">Revenue Trends</h4>
                             <div class="flex bg-slate-100 p-1 rounded-lg">
@@ -651,8 +680,10 @@ $dateStart = match ($dateRange) {
                                     class="px-3 py-1 text-[10px] font-bold rounded shadow-sm bg-white text-primary">Monthly</button>
                             </div>
                         </div>
-                        <div class="p-6 flex-1 flex flex-col justify-center min-h-[300px]">
-                            <canvas id="revenueChart"></canvas>
+                        <div class="p-6 flex-1">
+                            <div class="chart-wrapper">
+                                <canvas id="revenueChart"></canvas>
+                            </div>
                         </div>
                     </div>
                     <!-- Top-Performing Tenants -->
@@ -776,79 +807,69 @@ $dateStart = match ($dateRange) {
     </div>
 
     <script>
-        // Initialize revenue chart
-        const ctx = document.getElementById('revenueChart');
-        if (ctx) {
-            const trendLabels = <?php echo json_encode($trendLabels); ?>;
-            const trendData = <?php echo json_encode($trendData); ?>;
-
-            new Chart(ctx, {
-                type: 'line',
-                data: {
-                    labels: trendLabels,
-                    datasets: [{
-                        label: 'Monthly Revenue',
-                        data: trendData,
-                        borderColor: '#b91c1c',
-                        backgroundColor: 'rgba(185, 28, 28, 0.08)',
-                        borderWidth: 2,
-                        fill: true,
-                        tension: 0.4,
-                        pointRadius: 4,
-                        pointBackgroundColor: '#b91c1c',
-                        pointBorderColor: '#ffffff',
-                        pointBorderWidth: 2,
-                        pointHoverRadius: 6
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: true,
-                    plugins: {
-                        legend: {
-                            display: false
+        document.addEventListener('DOMContentLoaded', function() {
+            // Initialize revenue chart
+            const ctx = document.getElementById('revenueChart');
+            if (ctx) {
+                const labels = <?php echo json_encode($trendLabels); ?>;
+                const data = <?php echo json_encode($trendData); ?>;
+                
+                // Convert all values to numbers
+                const numericData = data.map(function(val) {
+                    return parseFloat(val) || 0;
+                });
+                
+                try {
+                    new Chart(ctx, {
+                        type: 'line',
+                        data: {
+                            labels: labels,
+                            datasets: [{
+                                label: 'Monthly Revenue',
+                                data: numericData,
+                                borderColor: '#b91c1c',
+                                backgroundColor: 'rgba(185, 28, 28, 0.16)',
+                                fill: true,
+                                tension: 0.3,
+                                pointRadius: 4,
+                                pointBackgroundColor: '#b91c1c',
+                                pointBorderColor: '#ffffff',
+                                pointBorderWidth: 2,
+                                pointHoverRadius: 6
+                            }]
                         },
-                        filler: {
-                            propagate: true
-                        }
-                    },
-                    scales: {
-                        y: {
-                            beginAtZero: true,
-                            ticks: {
-                                callback: function (value) {
-                                    return '₱' + (value / 1000).toFixed(0) + 'k';
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            plugins: {
+                                legend: {
+                                    display: false
+                                }
+                            },
+                            scales: {
+                                x: {
+                                    grid: {
+                                        display: false
+                                    },
+                                    ticks: {
+                                        maxRotation: 0,
+                                        autoSkip: true
+                                    }
                                 },
-                                font: {
-                                    size: 11
-                                },
-                                color: '#64748b'
-                            },
-                            border: {
-                                display: false
-                            },
-                            grid: {
-                                color: 'rgba(148, 163, 184, 0.1)'
-                            }
-                        },
-                        x: {
-                            ticks: {
-                                font: {
-                                    size: 11
-                                },
-                                color: '#64748b'
-                            },
-                            border: {
-                                display: false
-                            },
-                            grid: {
-                                display: false
+                                y: {
+                                    beginAtZero: true,
+                                    ticks: {
+                                        precision: 0
+                                    }
+                                }
                             }
                         }
-                    }
+                    });
+                } catch(e) {
+                    console.error('Chart initialization error:', e);
                 }
-            });
-        }
+            }
+        });
 
         // Table search functionality
         const searchInput = document.getElementById('tenantSearch');

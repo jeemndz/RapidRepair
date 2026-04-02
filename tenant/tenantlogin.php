@@ -84,7 +84,7 @@ if (isset($_POST['login'])) {
                     }
 
                     // First-time owners must update their temporary password
-                    header("Location: changetemppass.php");
+                    header("Location: changetemppass.php?shop=" . urlencode($user['login_slug']));
                     exit;
                 } else {
                     $error = "Incorrect password.";
@@ -115,7 +115,7 @@ if (isset($_POST['login'])) {
                     }
 
                     // Returning owners proceed directly to dashboard
-                    header("Location: dashboardadmin.php");
+                    header("Location: dashboardadmin.php?shop=" . urlencode($user['login_slug']));
                     exit;
                 } else {
                     $error = "Incorrect password.";

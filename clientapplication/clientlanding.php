@@ -377,7 +377,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['createTenantApplicati
                         title="Profile">
                         <span class="material-symbols-outlined">account_circle</span>
                     </a>
-                    <a href="../logout/logout.php"
+                    <a href="../logout/logout.php?redirect=clientlanding.php"
                         class="px-4 py-2 rounded-lg text-sm font-bold tracking-tight border border-red-200 text-red-600 hover:bg-red-50 transition-all">Logout</a>
                 <?php else: ?>
                     <a href="clientlogin.php"

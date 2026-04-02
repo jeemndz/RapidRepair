@@ -2,14 +2,34 @@
 session_start();
 include __DIR__ . '/../db.php';
 
-if (!isset($_SESSION['tenantID']) || !isset($_SESSION['login_slug'])) {
+// Check if tenant is logged in
+if (!isset($_SESSION['tenantID'])) {
     header('Location: tenantlogin.php');
     exit;
 }
 
 $tenantID = (int) $_SESSION['tenantID'];
-$loginSlug = (string) $_SESSION['login_slug'];
 
+// Try session slug first, then URL slug
+$loginSlug = '';
+if (isset($_SESSION['login_slug']) && trim((string) $_SESSION['login_slug']) !== '') {
+    $loginSlug = trim((string) $_SESSION['login_slug']);
+} elseif (isset($_GET['shop']) && trim((string) $_GET['shop']) !== '') {
+    $loginSlug = trim((string) $_GET['shop']);
+    $_SESSION['login_slug'] = $loginSlug;
+}
+
+// If still no slug, force login
+if ($loginSlug === '') {
+    session_unset();
+    session_destroy();
+    header('Location: tenantlogin.php');
+    exit;
+}
+
+$tenantID = (int) $_SESSION['tenantID'];
+
+// Validate tenant + slug
 $ownerStmt = mysqli_prepare($conn, "SELECT shopName FROM owners WHERE tenantID = ? AND login_slug = ? LIMIT 1");
 mysqli_stmt_bind_param($ownerStmt, 'is', $tenantID, $loginSlug);
 mysqli_stmt_execute($ownerStmt);
@@ -21,6 +41,19 @@ if (!$owner) {
     session_unset();
     session_destroy();
     header('Location: tenantlogin.php');
+    exit;
+}
+
+// Re-store correct slug in session
+$_SESSION['login_slug'] = $loginSlug;
+$shopName = isset($owner['shopName']) && $owner['shopName'] !== '' ? $owner['shopName'] : 'AutoFix Pro';
+$shopSlug = $loginSlug;
+$shopQuery = urlencode($loginSlug);
+
+// Keep URL consistent
+$currentScript = basename($_SERVER['PHP_SELF']);
+if (!isset($_GET['shop']) || trim((string) $_GET['shop']) !== $loginSlug) {
+    header('Location: ' . $currentScript . '?shop=' . $shopQuery);
     exit;
 }
 
@@ -208,61 +241,129 @@ if ($upcomingResult) {
 }
 ?>
 <!DOCTYPE html>
-<html class="light" lang="en">
+<html lang="en">
 
 <head>
     <meta charset="utf-8" />
     <meta content="width=device-width, initial-scale=1.0" name="viewport" />
-    <title><?php echo h($owner['shopName']); ?> | Appointment Management</title>
-    <script src="https://cdn.tailwindcss.com?plugins=forms"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
-    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet" />
+    <title><?php echo h($shopName); ?> | Appointment Management</title>
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap"
+        rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght@100..700,0..1&amp;display=swap"
+        rel="stylesheet" />
+    <link
+        href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap"
+        rel="stylesheet" />
+    <script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "primary": "#1152d4",
+                        "background-light": "#f6f6f8",
+                        "background-dark": "#101622",
+                    },
+                    fontFamily: {
+                        "display": ["Inter", "sans-serif"]
+                    },
+                    borderRadius: { "DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px" },
+                },
+            },
+        }
+    </script>
     <style>
-        body { font-family: 'Inter', sans-serif; }
-        .material-symbols-outlined { font-variation-settings: 'FILL' 0, 'wght' 500, 'GRAD' 0, 'opsz' 24; }
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
     </style>
 </head>
 
-<body class="bg-slate-50 text-slate-900 antialiased flex">
-    <aside class="w-64 flex-shrink-0 border-r border-slate-200 bg-white h-screen sticky top-0 flex flex-col overflow-y-auto">
+<body class="bg-background-light dark:bg-background-dark text-slate-900 dark:text-slate-100 font-display">
+    <div class="flex h-screen overflow-hidden">
+    <aside class="w-64 flex-shrink-0 border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 h-screen sticky top-0 flex flex-col overflow-y-auto">
         <div class="p-6 flex-1">
             <div class="flex items-center gap-3 mb-8">
-                <div class="bg-blue-600 rounded-lg p-2 text-white">
+                <div class="bg-primary rounded-lg p-2 text-white">
                     <span class="material-symbols-outlined">directions_car</span>
                 </div>
                 <div>
-                    <h1 class="text-lg font-bold leading-none"><?php echo h($owner['shopName']); ?></h1>
-                    <p class="text-xs text-slate-500 mt-1">Repair Management</p>
+                    <h1 class="text-lg font-bold leading-none"><?php echo h($shopName); ?></h1>
+                    <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Repair Management</p>
                 </div>
             </div>
-            <nav class="space-y-1 text-sm">
-                <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 hover:bg-slate-100" href="dashboardadmin.php"><span class="material-symbols-outlined text-[22px]">dashboard</span>Dashboard</a>
-                <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 hover:bg-slate-100" href="repairjobsadmin.php"><span class="material-symbols-outlined text-[22px]">build</span>Repair Jobs</a>
-                <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 hover:bg-slate-100" href="vehicleadmin.php"><span class="material-symbols-outlined text-[22px]">directions_car</span>Vehicles</a>
-                <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-blue-50 text-blue-700 font-semibold" href="appointmentadmin.php"><span class="material-symbols-outlined text-[22px]">event</span>Appointments</a>
-                <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 hover:bg-slate-100" href="reportsadmin.php"><span class="material-symbols-outlined text-[22px]">description</span>Reports</a>
-                <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 hover:bg-slate-100" href="inventoryadmin.php"><span class="material-symbols-outlined text-[22px]">inventory_2</span>Inventory</a>
-                <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 hover:bg-slate-100" href="customeradmin.php"><span class="material-symbols-outlined text-[22px]">group</span>Customers</a>
-                <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 hover:bg-slate-100" href="paymentsadmin.php"><span class="material-symbols-outlined text-[22px]">payments</span>Payments</a>
+            <nav class="space-y-1">
+                <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 hover:bg-slate-100 transition-colors font-medium" href="dashboardadmin.php?shop=<?php echo $shopQuery; ?>"><span class="material-symbols-outlined text-[22px]">dashboard</span>Dashboard</a>
+                <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 hover:bg-slate-100 transition-colors font-medium" href="repairjobsadmin.php?shop=<?php echo $shopQuery; ?>"><span class="material-symbols-outlined text-[22px]">build</span>Repair Jobs</a>
+                <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 hover:bg-slate-100 transition-colors" href="vehicleadmin.php?shop=<?php echo $shopQuery; ?>"><span class="material-symbols-outlined text-[22px]">directions_car</span>Vehicles</a>
+                <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-primary/10 text-primary font-medium" href="appointmentadmin.php?shop=<?php echo $shopQuery; ?>"><span class="material-symbols-outlined text-[22px]">event</span>Appointments</a>
+                <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 hover:bg-slate-100 transition-colors" href="reportsadmin.php?shop=<?php echo $shopQuery; ?>"><span class="material-symbols-outlined text-[22px]">description</span>Reports</a>
+                <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 hover:bg-slate-100 transition-colors" href="inventoryadmin.php?shop=<?php echo $shopQuery; ?>"><span class="material-symbols-outlined text-[22px]">inventory_2</span>Inventory</a>
+                <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 hover:bg-slate-100 transition-colors" href="customeradmin.php?shop=<?php echo $shopQuery; ?>"><span class="material-symbols-outlined text-[22px]">group</span>Customers</a>
+                <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 hover:bg-slate-100 transition-colors" href="paymentsadmin.php?shop=<?php echo $shopQuery; ?>"><span class="material-symbols-outlined text-[22px]">payments</span>Payments</a>
                 <div class="pt-4 mt-4 border-t border-slate-100">
-                    <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 hover:bg-slate-100" href="settingsadmin.php"><span class="material-symbols-outlined text-[22px]">settings</span>Settings</a>
+                    <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 hover:bg-slate-100 transition-colors" href="settingsadmin.php?shop=<?php echo $shopQuery; ?>"><span class="material-symbols-outlined text-[22px]">settings</span>Settings</a>
                 </div>
             </nav>
         </div>
-        <div class="p-4 border-t border-slate-200">
-            <form method="post" action="../logout/logout.php">
-                <button type="submit" class="w-full flex items-center justify-center gap-2 text-slate-500 hover:text-red-600">
-                    <span class="material-symbols-outlined">logout</span>
-                    Logout
-                </button>
-            </form>
+        <div class="p-4 border-t border-slate-200 dark:border-slate-800">
+            <div class="flex items-center gap-3">
+                <div
+                    class="size-10 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center overflow-hidden">
+                    <img alt="Admin Profile" class="w-full h-full object-cover"
+                        data-alt="User avatar for admin profile picture"
+                        src="https://lh3.googleusercontent.com/aida-public/AB6AXuDeh_igjzq55wP-MQUqlN5a7g7ERzT91RAZllys2xTPdmr_K6ugTc7NEPOG48E87bvkhiEKuMOE9TZ0njKOCLQ7Nhccix3HVxsYdR2tXeyTCkjam7s1q8ngQOzslzdGRLROqouBtkGpnSewuAyIscdu673vBatOqI9TKHP1RCzarhxH8GqVYpWDnccgDrczUMroOqof3VFA7U9HLzMcDyURIrkC9dU2KtSkusqfbOvLaUs_zR14qlpZVSgASdGK8sw1SCeDf4A38q-8" />
+                </div>
+                <div class="flex-1 min-w-0">
+                    <p class="text-sm font-semibold truncate">Marcus Smith</p>
+                    <p class="text-xs text-slate-500 truncate">Shop Manager</p>
+                </div>
+                <form id="logoutForm" method="post" action="../logout/logout.php" class="inline">
+                    <input type="hidden" name="action" value="confirm" />
+                    <input type="hidden" name="shop" value="<?php echo h($shopSlug); ?>" />
+                    <button type="submit" class="text-slate-400 hover:text-error transition-colors" title="Logout">
+                        <span class="material-symbols-outlined text-xl">logout</span>
+                    </button>
+                </form>
+            </div>
         </div>
     </aside>
 
-    <main class="flex-1 min-h-screen">
-        <header class="sticky top-0 z-40 border-b border-slate-200 bg-white/90 backdrop-blur px-8 h-16 flex items-center justify-between">
-            <h2 class="text-lg font-black tracking-tight">Appointment Management</h2>
-            <span class="text-xs text-slate-500">Shop login slug: <?php echo h($loginSlug); ?></span>
+    <main class="flex-1 overflow-y-auto">
+        <header class="sticky top-0 z-40 w-full border-b border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md flex items-center justify-between px-8 h-16">
+            <div class="flex items-center gap-6">
+                <h2 class="text-lg font-black text-slate-900 dark:white tracking-tight">Appointment Management</h2>
+                <div class="relative hidden lg:block">
+                    <span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">search</span>
+                    <input class="bg-surface-variant border-none rounded-lg pl-10 pr-4 py-1.5 text-sm w-64 focus:ring-2 focus:ring-primary/20" placeholder="Search appointments..." type="text" />
+                </div>
+                <span class="hidden xl:inline-flex items-center px-2.5 py-1 rounded-full bg-blue-50 text-blue-700 text-[11px] font-bold uppercase tracking-wide">
+                    <?php echo h($shopSlug); ?>
+                </span>
+            </div>
+            <div class="flex items-center gap-4">
+                <button class="p-2 text-slate-500 hover:text-primary transition-all">
+                    <span class="material-symbols-outlined">notifications</span>
+                </button>
+                <button class="p-2 text-slate-500 hover:text-primary transition-all">
+                    <span class="material-symbols-outlined">help_outline</span>
+                </button>
+                <div class="h-8 w-px bg-slate-200 mx-2"></div>
+                <div class="flex items-center gap-3">
+                    <div class="text-right hidden sm:block">
+                        <p class="text-xs font-bold text-on-background"><?php echo h($shopName); ?></p>
+                        <p class="text-[10px] text-slate-500 uppercase font-semibold">Slug: <?php echo h($shopSlug); ?></p>
+                    </div>
+                    <img alt="Manager Avatar" class="h-10 w-10 rounded-full border-2 border-primary/20 object-cover"
+                        data-alt="professional male service manager portrait in modern automotive office environment"
+                        src="https://lh3.googleusercontent.com/aida-public/AB6AXuC_w4TZYv-DoCr0hxBNhV2Z-nUsRKiJWSSjgi__Y4oVCvZsEnAXH-GvsZk4qUV8VfyOd_rN5mqWnBeNlMb7An_00pBDPbF7FGZDqw2HhZ4MbeNkgRRsmuE6r3t2yOO4P5sHcWAMkVgXaheA3Z2LKA0Fo_mIUP0qh9KRyragtZ_zvLR-U7pm-kWc645Yi3rN0Mm0P9km9Kt3Fp4fKCU5i33aRJsonLoG5k45EuFpDDTP2CbZiarn81pTDjiPcRHLtpdJg1O47dGsJUD2" />
+                </div>
+            </div>
         </header>
 
         <div class="p-8 space-y-6">
@@ -299,6 +400,7 @@ if ($upcomingResult) {
             <section class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
                 <div class="p-5 border-b border-slate-100">
                     <form method="get" class="grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
+                        <input type="hidden" name="shop" value="<?php echo h($loginSlug); ?>">
                         <div class="md:col-span-2">
                             <label class="text-xs font-bold uppercase text-slate-500">Search</label>
                             <input name="search" value="<?php echo h($search); ?>" placeholder="Customer, vehicle, plate, service, notes" class="mt-1 w-full rounded-lg border-slate-300 text-sm" />
@@ -313,7 +415,7 @@ if ($upcomingResult) {
                         </div>
                         <div class="flex gap-2">
                             <button class="w-full px-4 py-2.5 bg-blue-600 text-white rounded-lg text-sm font-semibold" type="submit">Apply</button>
-                            <a href="appointmentadmin.php" class="px-4 py-2.5 border border-slate-300 rounded-lg text-sm text-slate-600">Reset</a>
+                            <a href="appointmentadmin.php?shop=<?php echo $shopQuery; ?>" class="px-4 py-2.5 border border-slate-300 rounded-lg text-sm text-slate-600">Reset</a>
                         </div>
                     </form>
                 </div>
@@ -430,6 +532,7 @@ if ($upcomingResult) {
             </section>
         </div>
     </main>
+    </div>
 </body>
 
 </html>

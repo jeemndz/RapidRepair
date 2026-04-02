@@ -80,11 +80,11 @@ function buildAuthenticatedHomeUrl()
 		return '../superadmin/subscriptionmanage.php';
 	}
 
-	if (isset($_SESSION['shop_id']) || isset($_SESSION['tenant_id'])) {
+	if (isset($_SESSION['shop_id']) || isset($_SESSION['tenant_id']) || isset($_SESSION['tenantID'])) {
 		return '../tenant/dashboardadmin.php';
 	}
 
-	if (isset($_SESSION['email']) || isset($_SESSION['user_id'])) {
+	if (isset($_SESSION['client_id']) || isset($_SESSION['email']) || isset($_SESSION['user_id'])) {
 		return '../clientapplication/clientlanding.php';
 	}
 
@@ -103,6 +103,7 @@ $allowedRedirects = [
 	'tenantlogin.php' => '../tenant/tenantlogin.php',
 	'superaddlogin.php' => '../superadmin/superaddlogin.php',
 	'clientlogin.php' => '../clientapplication/clientlogin.php',
+	'clientlanding.php' => '../clientapplication/clientlanding.php',
 	'index.php' => '../index.php'
 ];
 
@@ -115,10 +116,11 @@ if (isset($_POST['shop'])) {
 
 $tenantLoginSlug = $requestedShopSlug !== '' ? $requestedShopSlug : (isset($_SESSION['login_slug']) ? (string)$_SESSION['login_slug'] : '');
 $logoutRedirect = buildTenantLoginUrl($tenantLoginSlug);
+
 if (isset($_SESSION['superadmin_id'])) {
 	$logoutRedirect = '../superadmin/superaddlogin.php';
-} elseif (isset($_SESSION['email']) || isset($_SESSION['user_id'])) {
-	$logoutRedirect = '../clientapplication/clientlogin.php';
+} elseif (isset($_SESSION['client_id']) || isset($_SESSION['email']) || isset($_SESSION['user_id'])) {
+	$logoutRedirect = '../clientapplication/clientlanding.php';
 }
 
 $logoutRedirectTo = isset($allowedRedirects[$requestedRedirect]) ? $allowedRedirects[$requestedRedirect] : $logoutRedirect;
@@ -149,43 +151,44 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 	}
 
 	if ($action === 'confirm') {
-		   // --- Tenant logout logging (new ENUM schema) ---
-		   require_once __DIR__ . '/../db.php';
-		   $tenantID = isset($_SESSION['tenantID']) ? (int)$_SESSION['tenantID'] : null;
-		   $user_id = $tenantID;
-		   $user_name = isset($_SESSION['shopName']) ? $_SESSION['shopName'] : '';
-		   $user_role = 'admin'; // Default to admin for tenant logout
-		   $actionLog = 'LOGOUT';
-		   $entity_type = 'tenant';
-		   $entity_id = $tenantID;
-		   $details = 'Tenant logged out';
-		   $ip_address = isset($_SERVER['REMOTE_ADDR']) ? $_SERVER['REMOTE_ADDR'] : '';
-		   $user_agent = isset($_SERVER['HTTP_USER_AGENT']) ? $_SERVER['HTTP_USER_AGENT'] : '';
-		   if ($tenantID) {
-			   $stmt = $conn->prepare("INSERT INTO system_logs (tenantID, user_id, user_name, user_role, action, entity_type, entity_id, details, ip_address, user_agent, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())");
-			   $stmt->bind_param('iissssisss', $tenantID, $user_id, $user_name, $user_role, $actionLog, $entity_type, $entity_id, $details, $ip_address, $user_agent);
-			   $stmt->execute();
-			   $stmt->close();
-		   }
+		require_once __DIR__ . '/../db.php';
 
-		   $_SESSION = [];
+		$tenantID = isset($_SESSION['tenantID']) ? (int)$_SESSION['tenantID'] : null;
+		$user_id = $tenantID;
+		$user_name = isset($_SESSION['shopName']) ? $_SESSION['shopName'] : '';
+		$user_role = 'admin';
+		$actionLog = 'LOGOUT';
+		$entity_type = 'tenant';
+		$entity_id = $tenantID;
+		$details = 'Tenant logged out';
+		$ip_address = isset($_SERVER['REMOTE_ADDR']) ? $_SERVER['REMOTE_ADDR'] : '';
+		$user_agent = isset($_SERVER['HTTP_USER_AGENT']) ? $_SERVER['HTTP_USER_AGENT'] : '';
 
-		   if (ini_get('session.use_cookies')) {
-			   $params = session_get_cookie_params();
-			   setcookie(
-				   session_name(),
-				   '',
-				   time() - 42000,
-				   $params['path'],
-				   $params['domain'],
-				   $params['secure'],
-				   $params['httponly']
-			   );
-		   }
+		if ($tenantID) {
+			$stmt = $conn->prepare("INSERT INTO system_logs (tenantID, user_id, user_name, user_role, action, entity_type, entity_id, details, ip_address, user_agent, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())");
+			$stmt->bind_param('iissssisss', $tenantID, $user_id, $user_name, $user_role, $actionLog, $entity_type, $entity_id, $details, $ip_address, $user_agent);
+			$stmt->execute();
+			$stmt->close();
+		}
 
-		   session_destroy();
-		   header('Location: ' . $logoutRedirectTo);
-		   exit;
+		$_SESSION = [];
+
+		if (ini_get('session.use_cookies')) {
+			$params = session_get_cookie_params();
+			setcookie(
+				session_name(),
+				'',
+				time() - 42000,
+				$params['path'],
+				$params['domain'],
+				$params['secure'],
+				$params['httponly']
+			);
+		}
+
+		session_destroy();
+		header('Location: ' . $logoutRedirectTo);
+		exit;
 	}
 }
 ?>
