@@ -38,8 +38,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && empty($_GET)) {
     exit;
 }
 
-$tenantID = isset($_GET['tenantID']) && is_numeric($_GET['tenantID']) ? (int) $_GET['tenantID'] : 0;
-$includeAllOnEmpty = isset($_GET['includeAllOnEmpty']) && $_GET['includeAllOnEmpty'] == '1';
+$tenantIDRaw = $_REQUEST['tenantID'] ?? 0;
+$includeAllRaw = $_REQUEST['includeAllOnEmpty'] ?? 0;
+
+$tenantID = is_numeric($tenantIDRaw) ? (int) $tenantIDRaw : 0;
+$includeAllOnEmpty = $includeAllRaw == '1';
 
 $vehicles = [];
 
