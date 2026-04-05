@@ -102,55 +102,18 @@ function initials($name)
 $dateRange = isset($_GET['dateRange']) ? $_GET['dateRange'] : '30';
 $tenantFilter = isset($_GET['tenantFilter']) ? $_GET['tenantFilter'] : 'all';
 $statusFilter = isset($_GET['statusFilter']) ? $_GET['statusFilter'] : 'all';
-
-// Build WHERE clauses
-$dateWhereParts = [];
-$tenantStatusWhereParts = [];
-
-// Date range filter
-switch ($dateRange) {
-    case '7':
-        $dateWhereParts[] = "created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)";
-        break;
-    case '30':
-        $dateWhereParts[] = "created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)";
-        break;
-    case '90':
-        $dateWhereParts[] = "created_at >= DATE_SUB(NOW(), INTERVAL 90 DAY)";
-        break;
-    case 'ytd':
-        $dateWhereParts[] = "YEAR(created_at) = YEAR(NOW())";
-        break;
-}
-
-// Tenant filter
-if ($tenantFilter !== 'all' && !empty($tenantFilter)) {
-    $tenantId = intval($tenantFilter);
-    $tenantStatusWhereParts[] = "tenantID = $tenantId";
-}
-
-// Status filter
-if ($statusFilter !== 'all') {
-    switch ($statusFilter) {
-        case 'active_only':
-            $tenantStatusWhereParts[] = "LOWER(status) = 'active'";
-            break;
-        case 'trial':
-            $tenantStatusWhereParts[] = "LOWER(status) = 'trial'";
-            break;
-        case 'suspended':
-            $tenantStatusWhereParts[] = "LOWER(status) = 'suspended'";
-            break;
-    }
-}
+$granularity = isset($_GET['granularity']) ? $_GET['granularity'] : 'monthly';
 
 // Fetch KPI metrics
-$baseWhere = buildWhereSql($tenantStatusWhereParts);
 
 // Total Revenue (all time or filtered)
-$revenueWhere = $tenantStatusWhereParts;
-$revenueWhere[] = "plan_price > 0";
-$revenueSql = "SELECT SUM(plan_price) AS total_revenue FROM owners " . buildWhereSql($revenueWhere);
+$revenueWhere = [];
+if ($tenantFilter !== 'all' && !empty($tenantFilter)) {
+    $revenueWhere[] = "tenantID = " . intval($tenantFilter);
+}
+$revenueWhere[] = "paymentStatus IN ('Paid', 'Partial')";
+$revenueWhere[] = "amountPaid > 0";
+$revenueSql = "SELECT SUM(amountPaid) AS total_revenue FROM payments " . buildWhereSql($revenueWhere);
 $revenueResult = $conn->query($revenueSql);
 $totalRevenue = $revenueResult ? ($revenueResult->fetch_assoc()['total_revenue'] ?? 0) : 0;
 
@@ -158,25 +121,22 @@ $totalRevenue = $revenueResult ? ($revenueResult->fetch_assoc()['total_revenue']
 $prevRevenueWhere = [];
 if ($tenantFilter !== 'all')
     $prevRevenueWhere[] = "tenantID = " . intval($tenantFilter);
-if ($statusFilter !== 'all') {
-    if ($statusFilter === 'active_only')
-        $prevRevenueWhere[] = "LOWER(status) = 'active'";
-}
-$prevRevenueWhere[] = "plan_price > 0";
+$prevRevenueWhere[] = "paymentStatus IN ('Paid', 'Partial')";
+$prevRevenueWhere[] = "amountPaid > 0";
 
 switch ($dateRange) {
     case '7':
-        $prevRevenueWhere[] = "created_at >= DATE_SUB(NOW(), INTERVAL 14 DAY) AND created_at < DATE_SUB(NOW(), INTERVAL 7 DAY)";
+        $prevRevenueWhere[] = "paymentDate >= DATE_SUB(NOW(), INTERVAL 14 DAY) AND paymentDate < DATE_SUB(NOW(), INTERVAL 7 DAY)";
         break;
     case '30':
-        $prevRevenueWhere[] = "created_at >= DATE_SUB(NOW(), INTERVAL 60 DAY) AND created_at < DATE_SUB(NOW(), INTERVAL 30 DAY)";
+        $prevRevenueWhere[] = "paymentDate >= DATE_SUB(NOW(), INTERVAL 60 DAY) AND paymentDate < DATE_SUB(NOW(), INTERVAL 30 DAY)";
         break;
     case '90':
-        $prevRevenueWhere[] = "created_at >= DATE_SUB(NOW(), INTERVAL 180 DAY) AND created_at < DATE_SUB(NOW(), INTERVAL 90 DAY)";
+        $prevRevenueWhere[] = "paymentDate >= DATE_SUB(NOW(), INTERVAL 180 DAY) AND paymentDate < DATE_SUB(NOW(), INTERVAL 90 DAY)";
         break;
 }
 
-$prevRevenueSql = "SELECT SUM(plan_price) AS total_revenue FROM owners " . buildWhereSql($prevRevenueWhere);
+$prevRevenueSql = "SELECT SUM(amountPaid) AS total_revenue FROM payments " . buildWhereSql($prevRevenueWhere);
 $prevRevenueResult = $conn->query($prevRevenueSql);
 $prevRevenue = $prevRevenueResult ? ($prevRevenueResult->fetch_assoc()['total_revenue'] ?? 0) : 0;
 
@@ -184,9 +144,15 @@ $revenueChange = getPercentChange($totalRevenue, $prevRevenue);
 $revenueChangeStr = ($revenueChange >= 0 ? "+" : "") . number_format($revenueChange, 1);
 
 // Total Transactions Count
-$transactionWhere = $tenantStatusWhereParts;
-$transactionWhere[] = "created_at >= DATE_SUB(NOW(), INTERVAL " . intval($dateRange) . " DAY)";
-$txnSql = "SELECT COUNT(*) AS total_txns FROM owners " . buildWhereSql($transactionWhere);
+$transactionWhere = [];
+if ($tenantFilter !== 'all' && !empty($tenantFilter)) {
+    $transactionWhere[] = "tenantID = " . intval($tenantFilter);
+}
+$transactionWhere[] = "paymentStatus IN ('Paid', 'Partial')";
+if ($dateRange !== 'all') {
+    $transactionWhere[] = "paymentDate >= DATE_SUB(NOW(), INTERVAL " . intval($dateRange) . " DAY)";
+}
+$txnSql = "SELECT COUNT(*) AS total_txns FROM payments " . buildWhereSql($transactionWhere);
 $txnResult = $conn->query($txnSql);
 $totalTransactions = $txnResult ? ($txnResult->fetch_assoc()['total_txns'] ?? 0) : 0;
 
@@ -194,20 +160,19 @@ $totalTransactions = $txnResult ? ($txnResult->fetch_assoc()['total_txns'] ?? 0)
 $prevTxnWhere = [];
 if ($tenantFilter !== 'all')
     $prevTxnWhere[] = "tenantID = " . intval($tenantFilter);
-if ($statusFilter !== 'all' && $statusFilter === 'active_only')
-    $prevTxnWhere[] = "LOWER(status) = 'active'";
+$prevTxnWhere[] = "paymentStatus IN ('Paid', 'Partial')";
 switch ($dateRange) {
     case '7':
-        $prevTxnWhere[] = "created_at >= DATE_SUB(NOW(), INTERVAL 14 DAY) AND created_at < DATE_SUB(NOW(), INTERVAL 7 DAY)";
+        $prevTxnWhere[] = "paymentDate >= DATE_SUB(NOW(), INTERVAL 14 DAY) AND paymentDate < DATE_SUB(NOW(), INTERVAL 7 DAY)";
         break;
     case '30':
-        $prevTxnWhere[] = "created_at >= DATE_SUB(NOW(), INTERVAL 60 DAY) AND created_at < DATE_SUB(NOW(), INTERVAL 30 DAY)";
+        $prevTxnWhere[] = "paymentDate >= DATE_SUB(NOW(), INTERVAL 60 DAY) AND paymentDate < DATE_SUB(NOW(), INTERVAL 30 DAY)";
         break;
     case '90':
-        $prevTxnWhere[] = "created_at >= DATE_SUB(NOW(), INTERVAL 180 DAY) AND created_at < DATE_SUB(NOW(), INTERVAL 90 DAY)";
+        $prevTxnWhere[] = "paymentDate >= DATE_SUB(NOW(), INTERVAL 180 DAY) AND paymentDate < DATE_SUB(NOW(), INTERVAL 90 DAY)";
         break;
 }
-$prevTxnSql = "SELECT COUNT(*) AS total_txns FROM owners " . buildWhereSql($prevTxnWhere);
+$prevTxnSql = "SELECT COUNT(*) AS total_txns FROM payments " . buildWhereSql($prevTxnWhere);
 $prevTxnResult = $conn->query($prevTxnSql);
 $prevTxns = $prevTxnResult ? ($prevTxnResult->fetch_assoc()['total_txns'] ?? 0) : 0;
 
@@ -220,54 +185,104 @@ $prevAvgTxnValue = $prevTxns > 0 ? ($prevRevenue / $prevTxns) : 0;
 $avgTxnChange = getPercentChange($avgTxnValue, $prevAvgTxnValue);
 $avgTxnChangeStr = ($avgTxnChange >= 0 ? "+" : "") . number_format($avgTxnChange, 1);
 
-// Fetch revenue trend data (last 12 months)
-// Initialize arrays for 12 months
+// Fetch revenue trend data (dynamic granularity: daily, weekly, monthly)
+// Initialize arrays for trend data
 $trendLabels = [];
 $trendData = [];
 
-for ($i = 11; $i >= 0; $i--) {
-    $monthDate = strtotime("first day of -$i month");
-    $trendLabels[] = date("M Y", $monthDate);
-    $trendData[] = 0;
+// Determine date range for trend based on granularity
+$trendDays = 30;
+if ($granularity === 'daily') {
+    $trendDays = intval($dateRange);
+    $dateFormat = '%Y-%m-%d';
+    $dateFormatLabel = 'M d';
+} elseif ($granularity === 'weekly') {
+    $trendDays = intval($dateRange) * 2;
+    $dateFormat = '%Y-%u';
+    $dateFormatLabel = 'W';
+} else { // monthly
+    $trendDays = 365;
+    $dateFormat = '%Y-%m';
+    $dateFormatLabel = 'M Y';
 }
 
-// Query revenue data
+// Initialize trend labels based on granularity
+if ($granularity === 'daily') {
+    for ($i = intval($dateRange) - 1; $i >= 0; $i--) {
+        $dayDate = strtotime("-$i days");
+        $trendLabels[] = date('M d', $dayDate);
+        $trendData[] = 0;
+    }
+} elseif ($granularity === 'weekly') {
+    for ($i = 11; $i >= 0; $i--) {
+        $weekDate = strtotime("-$i weeks");
+        $weekNum = date('W', $weekDate);
+        $yearNum = date('Y', $weekDate);
+        $trendLabels[] = "W" . $weekNum . " '" . substr(date('y', $weekDate), 1);
+        $trendData[] = 0;
+    }
+} else { // monthly
+    for ($i = 11; $i >= 0; $i--) {
+        $monthDate = strtotime("first day of -$i month");
+        $trendLabels[] = date("M Y", $monthDate);
+        $trendData[] = 0;
+    }
+}
+
+// Query revenue data with appropriate granularity
 $trendWhere = [];
 if ($tenantFilter !== 'all')
     $trendWhere[] = "tenantID = " . intval($tenantFilter);
-if ($statusFilter !== 'all') {
-    if ($statusFilter === 'active_only')
-        $trendWhere[] = "LOWER(status) = 'active'";
-    elseif ($statusFilter === 'trial')
-        $trendWhere[] = "LOWER(status) = 'trial'";
-    elseif ($statusFilter === 'suspended')
-        $trendWhere[] = "LOWER(status) = 'suspended'";
-}
-$trendWhere[] = "created_at >= DATE_SUB(DATE_FORMAT(NOW(), '%Y-%m-01'), INTERVAL 11 MONTH)";
-$trendWhere[] = "plan_price > 0";
+$trendWhere[] = "paymentStatus IN ('Paid', 'Partial')";
+$trendWhere[] = "amountPaid > 0";
+$trendWhere[] = "paymentDate >= DATE_SUB(NOW(), INTERVAL $trendDays DAY)";
 
-$trendSql = "SELECT DATE_FORMAT(created_at, '%Y-%m') AS month_key, SUM(plan_price) AS monthly_revenue 
-             FROM owners " . buildWhereSql($trendWhere) . " GROUP BY month_key ORDER BY month_key ASC";
+$trendSql = "SELECT DATE_FORMAT(paymentDate, '$dateFormat') AS time_key, SUM(amountPaid) AS revenue 
+             FROM payments " . buildWhereSql($trendWhere) . " GROUP BY time_key ORDER BY time_key ASC";
 $trendResult = $conn->query($trendSql);
 
 if ($trendResult) {
     $trendLookup = [];
     while ($row = $trendResult->fetch_assoc()) {
-        $trendLookup[(string) $row['month_key']] = round((float) $row['monthly_revenue'], 2);
+        $trendLookup[(string) $row['time_key']] = round((float) $row['revenue'], 2);
     }
 
-    // Map data to the 12 months
-    foreach ($trendLabels as $idx => $label) {
-        $monthKey = date("Y-m", strtotime("1 " . $label));
-        $trendData[$idx] = $trendLookup[$monthKey] ?? 0;
+    // Map data to the trend periods
+    if ($granularity === 'daily') {
+        foreach ($trendLabels as $idx => $label) {
+            $dayKey = date('Y-m-d', strtotime($label));
+            // Parse label back to get the date
+            $offset = intval($dateRange) - 1 - $idx;
+            $dayKey = date('Y-m-d', strtotime("-$offset days"));
+            $trendData[$idx] = $trendLookup[$dayKey] ?? 0;
+        }
+    } elseif ($granularity === 'weekly') {
+        foreach ($trendLabels as $idx => $label) {
+            $offset = 11 - $idx;
+            $weekDate = strtotime("-$offset weeks");
+            $weekKey = date('Y-W', $weekDate);
+            $trendData[$idx] = $trendLookup[$weekKey] ?? 0;
+        }
+    } else { // monthly
+        foreach ($trendLabels as $idx => $label) {
+            $monthKey = date("Y-m", strtotime("1 " . $label));
+            $trendData[$idx] = $trendLookup[$monthKey] ?? 0;
+        }
     }
 }
 
 // Fetch top performing tenants
-$topTenantsWhere = $tenantStatusWhereParts;
-$topTenantsWhere[] = "plan_price > 0";
-$topTenantsSql = "SELECT tenantID, shopName, SUM(plan_price) AS total_revenue, COUNT(*) AS tenant_count 
-                  FROM owners " . buildWhereSql($topTenantsWhere) . " GROUP BY tenantID, shopName ORDER BY total_revenue DESC LIMIT 10";
+$topTenantsWhere = [];
+if ($tenantFilter !== 'all' && !empty($tenantFilter)) {
+    $topTenantsWhere[] = "tenantID = " . intval($tenantFilter);
+}
+$topTenantsWhere[] = "paymentStatus IN ('Paid', 'Partial')";
+$topTenantsWhere[] = "amountPaid > 0";
+$topTenantsSql = "SELECT p.tenantID, 
+                         (SELECT shopName FROM owners WHERE tenantID = p.tenantID LIMIT 1) AS shopName,
+                         SUM(p.amountPaid) AS total_revenue, 
+                         COUNT(*) AS tenant_count 
+                  FROM payments p " . buildWhereSql($topTenantsWhere) . " GROUP BY p.tenantID ORDER BY total_revenue DESC LIMIT 10";
 $topTenantsResult = $conn->query($topTenantsSql);
 $topTenants = [];
 if ($topTenantsResult) {
@@ -277,7 +292,7 @@ if ($topTenantsResult) {
 }
 
 // Fetch available tenants for dropdown
-$tenantsDropdownSql = "SELECT tenantID, shopName FROM owners WHERE plan_price > 0 ORDER BY shopName ASC";
+$tenantsDropdownSql = "SELECT tenantID, shopName FROM owners ORDER BY shopName ASC";
 $tenantsDropdownResult = $conn->query($tenantsDropdownSql);
 $tenantsList = [];
 if ($tenantsDropdownResult) {
@@ -553,55 +568,69 @@ $dateStart = match ($dateRange) {
 
                 <!-- Filter Controls -->
                 <div class="bg-white border border-slate-200 p-6 rounded-lg shadow-sm">
-                    <form method="GET" class="flex flex-col md:flex-row gap-4 items-end">
-                        <div class="flex-1">
-                            <label class="text-xs font-bold text-slate-600 uppercase tracking-wider block mb-2">Date
-                                Range</label>
-                            <select name="dateRange"
-                                class="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-1 focus:ring-primary">
-                                <option value="7" <?php echo $dateRange === '7' ? 'selected' : ''; ?>>Last 7 Days</option>
-                                <option value="30" <?php echo $dateRange === '30' ? 'selected' : ''; ?>>Last 30 Days
-                                </option>
-                                <option value="90" <?php echo $dateRange === '90' ? 'selected' : ''; ?>>Last 90 Days
-                                </option>
-                                <option value="ytd" <?php echo $dateRange === 'ytd' ? 'selected' : ''; ?>>Year to Date
-                                </option>
-                                <option value="all" <?php echo $dateRange === 'all' ? 'selected' : ''; ?>>All Time
-                                </option>
-                            </select>
-                        </div>
-                        <div class="flex-1">
-                            <label
-                                class="text-xs font-bold text-slate-600 uppercase tracking-wider block mb-2">Tenant</label>
-                            <select name="tenantFilter"
-                                class="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-1 focus:ring-primary">
-                                <option value="all">All Tenants</option>
-                                <?php foreach ($tenantsList as $tenant): ?>
-                                    <option value="<?php echo $tenant['tenantID']; ?>" <?php echo $tenantFilter == $tenant['tenantID'] ? 'selected' : ''; ?>>
-                                        <?php echo htmlspecialchars($tenant['shopName']); ?>
+                    <form method="GET" class="flex flex-col gap-4">
+                        <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                            <div class="flex-1">
+                                <label class="text-xs font-bold text-slate-600 uppercase tracking-wider block mb-2">Date
+                                    Range</label>
+                                <select name="dateRange"
+                                    class="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-1 focus:ring-primary">
+                                    <option value="7" <?php echo $dateRange === '7' ? 'selected' : ''; ?>>Last 7 Days</option>
+                                    <option value="30" <?php echo $dateRange === '30' ? 'selected' : ''; ?>>Last 30 Days
                                     </option>
-                                <?php endforeach; ?>
-                            </select>
+                                    <option value="90" <?php echo $dateRange === '90' ? 'selected' : ''; ?>>Last 90 Days
+                                    </option>
+                                    <option value="ytd" <?php echo $dateRange === 'ytd' ? 'selected' : ''; ?>>Year to Date
+                                    </option>
+                                    <option value="all" <?php echo $dateRange === 'all' ? 'selected' : ''; ?>>All Time
+                                    </option>
+                                </select>
+                            </div>
+                            <div class="flex-1">
+                                <label
+                                    class="text-xs font-bold text-slate-600 uppercase tracking-wider block mb-2">Tenant</label>
+                                <select name="tenantFilter"
+                                    class="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-1 focus:ring-primary">
+                                    <option value="all">All Tenants</option>
+                                    <?php foreach ($tenantsList as $tenant): ?>
+                                        <option value="<?php echo $tenant['tenantID']; ?>" <?php echo $tenantFilter == $tenant['tenantID'] ? 'selected' : ''; ?>>
+                                            <?php echo htmlspecialchars($tenant['shopName']); ?>
+                                        </option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </div>
+                            <div class="flex-1">
+                                <label
+                                    class="text-xs font-bold text-slate-600 uppercase tracking-wider block mb-2">Status</label>
+                                <select name="statusFilter"
+                                    class="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-1 focus:ring-primary">
+                                    <option value="all" <?php echo $statusFilter === 'all' ? 'selected' : ''; ?>>All Status
+                                    </option>
+                                    <option value="active_only" <?php echo $statusFilter === 'active_only' ? 'selected' : ''; ?>>Active Only</option>
+                                    <option value="trial" <?php echo $statusFilter === 'trial' ? 'selected' : ''; ?>>Trial
+                                    </option>
+                                    <option value="suspended" <?php echo $statusFilter === 'suspended' ? 'selected' : ''; ?>>
+                                        Suspended</option>
+                                </select>
+                            </div>
+                            <div class="flex-1">
+                                <label
+                                    class="text-xs font-bold text-slate-600 uppercase tracking-wider block mb-2">Granularity</label>
+                                <select name="granularity"
+                                    class="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-1 focus:ring-primary">
+                                    <option value="daily" <?php echo $granularity === 'daily' ? 'selected' : ''; ?>>Daily</option>
+                                    <option value="weekly" <?php echo $granularity === 'weekly' ? 'selected' : ''; ?>>Weekly</option>
+                                    <option value="monthly" <?php echo $granularity === 'monthly' ? 'selected' : ''; ?>>Monthly</option>
+                                </select>
+                            </div>
                         </div>
-                        <div class="flex-1">
-                            <label
-                                class="text-xs font-bold text-slate-600 uppercase tracking-wider block mb-2">Status</label>
-                            <select name="statusFilter"
-                                class="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-1 focus:ring-primary">
-                                <option value="all" <?php echo $statusFilter === 'all' ? 'selected' : ''; ?>>All Status
-                                </option>
-                                <option value="active_only" <?php echo $statusFilter === 'active_only' ? 'selected' : ''; ?>>Active Only</option>
-                                <option value="trial" <?php echo $statusFilter === 'trial' ? 'selected' : ''; ?>>Trial
-                                </option>
-                                <option value="suspended" <?php echo $statusFilter === 'suspended' ? 'selected' : ''; ?>>
-                                    Suspended</option>
-                            </select>
+                        <div class="flex justify-end">
+                            <button type="submit"
+                                class="px-6 py-2 bg-primary text-white text-xs font-bold rounded-lg hover:bg-primary/90 transition-colors flex items-center gap-2">
+                                <span class="material-symbols-outlined text-sm">filter_list</span>
+                                Apply Filters
+                            </button>
                         </div>
-                        <button type="submit"
-                            class="px-6 py-2 bg-primary text-white text-xs font-bold rounded-lg hover:bg-primary/90 transition-colors flex items-center gap-2">
-                            <span class="material-symbols-outlined text-sm">filter_list</span>
-                            Apply Filters
-                        </button>
                     </form>
                 </div>
 
@@ -675,9 +704,13 @@ $dateStart = match ($dateRange) {
                         class="lg:col-span-2 bg-white border border-slate-200 rounded-lg shadow-sm flex flex-col">
                         <div class="p-6 border-b border-slate-100 flex items-center justify-between">
                             <h4 class="font-bold text-sm">Revenue Trends</h4>
-                            <div class="flex bg-slate-100 p-1 rounded-lg">
-                                <button
-                                    class="px-3 py-1 text-[10px] font-bold rounded shadow-sm bg-white text-primary">Monthly</button>
+                            <div class="flex bg-slate-100 p-1 rounded-lg gap-1">
+                                <a href="?dateRange=<?php echo $dateRange; ?>&tenantFilter=<?php echo $tenantFilter; ?>&statusFilter=<?php echo $statusFilter; ?>&granularity=daily"
+                                    class="px-3 py-1 text-[10px] font-bold rounded <?php echo $granularity === 'daily' ? 'bg-white text-primary shadow-sm' : 'text-slate-600 hover:text-primary'; ?> transition-colors">Daily</a>
+                                <a href="?dateRange=<?php echo $dateRange; ?>&tenantFilter=<?php echo $tenantFilter; ?>&statusFilter=<?php echo $statusFilter; ?>&granularity=weekly"
+                                    class="px-3 py-1 text-[10px] font-bold rounded <?php echo $granularity === 'weekly' ? 'bg-white text-primary shadow-sm' : 'text-slate-600 hover:text-primary'; ?> transition-colors">Weekly</a>
+                                <a href="?dateRange=<?php echo $dateRange; ?>&tenantFilter=<?php echo $tenantFilter; ?>&statusFilter=<?php echo $statusFilter; ?>&granularity=monthly"
+                                    class="px-3 py-1 text-[10px] font-bold rounded <?php echo $granularity === 'monthly' ? 'bg-white text-primary shadow-sm' : 'text-slate-600 hover:text-primary'; ?> transition-colors">Monthly</a>
                             </div>
                         </div>
                         <div class="p-6 flex-1">
@@ -919,8 +952,107 @@ $dateStart = match ($dateRange) {
         function exportReportPDF() {
             const { jsPDF } = window.jspdf;
             const doc = new jsPDF();
-            doc.setFontSize(16);
-            doc.text('Tenant Revenue Report', 14, 15);
+            
+            // Get filter values from URL parameters
+            const params = new URLSearchParams(window.location.search);
+            const dateRange = params.get('dateRange') || '30';
+            const tenantFilter = params.get('tenantFilter') || 'all';
+            const statusFilter = params.get('statusFilter') || 'all';
+            const granularity = params.get('granularity') || 'monthly';
+            
+            // Page settings
+            let yPosition = 15;
+            const pageWidth = doc.internal.pageSize.getWidth();
+            const pageHeight = doc.internal.pageSize.getHeight();
+            const margin = 10;
+            
+            // Title
+            doc.setFontSize(18);
+            doc.setTextColor(185, 28, 28);
+            doc.text('Sales & Financial Report', margin, yPosition);
+            yPosition += 8;
+            
+            // Filter Summary
+            doc.setFontSize(10);
+            doc.setTextColor(100, 100, 100);
+            const dateRangeLabel = getDateRangeLabel(dateRange);
+            const tenantLabel = tenantFilter === 'all' ? 'All Tenants' : getTenantName(tenantFilter);
+            const statusLabel = statusFilter === 'all' ? 'All Status' : statusFilter.replace('_', ' ').toUpperCase();
+            
+            doc.text(`Period: ${dateRangeLabel} | Tenant: ${tenantLabel} | Status: ${statusLabel} | Granularity: ${granularity.toUpperCase()}`, margin, yPosition);
+            yPosition += 6;
+            doc.text(`Generated: ${new Date().toLocaleString()}`, margin, yPosition);
+            yPosition += 10;
+            
+            // KPI Metrics Section
+            doc.setFontSize(12);
+            doc.setTextColor(0, 0, 0);
+            doc.text('Key Performance Indicators', margin, yPosition);
+            yPosition += 8;
+            
+            // Get metric values from the page
+            const metricsData = [
+                ['Metric', 'Current', 'Previous', 'Change'],
+                ['Total Revenue', getMetricValue('revenue'), getMetricValue('revenuePrev'), getMetricValue('revenueChange')],
+                ['Total Transactions', getMetricValue('transactions'), getMetricValue('transactionsPrev'), getMetricValue('transactionsChange')],
+                ['Avg Transaction Value', getMetricValue('avgValue'), getMetricValue('avgValuePrev'), getMetricValue('avgValueChange')]
+            ];
+            
+            doc.autoTable({
+                head: metricsData.slice(0, 1),
+                body: metricsData.slice(1),
+                startY: yPosition,
+                margin: margin,
+                styles: { fontSize: 9, cellPadding: 3 },
+                headStyles: { fillColor: [185, 28, 28], textColor: 255, fontStyle: 'bold' },
+                alternateRowStyles: { fillColor: [245, 245, 245] },
+                columnStyles: {
+                    0: { cellWidth: 50 },
+                    1: { halign: 'right', cellWidth: 40 },
+                    2: { halign: 'right', cellWidth: 40 },
+                    3: { halign: 'right', cellWidth: 40 }
+                }
+            });
+            
+            yPosition = doc.lastAutoTable.finalY + 10;
+            
+            // Check if we need a new page
+            if (yPosition > pageHeight - 40) {
+                doc.addPage();
+                yPosition = 15;
+            }
+            
+            // Revenue Trends Chart (Canvas to Image)
+            doc.setFontSize(12);
+            doc.setTextColor(0, 0, 0);
+            doc.text('Revenue Trends', margin, yPosition);
+            yPosition += 8;
+            
+            const canvas = document.getElementById('revenueChart');
+            if (canvas) {
+                try {
+                    const imgData = canvas.toDataURL('image/png');
+                    const chartWidth = pageWidth - (2 * margin);
+                    const chartHeight = 60;
+                    doc.addImage(imgData, 'PNG', margin, yPosition, chartWidth, chartHeight);
+                    yPosition += chartHeight + 10;
+                } catch(e) {
+                    console.error('Error capturing chart:', e);
+                }
+            }
+            
+            // Check if we need a new page
+            if (yPosition > pageHeight - 60) {
+                doc.addPage();
+                yPosition = 15;
+            }
+            
+            // Tenant Revenue Breakdown Table
+            doc.setFontSize(12);
+            doc.setTextColor(0, 0, 0);
+            doc.text('Tenant Revenue Breakdown', margin, yPosition);
+            yPosition += 8;
+            
             // Prepare table data
             const rows = document.querySelectorAll('.tenant-row');
             let data = [];
@@ -938,25 +1070,93 @@ $dateStart = match ($dateRange) {
                     rank++;
                 }
             });
-            doc.autoTable({
-                head: [["Rank", "Tenant Name", "Total Revenue", "Subscriptions", "Avg Value"]],
-                body: data,
-                startY: 22,
-                styles: { fontSize: 10, cellPadding: 2 },
-                headStyles: { fillColor: [185, 28, 28], textColor: 255, fontStyle: 'bold' },
-                alternateRowStyles: { fillColor: [245, 245, 245] },
-                margin: { left: 10, right: 10 },
-                tableLineColor: [200, 200, 200],
-                tableLineWidth: 0.1,
-                columnStyles: {
-                    0: { halign: 'center', cellWidth: 18 },
-                    1: { cellWidth: 60 },
-                    2: { halign: 'right', cellWidth: 32 },
-                    3: { halign: 'center', cellWidth: 32 },
-                    4: { halign: 'right', cellWidth: 32 }
-                }
-            });
+            
+            if (data.length === 0) {
+                doc.setFontSize(10);
+                doc.setTextColor(150, 150, 150);
+                doc.text('No data available for the selected filters', margin, yPosition);
+            } else {
+                doc.autoTable({
+                    head: [["Rank", "Tenant Name", "Total Revenue", "Subscriptions", "Avg Value"]],
+                    body: data,
+                    startY: yPosition,
+                    margin: margin,
+                    styles: { fontSize: 9, cellPadding: 2 },
+                    headStyles: { fillColor: [185, 28, 28], textColor: 255, fontStyle: 'bold' },
+                    alternateRowStyles: { fillColor: [245, 245, 245] },
+                    columnStyles: {
+                        0: { halign: 'center', cellWidth: 18 },
+                        1: { cellWidth: 60 },
+                        2: { halign: 'right', cellWidth: 32 },
+                        3: { halign: 'center', cellWidth: 32 },
+                        4: { halign: 'right', cellWidth: 32 }
+                    }
+                });
+            }
+            
+            // Footer
+            const totalPages = doc.getNumberOfPages();
+            for (let i = 1; i <= totalPages; i++) {
+                doc.setPage(i);
+                doc.setFontSize(8);
+                doc.setTextColor(150, 150, 150);
+                doc.text(`Page ${i} of ${totalPages}`, pageWidth - margin - 20, pageHeight - 5);
+                doc.text('RapidRepair Sales Report', margin, pageHeight - 5);
+            }
+            
             doc.save('sales-report-' + new Date().toISOString().split('T')[0] + '.pdf');
+        }
+        
+        // Helper function to get date range label
+        function getDateRangeLabel(dateRange) {
+            const labels = {
+                '7': 'Last 7 Days',
+                '30': 'Last 30 Days',
+                '90': 'Last 90 Days',
+                'ytd': 'Year to Date',
+                'all': 'All Time'
+            };
+            return labels[dateRange] || 'Last 30 Days';
+        }
+        
+        // Helper function to get tenant name
+        function getTenantName(tenantID) {
+            const select = document.querySelector('select[name="tenantFilter"]');
+            if (select) {
+                const option = select.querySelector(`option[value="${tenantID}"]`);
+                return option ? option.textContent : 'Unknown';
+            }
+            return 'Unknown';
+        }
+        
+        // Helper function to extract metric values from page
+        function getMetricValue(metricType) {
+            const metricsMap = {
+                'revenue': 0,
+                'revenuePrev': 1,
+                'revenueChange': 2,
+                'transactions': 3,
+                'transactionsPrev': 4,
+                'transactionsChange': 5,
+                'avgValue': 6,
+                'avgValuePrev': 7,
+                'avgValueChange': 8
+            };
+            
+            const cards = document.querySelectorAll('.bg-white.border.border-slate-200.p-6.rounded-lg.shadow-sm');
+            let valueIndex = metricsMap[metricType];
+            let cardIndex = Math.floor(valueIndex / 3);
+            let valueType = valueIndex % 3;
+            
+            if (cards.length > cardIndex) {
+                const card = cards[cardIndex];
+                const heading = card.querySelector('h3');
+                const description = card.querySelector('p:last-of-type');
+                
+                if (valueType === 0 && heading) return heading.textContent;
+                if (valueType === 2 && description) return description.textContent;
+            }
+            return '—';
         }
 
     </script>
