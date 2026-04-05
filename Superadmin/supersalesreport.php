@@ -291,6 +291,48 @@ if ($topTenantsResult) {
     }
 }
 
+// Fetch most availed services per shop
+$mostAvailedSql = "SELECT 
+                    p.tenantID,
+                    (SELECT shopName FROM owners WHERE tenantID = p.tenantID LIMIT 1) AS shopName,
+                    s.service_id,
+                    s.service_name,
+                    COUNT(*) AS serviceCount,
+                    SUM(p.amountPaid) AS serviceRevenue
+                FROM payments p
+                INNER JOIN appointments a ON p.appointment_id = a.appointment_id
+                INNER JOIN appointment_services ast ON a.appointment_id = ast.appointment_id
+                INNER JOIN services s ON ast.service_id = s.service_id
+                WHERE p.paymentStatus IN ('Paid', 'Partial') AND p.amountPaid > 0";
+
+$mostAvailedWhere = [];
+if ($tenantFilter !== 'all' && !empty($tenantFilter)) {
+    $mostAvailedWhere[] = "p.tenantID = " . intval($tenantFilter);
+}
+if (count($mostAvailedWhere) > 0) {
+    $mostAvailedSql .= " AND " . implode(" AND ", $mostAvailedWhere);
+}
+
+$mostAvailedSql .= " GROUP BY p.tenantID, s.service_id, s.service_name 
+                ORDER BY p.tenantID, serviceCount DESC";
+
+$mostAvailedResult = $conn->query($mostAvailedSql);
+$mostAvailedServicesByShop = [];
+if ($mostAvailedResult) {
+    while ($row = $mostAvailedResult->fetch_assoc()) {
+        $tenantID = $row['tenantID'];
+        if (!isset($mostAvailedServicesByShop[$tenantID])) {
+            $mostAvailedServicesByShop[$tenantID] = [
+                'shopName' => $row['shopName'],
+                'services' => []
+            ];
+        }
+        if (count($mostAvailedServicesByShop[$tenantID]['services']) < 5) {
+            $mostAvailedServicesByShop[$tenantID]['services'][] = $row;
+        }
+    }
+}
+
 // Fetch available tenants for dropdown
 $tenantsDropdownSql = "SELECT tenantID, shopName FROM owners ORDER BY shopName ASC";
 $tenantsDropdownResult = $conn->query($tenantsDropdownSql);
@@ -754,6 +796,47 @@ $dateStart = match ($dateRange) {
                         </div>
                     </div>
                 </div>
+
+                <!-- New Section: Most Availed Services -->
+                <div class="bg-white border border-slate-200 rounded-lg shadow-sm">
+                    <div class="p-6 border-b border-slate-100">
+                        <h4 class="font-bold text-sm">Most Availed Services per Shop</h4>
+                        <p class="text-[11px] text-slate-500 mt-1">Top 5 services used by each tenant</p>
+                    </div>
+                    <div class="p-6">
+                        <?php if (count($mostAvailedServicesByShop) === 0): ?>
+                            <p class="text-xs text-slate-400 text-center py-4">No service data available</p>
+                        <?php else: ?>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                <?php foreach ($mostAvailedServicesByShop as $tenantID => $shopData): ?>
+                                    <div class="border border-slate-200 rounded-lg p-4">
+                                        <h5 class="font-bold text-sm text-slate-900 mb-4"><?php echo htmlspecialchars($shopData['shopName']); ?></h5>
+                                        <div class="space-y-3">
+                                            <?php if (empty($shopData['services'])): ?>
+                                                <p class="text-xs text-slate-400">No services</p>
+                                            <?php else: ?>
+                                                <?php foreach ($shopData['services'] as $service): ?>
+                                                    <div class="flex items-center justify-between border-b border-slate-100 pb-3 last:border-b-0">
+                                                        <div class="flex-1">
+                                                            <p class="text-xs font-semibold text-slate-900"><?php echo htmlspecialchars($service['service_name']); ?></p>
+                                                            <p class="text-[10px] text-slate-500 mt-1">
+                                                                <?php echo $service['serviceCount']; ?> times
+                                                            </p>
+                                                        </div>
+                                                        <div class="text-right">
+                                                            <p class="text-xs font-bold text-primary"><?php echo formatCurrency($service['serviceRevenue']); ?></p>
+                                                        </div>
+                                                    </div>
+                                                <?php endforeach; ?>
+                                            <?php endif; ?>
+                                        </div>
+                                    </div>
+                                <?php endforeach; ?>
+                            </div>
+                        <?php endif; ?>
+                    </div>
+                </div>
+
                 <!-- Bottom Section: Transaction History -->
                 <div class="bg-white border border-slate-200 rounded-lg shadow-sm">
                     <div
