@@ -1,4 +1,12 @@
 <?php
+/**
+ * Appointment CRUD API
+ * Handles create, read, update, delete operations for appointments and services
+ *
+ * Actions: create, list, update, delete
+ * Database Tables: appointments, appointment_services, payments
+ */
+
 header('Content-Type: application/json; charset=utf-8');
 header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
@@ -9,21 +17,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
   exit;
 }
 
-require_once 'config.php';
+require_once __DIR__ . '/../db.php';
 
-$conn = new mysqli(
-  'rapidrepairs.mysql.database.azure.com',
-  'rradmin1',
-  'RapidRepair@2024',
-  'rapidrepairs',
-  3306
-);
-
-if ($conn->connect_error) {
+if (!$conn || $conn->connect_error) {
   http_response_code(500);
   echo json_encode([
     'status' => 'error',
-    'message' => 'Database connection failed: ' . $conn->connect_error
+    'message' => 'Database connection failed'
   ]);
   exit;
 }
@@ -36,9 +36,11 @@ function respond($status, $message, $data = null, $httpCode = 200) {
     'status' => $status,
     'message' => $message
   ];
+
   if ($data !== null) {
     $response['data'] = $data;
   }
+
   echo json_encode($response);
   exit;
 }
@@ -53,10 +55,16 @@ function toDecimal($value) {
   return is_finite($num) && $num >= 0 ? $num : 0;
 }
 
+/**
+ * Read JSON body first so action works for application/json requests
+ */
 $rawBody = file_get_contents('php://input');
 $jsonInput = json_decode($rawBody, true);
 $input = is_array($jsonInput) ? $jsonInput : $_POST;
 
+/**
+ * Get action from GET first, then JSON / POST body
+ */
 $action = isset($_GET['action']) ? strtolower(trim($_GET['action'])) :
           (isset($input['action']) ? strtolower(trim($input['action'])) : null);
 
@@ -64,6 +72,9 @@ if (!$action) {
   respond('error', 'Missing action parameter', null, 400);
 }
 
+/**
+ * CREATE appointment
+ */
 if ($action === 'create') {
   $tenantID = toPositiveInt($input['tenantID'] ?? null);
   $user_id = toPositiveInt($input['user_id'] ?? null);
@@ -77,7 +88,12 @@ if ($action === 'create') {
   $total_amount = toDecimal($input['total_amount'] ?? 0);
 
   if (!$tenantID || !$user_id || !$vehicle_id || !$appointment_date || !$appointment_time) {
-    respond('error', 'Missing required fields: tenantID, user_id, vehicle_id, appointment_date, appointment_time', null, 400);
+    respond(
+      'error',
+      'Missing required fields: tenantID, user_id, vehicle_id, appointment_date, appointment_time',
+      null,
+      400
+    );
   }
 
   if (empty($service_ids)) {
@@ -100,6 +116,8 @@ if ($action === 'create') {
     }
   }
 
+  $normalizedServiceIds = array_values(array_unique($normalizedServiceIds));
+
   if (empty($normalizedServiceIds)) {
     respond('error', 'Invalid service_ids', null, 400);
   }
@@ -109,11 +127,24 @@ if ($action === 'create') {
   try {
     $status = 'Pending';
 
-    $query = "INSERT INTO appointments
-      (tenantID, user_id, vehicle_id, appointment_date, appointment_time, status, notes, total_amount, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())";
+    $appointmentQuery = "
+      INSERT INTO appointments
+      (
+        tenantID,
+        user_id,
+        vehicle_id,
+        appointment_date,
+        appointment_time,
+        status,
+        notes,
+        total_amount,
+        created_at,
+        updated_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+    ";
 
-    $stmt = $conn->prepare($query);
+    $stmt = $conn->prepare($appointmentQuery);
     if (!$stmt) {
       throw new Exception('Prepare failed: ' . $conn->error);
     }
@@ -137,8 +168,16 @@ if ($action === 'create') {
     $appointment_id = $conn->insert_id;
     $stmt->close();
 
+    /**
+     * Load selected services
+     * Assumes services table uses service_id
+     */
     $placeholders = implode(',', array_fill(0, count($normalizedServiceIds), '?'));
-    $serviceQuery = "SELECT service_id, price FROM services WHERE service_id IN ($placeholders) AND tenantID = ?";
+    $serviceQuery = "
+      SELECT service_id, price
+      FROM services
+      WHERE service_id IN ($placeholders) AND tenantID = ?
+    ";
 
     $stmt = $conn->prepare($serviceQuery);
     if (!$stmt) {
@@ -155,18 +194,33 @@ if ($action === 'create') {
 
     $result = $stmt->get_result();
     $services = [];
+
     while ($row = $result->fetch_assoc()) {
       $services[(int)$row['service_id']] = (float)$row['price'];
     }
+
     $stmt->close();
 
     if (count($services) !== count($normalizedServiceIds)) {
       throw new Exception('One or more selected services were not found for this tenant.');
     }
 
-    $serviceInsertQuery = "INSERT INTO appointment_services
-      (appointment_id, tenantID, service_id, service_price, duration_minutes, notes, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, NOW())";
+    /**
+     * Insert appointment_services
+     */
+    $serviceInsertQuery = "
+      INSERT INTO appointment_services
+      (
+        appointment_id,
+        tenantID,
+        service_id,
+        service_price,
+        duration_minutes,
+        notes,
+        created_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, NOW())
+    ";
 
     $stmt = $conn->prepare($serviceInsertQuery);
     if (!$stmt) {
@@ -193,11 +247,29 @@ if ($action === 'create') {
         throw new Exception('Service insert failed: ' . $stmt->error);
       }
     }
+
     $stmt->close();
 
-    $paymentQuery = "INSERT INTO payments
-      (tenantID, user_id, appointment_id, paymentAmount, amountPaid, balance, paymentMethod, paymentStatus, referenceNumber, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())";
+    /**
+     * Insert payment record
+     */
+    $paymentQuery = "
+      INSERT INTO payments
+      (
+        tenantID,
+        user_id,
+        appointment_id,
+        paymentAmount,
+        amountPaid,
+        balance,
+        paymentMethod,
+        paymentStatus,
+        referenceNumber,
+        created_at,
+        updated_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+    ";
 
     $stmt = $conn->prepare($paymentQuery);
     if (!$stmt) {
@@ -226,6 +298,7 @@ if ($action === 'create') {
     if (!$stmt->execute()) {
       throw new Exception('Payment insert failed: ' . $stmt->error);
     }
+
     $stmt->close();
 
     $conn->commit();
@@ -242,6 +315,9 @@ if ($action === 'create') {
   }
 }
 
+/**
+ * LIST appointments
+ */
 else if ($action === 'list') {
   $tenantID = toPositiveInt($_GET['tenantID'] ?? $_POST['tenantID'] ?? null);
   $user_id = toPositiveInt($_GET['user_id'] ?? $_POST['user_id'] ?? null);
@@ -253,11 +329,23 @@ else if ($action === 'list') {
   }
 
   if ($user_id) {
-    $query = "SELECT * FROM appointments WHERE tenantID = ? AND user_id = ? ORDER BY created_at DESC LIMIT ? OFFSET ?";
+    $query = "
+      SELECT *
+      FROM appointments
+      WHERE tenantID = ? AND user_id = ?
+      ORDER BY created_at DESC
+      LIMIT ? OFFSET ?
+    ";
     $stmt = $conn->prepare($query);
     $stmt->bind_param('iiii', $tenantID, $user_id, $limit, $offset);
   } else {
-    $query = "SELECT * FROM appointments WHERE tenantID = ? ORDER BY created_at DESC LIMIT ? OFFSET ?";
+    $query = "
+      SELECT *
+      FROM appointments
+      WHERE tenantID = ?
+      ORDER BY created_at DESC
+      LIMIT ? OFFSET ?
+    ";
     $stmt = $conn->prepare($query);
     $stmt->bind_param('iii', $tenantID, $limit, $offset);
   }
@@ -268,14 +356,19 @@ else if ($action === 'list') {
 
   $result = $stmt->get_result();
   $appointments = [];
+
   while ($row = $result->fetch_assoc()) {
     $appointments[] = $row;
   }
+
   $stmt->close();
 
   respond('success', 'Appointments retrieved', $appointments);
 }
 
+/**
+ * UPDATE appointment status
+ */
 else if ($action === 'update') {
   $appointment_id = toPositiveInt($input['appointment_id'] ?? null);
   $tenantID = toPositiveInt($input['tenantID'] ?? null);
@@ -287,16 +380,27 @@ else if ($action === 'update') {
 
   $valid_statuses = ['Pending', 'Confirmed', 'In Progress', 'Completed', 'Cancelled'];
   if ($status && !in_array($status, $valid_statuses, true)) {
-    respond('error', 'Invalid status. Must be one of: ' . implode(', ', $valid_statuses), null, 400);
+    respond(
+      'error',
+      'Invalid status. Must be one of: ' . implode(', ', $valid_statuses),
+      null,
+      400
+    );
   }
 
-  $query = "UPDATE appointments SET status = ?, updated_at = NOW() WHERE appointment_id = ? AND tenantID = ?";
+  $query = "
+    UPDATE appointments
+    SET status = ?, updated_at = NOW()
+    WHERE appointment_id = ? AND tenantID = ?
+  ";
+
   $stmt = $conn->prepare($query);
   if (!$stmt) {
     respond('error', 'Prepare failed: ' . $conn->error, null, 500);
   }
 
   $stmt->bind_param('sii', $status, $appointment_id, $tenantID);
+
   if (!$stmt->execute()) {
     respond('error', 'Update failed: ' . $stmt->error, null, 500);
   }
@@ -306,6 +410,9 @@ else if ($action === 'update') {
   respond('success', 'Appointment updated', ['appointment_id' => $appointment_id]);
 }
 
+/**
+ * DELETE appointment
+ */
 else if ($action === 'delete') {
   $appointment_id = toPositiveInt($_GET['appointment_id'] ?? $_POST['appointment_id'] ?? null);
   $tenantID = toPositiveInt($_GET['tenantID'] ?? $_POST['tenantID'] ?? null);
@@ -329,12 +436,15 @@ else if ($action === 'delete') {
 
     $stmt = $conn->prepare("DELETE FROM appointments WHERE appointment_id = ? AND tenantID = ?");
     $stmt->bind_param('ii', $appointment_id, $tenantID);
+
     if (!$stmt->execute()) {
       throw new Exception('Delete failed: ' . $stmt->error);
     }
+
     $stmt->close();
 
     $conn->commit();
+
     respond('success', 'Appointment deleted', ['appointment_id' => $appointment_id]);
   } catch (Exception $e) {
     $conn->rollback();
@@ -342,6 +452,9 @@ else if ($action === 'delete') {
   }
 }
 
+/**
+ * INVALID action
+ */
 else {
   respond('error', 'Invalid action: ' . htmlspecialchars($action), null, 400);
 }
