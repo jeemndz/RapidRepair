@@ -57,21 +57,41 @@ function toDecimal($value) {
   return is_finite($num) && $num > 0 ? $num : 0;
 }
 
-// Get action parameter
-$action = isset($_GET['action']) ? strtolower(trim($_GET['action'])) : 
-          (isset($_POST['action']) ? strtolower(trim($_POST['action'])) : null);
+// Parse JSON body once so action can be read from JSON payloads too.
+$rawBody = json_decode(file_get_contents('php://input'), true);
+$bodyInput = is_array($rawBody) ? $rawBody : [];
+
+// Get action parameter from query, form, or JSON body.
+$action = isset($_GET['action']) ? strtolower(trim((string)$_GET['action'])) : null;
+if (!$action && isset($_POST['action'])) {
+  $action = strtolower(trim((string)$_POST['action']));
+}
+if (!$action && isset($bodyInput['action'])) {
+  $action = strtolower(trim((string)$bodyInput['action']));
+}
+
+// Fallback: if tenant filter is present but action is omitted, assume list.
+if (!$action && (
+  isset($_GET['tenantID']) || isset($_GET['tenantid']) || isset($_GET['tenant_id']) ||
+  isset($_POST['tenantID']) || isset($_POST['tenantid']) || isset($_POST['tenant_id']) ||
+  isset($bodyInput['tenantID']) || isset($bodyInput['tenantid']) || isset($bodyInput['tenant_id'])
+)) {
+  $action = 'list';
+}
 
 if (!$action) {
-  respond('error', 'Missing action parameter', null, 400);
+  respond('error', 'Missing action parameter', [
+    'hint' => 'Use action=create|list|update|delete or provide tenantID/tenantid/tenant_id for list fallback'
+  ], 400);
 }
 
 // Action: CREATE (Create new appointment with services)
 if ($action === 'create') {
   // Get POST data
-  $input = json_decode(file_get_contents('php://input'), true) ?? $_POST;
+  $input = !empty($bodyInput) ? $bodyInput : $_POST;
 
   // Validate required fields
-  $tenantID = toPositiveInt($input['tenantID'] ?? null);
+  $tenantID = toPositiveInt($input['tenantID'] ?? $input['tenantid'] ?? $input['tenant_id'] ?? null);
   $user_id = toPositiveInt($input['user_id'] ?? null);
   $vehicle_id = toPositiveInt($input['vehicle_id'] ?? null);
   $appointment_date = isset($input['appointment_date']) ? trim($input['appointment_date']) : null;
@@ -112,7 +132,7 @@ if ($action === 'create') {
     }
 
     $status = 'Pending';
-    $stmt->bind_param('iiisssd', $tenantID, $user_id, $vehicle_id, $appointment_date, $appointment_time, $status, $notes, $total_amount);
+    $stmt->bind_param('iiissssd', $tenantID, $user_id, $vehicle_id, $appointment_date, $appointment_time, $status, $notes, $total_amount);
     
     if (!$stmt->execute()) {
       throw new Exception('Execute failed: ' . $stmt->error);
@@ -179,7 +199,7 @@ if ($action === 'create') {
     $amountPaid = 0;
     $balance = $total_amount;
 
-    $stmt->bind_param('iiiddsss', $tenantID, $user_id, $appointment_id, $total_amount, $amountPaid, $balance, $paymentMethod, $paymentStatus, $referenceNumber);
+    $stmt->bind_param('iiidddsss', $tenantID, $user_id, $appointment_id, $total_amount, $amountPaid, $balance, $paymentMethod, $paymentStatus, $referenceNumber);
     if (!$stmt->execute()) {
       throw new Exception('Payment insert failed: ' . $stmt->error);
     }
@@ -204,7 +224,11 @@ if ($action === 'create') {
 
 // Action: LIST (Get appointments for a user or tenant)
 else if ($action === 'list') {
-  $tenantID = toPositiveInt($_GET['tenantID'] ?? $_POST['tenantID'] ?? null);
+  $tenantID = toPositiveInt(
+    $_GET['tenantID'] ?? $_GET['tenantid'] ?? $_GET['tenant_id'] ??
+    $_POST['tenantID'] ?? $_POST['tenantid'] ?? $_POST['tenant_id'] ??
+    $bodyInput['tenantID'] ?? $bodyInput['tenantid'] ?? $bodyInput['tenant_id'] ?? null
+  );
   $user_id = toPositiveInt($_GET['user_id'] ?? $_POST['user_id'] ?? null);
   $limit = min((int)($_GET['limit'] ?? $_POST['limit'] ?? 50), 100);
   $offset = (int)($_GET['offset'] ?? $_POST['offset'] ?? 0);
@@ -240,10 +264,10 @@ else if ($action === 'list') {
 
 // Action: UPDATE (Update appointment status or details)
 else if ($action === 'update') {
-  $input = json_decode(file_get_contents('php://input'), true) ?? $_POST;
+  $input = !empty($bodyInput) ? $bodyInput : $_POST;
 
   $appointment_id = toPositiveInt($input['appointment_id'] ?? null);
-  $tenantID = toPositiveInt($input['tenantID'] ?? null);
+  $tenantID = toPositiveInt($input['tenantID'] ?? $input['tenantid'] ?? $input['tenant_id'] ?? null);
   $status = isset($input['status']) ? trim($input['status']) : null;
 
   if (!$appointment_id || !$tenantID) {
@@ -275,7 +299,11 @@ else if ($action === 'update') {
 // Action: DELETE
 else if ($action === 'delete') {
   $appointment_id = toPositiveInt($_GET['appointment_id'] ?? $_POST['appointment_id'] ?? null);
-  $tenantID = toPositiveInt($_GET['tenantID'] ?? $_POST['tenantID'] ?? null);
+  $tenantID = toPositiveInt(
+    $_GET['tenantID'] ?? $_GET['tenantid'] ?? $_GET['tenant_id'] ??
+    $_POST['tenantID'] ?? $_POST['tenantid'] ?? $_POST['tenant_id'] ??
+    $bodyInput['tenantID'] ?? $bodyInput['tenantid'] ?? $bodyInput['tenant_id'] ?? null
+  );
 
   if (!$appointment_id || !$tenantID) {
     respond('error', 'Missing appointment_id or tenantID', null, 400);
