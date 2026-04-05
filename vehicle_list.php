@@ -3,6 +3,7 @@ header('Content-Type: application/json');
 header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
 header('Access-Control-Allow-Headers: Content-Type, Authorization');
+include "db.php"; // your MySQL connection
 
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     http_response_code(200);
@@ -50,16 +51,16 @@ $vehicles = [];
 if ($tenantID > 0) {
     $sql = "SELECT vehicle_id, tenantID, user_id, brand, model, year_model, plate_number, color, status, created_at, updated_at FROM vehicleinformation WHERE tenantID = ? AND status = 'Active' ORDER BY brand ASC, model ASC";
     $stmt = $conn->prepare($sql);
-    
+
     if (!$stmt) {
         http_response_code(500);
         echo json_encode(['status' => 'error', 'message' => 'Unable to prepare statement: ' . $conn->error]);
         $conn->close();
         exit;
     }
-    
+
     $stmt->bind_param('i', $tenantID);
-    
+
     if (!$stmt->execute()) {
         http_response_code(500);
         echo json_encode(['status' => 'error', 'message' => 'Query execution failed: ' . $stmt->error]);
@@ -67,7 +68,7 @@ if ($tenantID > 0) {
         $conn->close();
         exit;
     }
-    
+
     $result = $stmt->get_result();
     while ($row = $result->fetch_assoc()) {
         $vehicles[] = $row;
@@ -79,14 +80,14 @@ if ($tenantID > 0) {
 if (($tenantID <= 0 || empty($vehicles)) && $includeAllOnEmpty) {
     $sql = "SELECT vehicle_id, tenantID, user_id, brand, model, year_model, plate_number, color, status, created_at, updated_at FROM vehicleinformation WHERE status = 'Active' ORDER BY brand ASC, model ASC";
     $stmt = $conn->prepare($sql);
-    
+
     if (!$stmt) {
         http_response_code(500);
         echo json_encode(['status' => 'error', 'message' => 'Unable to prepare fallback statement: ' . $conn->error]);
         $conn->close();
         exit;
     }
-    
+
     if (!$stmt->execute()) {
         http_response_code(500);
         echo json_encode(['status' => 'error', 'message' => 'Fallback query execution failed: ' . $stmt->error]);
@@ -94,7 +95,7 @@ if (($tenantID <= 0 || empty($vehicles)) && $includeAllOnEmpty) {
         $conn->close();
         exit;
     }
-    
+
     $result = $stmt->get_result();
     $vehicles = [];
     while ($row = $result->fetch_assoc()) {
