@@ -45,8 +45,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && empty($_GET)) {
     ]);
 }
 
-// Get parameters
-$tenantID = isset($_GET['tenantID']) ? (int)$_GET['tenantID'] : (isset($_POST['tenantID']) ? (int)$_POST['tenantID'] : 0);
+// Get parameters (supports aliases because some gateways block specific query keys)
+$tenantID = 0;
+if (isset($_GET['tenantID'])) {
+    $tenantID = (int)$_GET['tenantID'];
+} elseif (isset($_GET['tenantid'])) {
+    $tenantID = (int)$_GET['tenantid'];
+} elseif (isset($_GET['tenant_id'])) {
+    $tenantID = (int)$_GET['tenant_id'];
+} elseif (isset($_POST['tenantID'])) {
+    $tenantID = (int)$_POST['tenantID'];
+} elseif (isset($_POST['tenantid'])) {
+    $tenantID = (int)$_POST['tenantid'];
+} elseif (isset($_POST['tenant_id'])) {
+    $tenantID = (int)$_POST['tenant_id'];
+}
+
 $user_id = isset($_GET['user_id']) ? (int)$_GET['user_id'] : (isset($_POST['user_id']) ? (int)$_POST['user_id'] : 0);
 $includeAllOnEmpty = isset($_GET['includeAllOnEmpty']) ? $_GET['includeAllOnEmpty'] === '1' : false;
 
