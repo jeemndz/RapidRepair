@@ -1,6 +1,7 @@
 <?php
 session_start();
 require_once __DIR__ . "/../db.php";
+include __DIR__ . '/../session_security.php';
 
 if (!isset($_SESSION['tenantID'])) {
     header("Location: tenantlogin.php");
@@ -8,6 +9,51 @@ if (!isset($_SESSION['tenantID'])) {
 }
 
 $tenantID = (int) $_SESSION['tenantID'];
+
+$loginSlug = '';
+if (isset($_SESSION['login_slug']) && trim((string) $_SESSION['login_slug']) !== '') {
+    $loginSlug = trim((string) $_SESSION['login_slug']);
+} elseif (isset($_GET['shop']) && trim((string) $_GET['shop']) !== '') {
+    $loginSlug = trim((string) $_GET['shop']);
+    $_SESSION['login_slug'] = $loginSlug;
+}
+
+if ($loginSlug === '') {
+    session_unset();
+    session_destroy();
+    header('Location: tenantlogin.php');
+    exit;
+}
+
+$ownerStmt = mysqli_prepare($conn, 'SELECT shopName FROM owners WHERE tenantID = ? AND login_slug = ? LIMIT 1');
+if (!$ownerStmt) {
+    die('Unable to validate tenant.');
+}
+mysqli_stmt_bind_param($ownerStmt, 'is', $tenantID, $loginSlug);
+mysqli_stmt_execute($ownerStmt);
+$ownerResult = mysqli_stmt_get_result($ownerStmt);
+$owner = $ownerResult ? mysqli_fetch_assoc($ownerResult) : null;
+mysqli_stmt_close($ownerStmt);
+
+if (!$owner) {
+    session_unset();
+    session_destroy();
+    header('Location: tenantlogin.php');
+    exit;
+}
+
+$_SESSION['login_slug'] = $loginSlug;
+$shopName = !empty($owner['shopName']) ? $owner['shopName'] : 'AutoFix Pro';
+$shopQuery = urlencode($loginSlug);
+$currentScript = basename($_SERVER['PHP_SELF']);
+if ($_SERVER['REQUEST_METHOD'] === 'GET' && (!isset($_GET['shop']) || trim((string) $_GET['shop']) !== $loginSlug)) {
+    $redirectParams = $_GET;
+    $redirectParams['shop'] = $loginSlug;
+    header('Location: ' . $currentScript . '?' . http_build_query($redirectParams));
+    exit;
+}
+
+$targetUserId = isset($_GET['user_id']) ? max(0, (int) $_GET['user_id']) : 0;
 $currentUserId = isset($_SESSION['user_id']) ? (int) $_SESSION['user_id'] : $tenantID;
 
 $fuelOptions = ['Gasoline', 'Diesel', 'Electric', 'Hybrid'];
@@ -64,11 +110,15 @@ if ($filterBrand !== '' && !in_array($filterBrand, $brandList, true)) {
 }
 
 $searchTerm = isset($_GET['q']) ? trim((string) $_GET['q']) : '';
+$customerUserId = isset($_GET['user_id']) ? max(0, (int) $_GET['user_id']) : 0;
 $page = isset($_GET['page']) ? max(1, (int) $_GET['page']) : 1;
+$viewVehicleId = isset($_GET['view_vehicle']) ? max(0, (int) $_GET['view_vehicle']) : 0;
+$editVehicleId = isset($_GET['edit_vehicle']) ? max(0, (int) $_GET['edit_vehicle']) : 0;
 $perPage = 10;
 $offset = ($page - 1) * $perPage;
 
 $formError = '';
+$actionMessage = '';
 $formData = [
     'brand' => '',
     'model' => '',
@@ -83,12 +133,51 @@ $formData = [
     'status' => 'Active',
 ];
 
+$editFormError = '';
+$editFormData = [
+    'user_id' => 0,
+    'brand' => '',
+    'model' => '',
+    'year_model' => '',
+    'fuel_type' => 'Gasoline',
+    'transmission_type' => 'Automatic',
+    'engine_number' => '',
+    'mileage_km' => '',
+    'vin_number' => '',
+    'plate_number' => '',
+    'color' => '',
+    'status' => 'Active',
+];
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_vehicle_submit'])) {
+    $postedUserId = isset($_POST['user_id']) ? max(0, (int) $_POST['user_id']) : 0;
+    $recordUserId = $postedUserId > 0 ? $postedUserId : $targetUserId;
+    $shouldValidateRecordUser = $recordUserId > 0;
+
     foreach ($formData as $key => $value) {
         $formData[$key] = isset($_POST[$key]) ? trim((string) $_POST[$key]) : $value;
     }
 
-    if ($formData['brand'] === '' || $formData['model'] === '') {
+    if ($recordUserId <= 0) {
+        $formError = 'Please select a customer before registering a vehicle.';
+    }
+
+    if ($formError === '' && $shouldValidateRecordUser) {
+        $userVerifyStmt = mysqli_prepare($conn, 'SELECT user_id FROM users WHERE user_id = ? AND tenantID = ? LIMIT 1');
+        if ($userVerifyStmt) {
+            mysqli_stmt_bind_param($userVerifyStmt, 'ii', $recordUserId, $tenantID);
+            mysqli_stmt_execute($userVerifyStmt);
+            $userVerifyResult = mysqli_stmt_get_result($userVerifyStmt);
+            if (!$userVerifyResult || !mysqli_fetch_assoc($userVerifyResult)) {
+                $formError = 'Selected customer account was not found for this tenant.';
+            }
+            mysqli_stmt_close($userVerifyStmt);
+        } else {
+            $formError = 'Unable to validate the selected customer.';
+        }
+    }
+
+    if ($formError === '' && ($formData['brand'] === '' || $formData['model'] === '')) {
         $formError = 'Brand and model are required.';
     } elseif (!in_array($formData['fuel_type'], $fuelOptions, true)) {
         $formError = 'Invalid fuel type selected.';
@@ -138,7 +227,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_vehicle_submit'])
                 $insertStmt,
                 'iississsissss',
                 $tenantID,
-                $currentUserId,
+                $recordUserId,
                 $brand,
                 $model,
                 $yearModel,
@@ -154,7 +243,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_vehicle_submit'])
 
             if (mysqli_stmt_execute($insertStmt)) {
                 mysqli_stmt_close($insertStmt);
-                header('Location: vehicleadmin.php?vehicle_saved=1');
+                $redirectParams = [
+                    'shop' => $loginSlug,
+                    'vehicle_saved' => 1,
+                    'page' => $page,
+                    'q' => $searchTerm,
+                    'filter_status' => $filterStatus,
+                    'filter_brand' => $filterBrand,
+                ];
+                if ($customerUserId > 0) {
+                    $redirectParams['user_id'] = $customerUserId;
+                }
+                header('Location: vehicleadmin.php?' . http_build_query(array_filter($redirectParams, static fn ($value) => $value !== null && $value !== '')));
                 exit;
             }
 
@@ -162,6 +262,135 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_vehicle_submit'])
             mysqli_stmt_close($insertStmt);
         } else {
             $formError = 'Unable to prepare vehicle insert query.';
+        }
+    }
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_vehicle_submit'])) {
+    $editVehicleId = isset($_POST['edit_vehicle_id']) ? max(0, (int) $_POST['edit_vehicle_id']) : 0;
+    $editFormData['user_id'] = isset($_POST['edit_user_id']) ? max(0, (int) $_POST['edit_user_id']) : 0;
+    $editFormData['brand'] = isset($_POST['edit_brand']) ? trim((string) $_POST['edit_brand']) : '';
+    $editFormData['model'] = isset($_POST['edit_model']) ? trim((string) $_POST['edit_model']) : '';
+    $editFormData['year_model'] = isset($_POST['edit_year_model']) ? trim((string) $_POST['edit_year_model']) : '';
+    $editFormData['fuel_type'] = isset($_POST['edit_fuel_type']) ? trim((string) $_POST['edit_fuel_type']) : '';
+    $editFormData['transmission_type'] = isset($_POST['edit_transmission_type']) ? trim((string) $_POST['edit_transmission_type']) : '';
+    $editFormData['engine_number'] = isset($_POST['edit_engine_number']) ? trim((string) $_POST['edit_engine_number']) : '';
+    $editFormData['mileage_km'] = isset($_POST['edit_mileage_km']) ? trim((string) $_POST['edit_mileage_km']) : '';
+    $editFormData['vin_number'] = isset($_POST['edit_vin_number']) ? trim((string) $_POST['edit_vin_number']) : '';
+    $editFormData['plate_number'] = isset($_POST['edit_plate_number']) ? trim((string) $_POST['edit_plate_number']) : '';
+    $editFormData['color'] = isset($_POST['edit_color']) ? trim((string) $_POST['edit_color']) : '';
+    $editFormData['status'] = isset($_POST['edit_status']) ? trim((string) $_POST['edit_status']) : '';
+
+    if ($editVehicleId <= 0) {
+        $editFormError = 'Invalid vehicle record.';
+    } elseif ($editFormData['user_id'] <= 0) {
+        $editFormError = 'Please select a customer.';
+    } elseif ($editFormData['brand'] === '' || $editFormData['model'] === '') {
+        $editFormError = 'Brand and model are required.';
+    } elseif (!in_array($editFormData['fuel_type'], $fuelOptions, true)) {
+        $editFormError = 'Invalid fuel type selected.';
+    } elseif (!in_array($editFormData['transmission_type'], $transmissionOptions, true)) {
+        $editFormError = 'Invalid transmission type selected.';
+    } elseif (!in_array($editFormData['status'], $statusOptions, true)) {
+        $editFormError = 'Invalid status selected.';
+    }
+
+    $editYearModel = null;
+    if ($editFormData['year_model'] !== '') {
+        $yearInt = (int) $editFormData['year_model'];
+        $currentYear = (int) date('Y') + 1;
+        if ($yearInt < 1900 || $yearInt > $currentYear) {
+            $editFormError = 'Year model must be between 1900 and ' . $currentYear . '.';
+        } else {
+            $editYearModel = $yearInt;
+        }
+    }
+
+    $editMileageKm = null;
+    if ($editFormData['mileage_km'] !== '') {
+        $editMileageKm = (int) $editFormData['mileage_km'];
+        if ($editMileageKm < 0) {
+            $editFormError = 'Mileage cannot be negative.';
+        }
+    }
+
+    if ($editFormError === '') {
+        $verifyStmt = mysqli_prepare($conn, 'SELECT user_id FROM users WHERE user_id = ? AND tenantID = ? LIMIT 1');
+        if ($verifyStmt) {
+            mysqli_stmt_bind_param($verifyStmt, 'ii', $editFormData['user_id'], $tenantID);
+            mysqli_stmt_execute($verifyStmt);
+            $verifyResult = mysqli_stmt_get_result($verifyStmt);
+            if (!$verifyResult || !mysqli_fetch_assoc($verifyResult)) {
+                $editFormError = 'Selected customer account was not found for this tenant.';
+            }
+            mysqli_stmt_close($verifyStmt);
+        } else {
+            $editFormError = 'Unable to validate selected customer.';
+        }
+    }
+
+    if ($editFormError === '') {
+        $updateStmt = mysqli_prepare(
+            $conn,
+            'UPDATE vehicleinformation
+             SET user_id = ?, brand = ?, model = ?, year_model = ?, fuel_type = ?, transmission_type = ?, engine_number = ?,
+                 mileage_km = ?, vin_number = ?, plate_number = ?, color = ?, status = ?
+             WHERE vehicle_id = ? AND tenantID = ?
+             LIMIT 1'
+        );
+
+        if ($updateStmt) {
+            $brand = $editFormData['brand'];
+            $model = $editFormData['model'];
+            $fuelType = $editFormData['fuel_type'];
+            $transmissionType = $editFormData['transmission_type'];
+            $engineNumber = $editFormData['engine_number'] !== '' ? $editFormData['engine_number'] : null;
+            $vinNumber = $editFormData['vin_number'] !== '' ? $editFormData['vin_number'] : null;
+            $plateNumber = $editFormData['plate_number'] !== '' ? $editFormData['plate_number'] : null;
+            $color = $editFormData['color'] !== '' ? $editFormData['color'] : null;
+            $status = $editFormData['status'];
+
+            mysqli_stmt_bind_param(
+                $updateStmt,
+                'ississsissssii',
+                $editFormData['user_id'],
+                $brand,
+                $model,
+                $editYearModel,
+                $fuelType,
+                $transmissionType,
+                $engineNumber,
+                $editMileageKm,
+                $vinNumber,
+                $plateNumber,
+                $color,
+                $status,
+                $editVehicleId,
+                $tenantID
+            );
+
+            if (mysqli_stmt_execute($updateStmt)) {
+                mysqli_stmt_close($updateStmt);
+                $redirectParams = [
+                    'shop' => $loginSlug,
+                    'page' => $page,
+                    'q' => $searchTerm,
+                    'filter_status' => $filterStatus,
+                    'filter_brand' => $filterBrand,
+                    'view_vehicle' => $editVehicleId,
+                    'vehicle_updated' => 1,
+                ];
+                if ($customerUserId > 0) {
+                    $redirectParams['user_id'] = $customerUserId;
+                }
+                header('Location: vehicleadmin.php?' . http_build_query(array_filter($redirectParams, static fn ($value) => $value !== null && $value !== '')));
+                exit;
+            }
+
+            $editFormError = 'Unable to update vehicle details.';
+            mysqli_stmt_close($updateStmt);
+        } else {
+            $editFormError = 'Unable to prepare vehicle update query.';
         }
     }
 }
@@ -187,27 +416,66 @@ if ($statsStmt) {
     mysqli_stmt_close($statsStmt);
 }
 
-$filterSql = "
-    FROM vehicleinformation
-    WHERE tenantID = ?
-      AND (? = '' OR status = ?)
-      AND (? = '' OR brand = ?)
-      AND (
-            ? = ''
-            OR brand LIKE CONCAT('%', ?, '%')
-            OR model LIKE CONCAT('%', ?, '%')
-            OR vin_number LIKE CONCAT('%', ?, '%')
-            OR plate_number LIKE CONCAT('%', ?, '%')
-      )
+$servicedThisMonth = 0;
+$servicedStmt = mysqli_prepare(
+    $conn,
+    "SELECT COUNT(DISTINCT appointment_id) AS serviced_count
+     FROM appointment_services
+     WHERE tenantID = ?
+       AND created_at >= DATE_FORMAT(CURRENT_DATE(), '%Y-%m-01')
+       AND created_at < DATE_ADD(DATE_FORMAT(CURRENT_DATE(), '%Y-%m-01'), INTERVAL 1 MONTH)"
+);
+if ($servicedStmt) {
+    mysqli_stmt_bind_param($servicedStmt, 'i', $tenantID);
+    mysqli_stmt_execute($servicedStmt);
+    $servicedResult = mysqli_stmt_get_result($servicedStmt);
+    if ($servicedResult && $servicedRow = mysqli_fetch_assoc($servicedResult)) {
+        $servicedThisMonth = (int) ($servicedRow['serviced_count'] ?? 0);
+    }
+    mysqli_stmt_close($servicedStmt);
+}
+
+$customers = [];
+$customerStmt = mysqli_prepare(
+    $conn,
+    "SELECT user_id, fullName, email, contactNumber
+     FROM users
+     WHERE tenantID = ? AND role = 'client'
+     ORDER BY fullName ASC"
+);
+if ($customerStmt) {
+    mysqli_stmt_bind_param($customerStmt, 'i', $tenantID);
+    mysqli_stmt_execute($customerStmt);
+    $customerResult = mysqli_stmt_get_result($customerStmt);
+    while ($customerResult && $customerRow = mysqli_fetch_assoc($customerResult)) {
+        $customers[] = $customerRow;
+    }
+    mysqli_stmt_close($customerStmt);
+}
+
+$filterWhere = "
+    WHERE vi.tenantID = ?
+    AND (? = 0 OR vi.user_id = ?)
+    AND (? = '' OR vi.status = ?)
+    AND (? = '' OR vi.brand = ?)
+    AND (
+        ? = ''
+        OR vi.brand LIKE CONCAT('%', ?, '%')
+        OR vi.model LIKE CONCAT('%', ?, '%')
+        OR vi.vin_number LIKE CONCAT('%', ?, '%')
+        OR vi.plate_number LIKE CONCAT('%', ?, '%')
+    )
 ";
 
 $filteredTotal = 0;
-$countStmt = mysqli_prepare($conn, "SELECT COUNT(*) AS total " . $filterSql);
+$countStmt = mysqli_prepare($conn, "SELECT COUNT(*) AS total FROM vehicleinformation vi " . $filterWhere);
 if ($countStmt) {
     mysqli_stmt_bind_param(
         $countStmt,
-        'isssssssss',
+        'iiisssssssss',
         $tenantID,
+        $customerUserId,
+        $customerUserId,
         $filterStatus,
         $filterStatus,
         $filterBrand,
@@ -235,16 +503,20 @@ if ($page > $totalPages) {
 if (isset($_GET['export']) && $_GET['export'] === '1') {
     $exportStmt = mysqli_prepare(
         $conn,
-        "SELECT brand, model, year_model, fuel_type, transmission_type, engine_number, mileage_km, vin_number, plate_number, color, status, date_added "
-        . $filterSql .
-        " ORDER BY date_added DESC"
+        "SELECT vi.brand, vi.model, vi.year_model, vi.fuel_type, vi.transmission_type, vi.engine_number, vi.mileage_km,
+                vi.vin_number, vi.plate_number, vi.color, vi.status, vi.date_added
+         FROM vehicleinformation vi "
+        . $filterWhere .
+        " ORDER BY vi.date_added DESC"
     );
 
     if ($exportStmt) {
         mysqli_stmt_bind_param(
             $exportStmt,
-            'isssssssss',
+            'iiisssssssss',
             $tenantID,
+            $customerUserId,
+            $customerUserId,
             $filterStatus,
             $filterStatus,
             $filterBrand,
@@ -575,16 +847,21 @@ if (isset($_GET['export']) && $_GET['export'] === '1') {
 $vehicles = [];
 $vehicleStmt = mysqli_prepare(
     $conn,
-    "SELECT vehicle_id, brand, model, year_model, fuel_type, transmission_type, engine_number,
-            mileage_km, vin_number, plate_number, color, status, date_added "
-    . $filterSql .
-    " ORDER BY date_added DESC LIMIT ?, ?"
+    "SELECT vi.vehicle_id, vi.user_id, vi.brand, vi.model, vi.year_model, vi.fuel_type, vi.transmission_type, vi.engine_number,
+            vi.mileage_km, vi.vin_number, vi.plate_number, vi.color, vi.status, vi.date_added,
+            u.fullName AS customer_name, u.email AS customer_email, u.contactNumber AS customer_contact "
+    . "FROM vehicleinformation vi "
+    . "LEFT JOIN users u ON u.user_id = vi.user_id AND u.tenantID = vi.tenantID "
+    . $filterWhere .
+    " ORDER BY vi.date_added DESC LIMIT ?, ?"
 );
 if ($vehicleStmt) {
     mysqli_stmt_bind_param(
         $vehicleStmt,
-        'isssssssssii',
+        'iiisssssssssii',
         $tenantID,
+        $customerUserId,
+        $customerUserId,
         $filterStatus,
         $filterStatus,
         $filterBrand,
@@ -607,6 +884,7 @@ if ($vehicleStmt) {
 
 $showAddVehicleForm = isset($_GET['add_vehicle']) || $formError !== '';
 $vehicleSaved = isset($_GET['vehicle_saved']);
+$vehicleUpdated = isset($_GET['vehicle_updated']);
 
 function h($value): string
 {
@@ -641,6 +919,13 @@ function time_ago(string $datetime): string
     return date('M d, Y', $timestamp);
 }
 
+function status_badge_class(string $status): string
+{
+    return $status === 'Active'
+        ? 'bg-emerald-100 text-emerald-700 border-emerald-200'
+        : 'bg-slate-100 text-slate-600 border-slate-200';
+}
+
 $recentActivities = [];
 $recentStmt = mysqli_prepare(
     $conn,
@@ -663,6 +948,65 @@ if ($recentStmt) {
 $startEntry = $filteredTotal > 0 ? $offset + 1 : 0;
 $endEntry = min($offset + count($vehicles), $filteredTotal);
 
+$selectedVehicleForView = null;
+if ($viewVehicleId > 0) {
+    $viewStmt = mysqli_prepare(
+        $conn,
+        "SELECT vi.vehicle_id, vi.user_id, vi.brand, vi.model, vi.year_model, vi.fuel_type, vi.transmission_type,
+                vi.engine_number, vi.mileage_km, vi.vin_number, vi.plate_number, vi.color, vi.status, vi.date_added,
+                u.fullName AS customer_name, u.email AS customer_email, u.contactNumber AS customer_contact
+         FROM vehicleinformation vi
+         LEFT JOIN users u ON u.user_id = vi.user_id AND u.tenantID = vi.tenantID
+         WHERE vi.vehicle_id = ? AND vi.tenantID = ?
+         LIMIT 1"
+    );
+    if ($viewStmt) {
+        mysqli_stmt_bind_param($viewStmt, 'ii', $viewVehicleId, $tenantID);
+        mysqli_stmt_execute($viewStmt);
+        $viewResult = mysqli_stmt_get_result($viewStmt);
+        if ($viewResult) {
+            $selectedVehicleForView = mysqli_fetch_assoc($viewResult) ?: null;
+        }
+        mysqli_stmt_close($viewStmt);
+    }
+}
+
+$selectedVehicleForEdit = null;
+if ($editVehicleId > 0) {
+    $editStmt = mysqli_prepare(
+        $conn,
+        "SELECT vehicle_id, user_id, brand, model, year_model, fuel_type, transmission_type,
+                engine_number, mileage_km, vin_number, plate_number, color, status
+         FROM vehicleinformation
+         WHERE vehicle_id = ? AND tenantID = ?
+         LIMIT 1"
+    );
+    if ($editStmt) {
+        mysqli_stmt_bind_param($editStmt, 'ii', $editVehicleId, $tenantID);
+        mysqli_stmt_execute($editStmt);
+        $editResult = mysqli_stmt_get_result($editStmt);
+        if ($editResult) {
+            $selectedVehicleForEdit = mysqli_fetch_assoc($editResult) ?: null;
+        }
+        mysqli_stmt_close($editStmt);
+    }
+
+    if ($selectedVehicleForEdit && $editFormError === '') {
+        $editFormData['user_id'] = (int) ($selectedVehicleForEdit['user_id'] ?? 0);
+        $editFormData['brand'] = (string) ($selectedVehicleForEdit['brand'] ?? '');
+        $editFormData['model'] = (string) ($selectedVehicleForEdit['model'] ?? '');
+        $editFormData['year_model'] = (string) ($selectedVehicleForEdit['year_model'] ?? '');
+        $editFormData['fuel_type'] = (string) ($selectedVehicleForEdit['fuel_type'] ?? 'Gasoline');
+        $editFormData['transmission_type'] = (string) ($selectedVehicleForEdit['transmission_type'] ?? 'Automatic');
+        $editFormData['engine_number'] = (string) ($selectedVehicleForEdit['engine_number'] ?? '');
+        $editFormData['mileage_km'] = (string) ($selectedVehicleForEdit['mileage_km'] ?? '');
+        $editFormData['vin_number'] = (string) ($selectedVehicleForEdit['vin_number'] ?? '');
+        $editFormData['plate_number'] = (string) ($selectedVehicleForEdit['plate_number'] ?? '');
+        $editFormData['color'] = (string) ($selectedVehicleForEdit['color'] ?? '');
+        $editFormData['status'] = (string) ($selectedVehicleForEdit['status'] ?? 'Active');
+    }
+}
+
 ?>
 
 <!DOCTYPE html>
@@ -672,6 +1016,9 @@ $endEntry = min($offset + count($vehicles), $filteredTotal);
 <head>
     <meta charset="utf-8" />
     <meta content="width=device-width, initial-scale=1.0" name="viewport" />
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
     <title>Vehicle Management | Cobalt Precision</title>
     <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
     <link
@@ -831,9 +1178,13 @@ $endEntry = min($offset + count($vehicles), $filteredTotal);
                     <p class="text-sm font-semibold truncate">Marcus Smith</p>
                     <p class="text-xs text-slate-500 truncate">Shop Manager</p>
                 </div>
-                <button class="text-slate-400 hover:text-error transition-colors">
-                    <span class="material-symbols-outlined text-xl">logout</span>
-                </button>
+                <form method="post" action="../logout/logout.php" class="inline">
+                    <input type="hidden" name="action" value="confirm" />
+                    <input type="hidden" name="shop" value="<?php echo h($loginSlug); ?>" />
+                    <button type="submit" class="text-slate-400 hover:text-error transition-colors" title="Logout">
+                        <span class="material-symbols-outlined text-xl">logout</span>
+                    </button>
+                </form>
             </div>
         </div>
     </aside>
@@ -845,14 +1196,19 @@ $endEntry = min($offset + count($vehicles), $filteredTotal);
             <div class="flex items-center gap-6">
                 <h2 class="text-lg font-black text-slate-900 dark:white tracking-tight">Vehicle Management</h2>
                 <form method="GET" action="vehicleadmin.php" class="relative hidden lg:block">
+                    <input type="hidden" name="shop" value="<?php echo h($loginSlug); ?>">
                     <input type="hidden" name="filter_status" value="<?php echo h($filterStatus); ?>">
                     <input type="hidden" name="filter_brand" value="<?php echo h($filterBrand); ?>">
+                    <?php if ($customerUserId > 0): ?>
+                        <input type="hidden" name="user_id" value="<?php echo (int) $customerUserId; ?>">
+                    <?php endif; ?>
                     <span
                         class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">search</span>
                     <input
                         class="bg-surface-variant border-none rounded-lg pl-10 pr-4 py-1.5 text-sm w-64 focus:ring-2 focus:ring-primary/20"
                         placeholder="Search vehicles..." type="text" name="q" value="<?php echo h($searchTerm); ?>" />
                 </form>
+                <span class="hidden xl:inline-flex items-center px-2.5 py-1 rounded-full bg-blue-50 text-blue-700 text-[11px] font-bold uppercase tracking-wide"><?php echo h($loginSlug); ?></span>
             </div>
             <div class="flex items-center gap-4">
                 <button class="p-2 text-slate-500 hover:text-primary transition-all">
@@ -864,8 +1220,8 @@ $endEntry = min($offset + count($vehicles), $filteredTotal);
                 <div class="h-8 w-px bg-slate-200 mx-2"></div>
                 <div class="flex items-center gap-3">
                     <div class="text-right hidden sm:block">
-                        <p class="text-xs font-bold text-on-background">Alex Rivet</p>
-                        <p class="text-[10px] text-slate-500 uppercase font-semibold">Service Lead</p>
+                        <p class="text-xs font-bold text-on-background"><?php echo h($shopName); ?></p>
+                        <p class="text-[10px] text-slate-500 uppercase font-semibold">Vehicle Admin</p>
                     </div>
                     <img alt="Manager Avatar" class="h-10 w-10 rounded-full border-2 border-primary/20 object-cover"
                         data-alt="professional male service manager portrait in modern automotive office environment"
@@ -901,7 +1257,7 @@ $endEntry = min($offset + count($vehicles), $filteredTotal);
                             250</span>
                     </div>
                     <div>
-                        <p class="text-2xl font-black text-slate-900 tracking-tight"><?php echo number_format($stats['active']); ?></p>
+                        <p class="text-2xl font-black text-slate-900 tracking-tight"><?php echo number_format($servicedThisMonth); ?></p>
                         <p class="text-[11px] font-bold text-slate-500 uppercase tracking-widest mt-1">Serviced This
                             Month</p>
                     </div>
@@ -954,12 +1310,25 @@ $endEntry = min($offset + count($vehicles), $filteredTotal);
                         </div>
                     </div>
                     <div class="flex items-center gap-2 w-full md:w-auto flex-wrap justify-end">
-                        <a href="vehicleadmin.php?add_vehicle=1"
+                        <a href="vehicleadmin.php?<?php echo h(http_build_query(array_filter([
+                            'shop' => $loginSlug,
+                            'add_vehicle' => 1,
+                            'user_id' => $customerUserId > 0 ? $customerUserId : null,
+                        ], static fn ($value) => $value !== null))); ?>"
                             class="flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white bg-primary rounded-lg hover:bg-on-primary-container transition-colors">
                             <span class="material-symbols-outlined text-sm">add</span>
                             Register Vehicle
                         </a>
                         <form method="GET" action="vehicleadmin.php" class="flex items-center gap-2 flex-wrap">
+                            <input type="hidden" name="shop" value="<?php echo h($loginSlug); ?>">
+                            <select name="user_id" class="rounded-lg border-slate-200 text-sm px-3 py-2">
+                                <option value="">All Customers</option>
+                                <?php foreach ($customers as $customer): ?>
+                                    <option value="<?php echo (int) $customer['user_id']; ?>" <?php echo $customerUserId === (int) $customer['user_id'] ? 'selected' : ''; ?>>
+                                        <?php echo h($customer['fullName'] ?: ('Customer #' . $customer['user_id'])); ?>
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
                             <select name="filter_status" class="rounded-lg border-slate-200 text-sm px-3 py-2">
                                 <option value="">All Status</option>
                                 <?php foreach ($statusOptions as $statusOption): ?>
@@ -978,11 +1347,21 @@ $endEntry = min($offset + count($vehicles), $filteredTotal);
                                 <span class="material-symbols-outlined text-sm">filter_list</span>
                                 Filter
                             </button>
-                            <a href="vehicleadmin.php"
+                            <a href="vehicleadmin.php?<?php echo h(http_build_query(array_filter([
+                                'shop' => $loginSlug,
+                                'user_id' => $customerUserId > 0 ? $customerUserId : null,
+                            ], static fn ($value) => $value !== null))); ?>"
                                 class="px-3 py-2 text-sm font-medium text-slate-500 border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors">Reset</a>
                         </form>
                         <a
-                            href="vehicleadmin.php?<?php echo h(http_build_query(['filter_status' => $filterStatus, 'filter_brand' => $filterBrand, 'q' => $searchTerm, 'export' => 1])); ?>"
+                            href="vehicleadmin.php?<?php echo h(http_build_query(array_filter([
+                                'shop' => $loginSlug,
+                                'filter_status' => $filterStatus,
+                                'filter_brand' => $filterBrand,
+                                'q' => $searchTerm,
+                                'user_id' => $customerUserId > 0 ? $customerUserId : null,
+                                'export' => 1,
+                            ], static fn ($value) => $value !== null && $value !== ''))); ?>"
                             class="flex items-center gap-2 px-3 py-2 text-sm font-medium text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors">
                             <span class="material-symbols-outlined text-sm">file_download</span>
                             Export
@@ -994,11 +1373,45 @@ $endEntry = min($offset + count($vehicles), $filteredTotal);
                         Vehicle has been registered successfully.
                     </div>
                 <?php endif; ?>
+                <?php if ($vehicleUpdated): ?>
+                    <div class="mx-6 mb-4 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-medium text-blue-700">
+                        Vehicle details have been updated.
+                    </div>
+                <?php endif; ?>
+                <?php if ($selectedVehicleForView): ?>
+                    <div class="mx-6 mb-6 rounded-xl border border-slate-200 bg-slate-50 p-5">
+                        <div class="flex items-center justify-between mb-3">
+                            <h4 class="text-sm font-bold text-slate-900">Vehicle Details</h4>
+                            <a href="vehicleadmin.php?<?php echo h(http_build_query(array_filter([
+                                'shop' => $loginSlug,
+                                'page' => $page,
+                                'q' => $searchTerm,
+                                'filter_status' => $filterStatus,
+                                'filter_brand' => $filterBrand,
+                                'user_id' => $customerUserId > 0 ? $customerUserId : null,
+                            ], static fn ($value) => $value !== null && $value !== ''))); ?>" class="text-xs font-semibold text-slate-500 hover:text-slate-700">Close</a>
+                        </div>
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+                            <div><span class="text-xs text-slate-500 uppercase font-semibold">Customer</span><p class="font-semibold text-slate-800 mt-1"><?php echo h($selectedVehicleForView['customer_name'] ?: 'Unassigned'); ?></p></div>
+                            <div><span class="text-xs text-slate-500 uppercase font-semibold">Contact</span><p class="font-semibold text-slate-800 mt-1"><?php echo h($selectedVehicleForView['customer_contact'] ?: ($selectedVehicleForView['customer_email'] ?: 'No contact info')); ?></p></div>
+                            <div><span class="text-xs text-slate-500 uppercase font-semibold">Status</span><p class="font-semibold text-slate-800 mt-1"><?php echo h($selectedVehicleForView['status']); ?></p></div>
+                            <div><span class="text-xs text-slate-500 uppercase font-semibold">Vehicle</span><p class="font-semibold text-slate-800 mt-1"><?php echo h(trim(($selectedVehicleForView['brand'] ?? '') . ' ' . ($selectedVehicleForView['model'] ?? ''))); ?></p></div>
+                            <div><span class="text-xs text-slate-500 uppercase font-semibold">Year / Fuel</span><p class="font-semibold text-slate-800 mt-1"><?php echo h(($selectedVehicleForView['year_model'] ?: 'N/A') . ' / ' . ($selectedVehicleForView['fuel_type'] ?: 'N/A')); ?></p></div>
+                            <div><span class="text-xs text-slate-500 uppercase font-semibold">Transmission</span><p class="font-semibold text-slate-800 mt-1"><?php echo h($selectedVehicleForView['transmission_type'] ?: 'N/A'); ?></p></div>
+                            <div><span class="text-xs text-slate-500 uppercase font-semibold">VIN</span><p class="font-semibold text-slate-800 mt-1"><?php echo h($selectedVehicleForView['vin_number'] ?: 'N/A'); ?></p></div>
+                            <div><span class="text-xs text-slate-500 uppercase font-semibold">Plate</span><p class="font-semibold text-slate-800 mt-1"><?php echo h($selectedVehicleForView['plate_number'] ?: 'N/A'); ?></p></div>
+                            <div><span class="text-xs text-slate-500 uppercase font-semibold">Mileage</span><p class="font-semibold text-slate-800 mt-1"><?php echo h($selectedVehicleForView['mileage_km'] !== null ? number_format((int) $selectedVehicleForView['mileage_km']) . ' km' : 'N/A'); ?></p></div>
+                        </div>
+                    </div>
+                <?php endif; ?>
                 <?php if ($showAddVehicleForm): ?>
                     <div class="mx-6 mb-6 rounded-xl border border-slate-200 bg-slate-50 p-5">
                         <div class="flex items-center justify-between mb-4">
                             <h4 class="text-sm font-bold text-slate-900">Register New Vehicle</h4>
-                            <a href="vehicleadmin.php" class="text-xs font-semibold text-slate-500 hover:text-slate-700">Close</a>
+                            <a href="vehicleadmin.php?<?php echo h(http_build_query(array_filter([
+                                'shop' => $loginSlug,
+                                'user_id' => $customerUserId > 0 ? $customerUserId : null,
+                            ], static fn ($value) => $value !== null && $value !== ''))); ?>" class="text-xs font-semibold text-slate-500 hover:text-slate-700">Close</a>
                         </div>
                         <?php if ($formError !== ''): ?>
                             <div class="mb-4 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
@@ -1006,6 +1419,24 @@ $endEntry = min($offset + count($vehicles), $filteredTotal);
                             </div>
                         <?php endif; ?>
                         <form action="vehicleadmin.php" method="POST" class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <?php if ($customerUserId > 0): ?>
+                                <input type="hidden" name="user_id" value="<?php echo (int) $customerUserId; ?>">
+                            <?php else: ?>
+                                <div>
+                                    <label class="block text-xs font-semibold text-slate-600 mb-1">Customer *</label>
+                                    <select name="user_id" class="w-full rounded-lg border-slate-200 text-sm" required>
+                                        <option value="">Select customer</option>
+                                        <?php foreach ($customers as $customer): ?>
+                                            <option value="<?php echo (int) $customer['user_id']; ?>" <?php echo (isset($_POST['user_id']) && (int) $_POST['user_id'] === (int) $customer['user_id']) ? 'selected' : ''; ?>>
+                                                <?php echo h($customer['fullName'] ?: 'Customer #' . $customer['user_id']); ?>
+                                                <?php if (!empty($customer['contactNumber'])): ?>
+                                                    (<?php echo h($customer['contactNumber']); ?>)
+                                                <?php endif; ?>
+                                            </option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                </div>
+                            <?php endif; ?>
                             <div>
                                 <label class="block text-xs font-semibold text-slate-600 mb-1">Brand *</label>
                                 <select id="brand_select" name="brand" class="w-full rounded-lg border-slate-200 text-sm" required>
@@ -1076,10 +1507,94 @@ $endEntry = min($offset + count($vehicles), $filteredTotal);
                                 </select>
                             </div>
                             <div class="md:col-span-3 flex items-center justify-end gap-2 pt-1">
-                                <a href="vehicleadmin.php" class="px-3 py-2 text-xs font-semibold text-slate-600 border border-slate-300 rounded-lg hover:bg-slate-100">Cancel</a>
+                                <a href="vehicleadmin.php?<?php echo h(http_build_query(array_filter([
+                                    'shop' => $loginSlug,
+                                    'user_id' => $customerUserId > 0 ? $customerUserId : null,
+                                ], static fn ($value) => $value !== null && $value !== ''))); ?>" class="px-3 py-2 text-xs font-semibold text-slate-600 border border-slate-300 rounded-lg hover:bg-slate-100">Cancel</a>
                                 <button type="submit" name="add_vehicle_submit" value="1" class="px-4 py-2 text-xs font-bold text-white bg-primary rounded-lg hover:bg-on-primary-container transition-colors">Save Vehicle</button>
                             </div>
                         </form>
+                    </div>
+                <?php endif; ?>
+                <?php if ($editVehicleId > 0): ?>
+                    <div id="edit-vehicle-form" class="mx-6 mb-6 rounded-xl border border-slate-200 bg-slate-50 p-5">
+                        <div class="flex items-center justify-between mb-4">
+                            <h4 class="text-sm font-bold text-slate-900">Edit Vehicle #<?php echo (int) $editVehicleId; ?></h4>
+                            <a href="vehicleadmin.php?<?php echo h(http_build_query(array_filter([
+                                'shop' => $loginSlug,
+                                'page' => $page,
+                                'q' => $searchTerm,
+                                'filter_status' => $filterStatus,
+                                'filter_brand' => $filterBrand,
+                                'user_id' => $customerUserId > 0 ? $customerUserId : null,
+                            ], static fn ($value) => $value !== null && $value !== ''))); ?>" class="text-xs font-semibold text-slate-500 hover:text-slate-700">Close</a>
+                        </div>
+                        <?php if ($editFormError !== ''): ?>
+                            <div class="mb-4 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700"><?php echo h($editFormError); ?></div>
+                        <?php endif; ?>
+                        <?php if (!$selectedVehicleForEdit && $editFormError === ''): ?>
+                            <div class="mb-4 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">Vehicle record was not found for this tenant.</div>
+                        <?php else: ?>
+                            <form action="vehicleadmin.php" method="POST" class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                <input type="hidden" name="edit_vehicle_id" value="<?php echo (int) $editVehicleId; ?>">
+                                <input type="hidden" name="shop" value="<?php echo h($loginSlug); ?>">
+                                <input type="hidden" name="page" value="<?php echo (int) $page; ?>">
+                                <input type="hidden" name="q" value="<?php echo h($searchTerm); ?>">
+                                <input type="hidden" name="filter_status" value="<?php echo h($filterStatus); ?>">
+                                <input type="hidden" name="filter_brand" value="<?php echo h($filterBrand); ?>">
+                                <?php if ($customerUserId > 0): ?><input type="hidden" name="user_id" value="<?php echo (int) $customerUserId; ?>"><?php endif; ?>
+                                <div>
+                                    <label class="block text-xs font-semibold text-slate-600 mb-1">Customer *</label>
+                                    <select name="edit_user_id" class="w-full rounded-lg border-slate-200 text-sm" required>
+                                        <option value="">Select customer</option>
+                                        <?php foreach ($customers as $customer): ?>
+                                            <option value="<?php echo (int) $customer['user_id']; ?>" <?php echo (int) $editFormData['user_id'] === (int) $customer['user_id'] ? 'selected' : ''; ?>><?php echo h($customer['fullName'] ?: 'Customer #' . $customer['user_id']); ?></option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-semibold text-slate-600 mb-1">Brand *</label>
+                                    <input type="text" name="edit_brand" value="<?php echo h($editFormData['brand']); ?>" class="w-full rounded-lg border-slate-200 text-sm" required>
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-semibold text-slate-600 mb-1">Model *</label>
+                                    <input type="text" name="edit_model" value="<?php echo h($editFormData['model']); ?>" class="w-full rounded-lg border-slate-200 text-sm" required>
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-semibold text-slate-600 mb-1">Year Model</label>
+                                    <input type="number" min="1900" max="<?php echo (int) date('Y') + 1; ?>" name="edit_year_model" value="<?php echo h($editFormData['year_model']); ?>" class="w-full rounded-lg border-slate-200 text-sm">
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-semibold text-slate-600 mb-1">Fuel Type *</label>
+                                    <select name="edit_fuel_type" class="w-full rounded-lg border-slate-200 text-sm" required>
+                                        <?php foreach ($fuelOptions as $fuel): ?><option value="<?php echo h($fuel); ?>" <?php echo $editFormData['fuel_type'] === $fuel ? 'selected' : ''; ?>><?php echo h($fuel); ?></option><?php endforeach; ?>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-semibold text-slate-600 mb-1">Transmission *</label>
+                                    <select name="edit_transmission_type" class="w-full rounded-lg border-slate-200 text-sm" required>
+                                        <?php foreach ($transmissionOptions as $transmission): ?><option value="<?php echo h($transmission); ?>" <?php echo $editFormData['transmission_type'] === $transmission ? 'selected' : ''; ?>><?php echo h($transmission); ?></option><?php endforeach; ?>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-semibold text-slate-600 mb-1">Mileage (km)</label>
+                                    <input type="number" min="0" name="edit_mileage_km" value="<?php echo h($editFormData['mileage_km']); ?>" class="w-full rounded-lg border-slate-200 text-sm">
+                                </div>
+                                <div><label class="block text-xs font-semibold text-slate-600 mb-1">Engine Number</label><input type="text" name="edit_engine_number" value="<?php echo h($editFormData['engine_number']); ?>" class="w-full rounded-lg border-slate-200 text-sm"></div>
+                                <div><label class="block text-xs font-semibold text-slate-600 mb-1">VIN Number</label><input type="text" name="edit_vin_number" value="<?php echo h($editFormData['vin_number']); ?>" class="w-full rounded-lg border-slate-200 text-sm"></div>
+                                <div><label class="block text-xs font-semibold text-slate-600 mb-1">Plate Number</label><input type="text" name="edit_plate_number" value="<?php echo h($editFormData['plate_number']); ?>" class="w-full rounded-lg border-slate-200 text-sm"></div>
+                                <div><label class="block text-xs font-semibold text-slate-600 mb-1">Color</label><input type="text" name="edit_color" value="<?php echo h($editFormData['color']); ?>" class="w-full rounded-lg border-slate-200 text-sm"></div>
+                                <div>
+                                    <label class="block text-xs font-semibold text-slate-600 mb-1">Status *</label>
+                                    <select name="edit_status" class="w-full rounded-lg border-slate-200 text-sm" required>
+                                        <?php foreach ($statusOptions as $status): ?><option value="<?php echo h($status); ?>" <?php echo $editFormData['status'] === $status ? 'selected' : ''; ?>><?php echo h($status); ?></option><?php endforeach; ?>
+                                    </select>
+                                </div>
+                                <div class="md:col-span-3 flex items-center justify-end gap-2 pt-1">
+                                    <button type="submit" name="update_vehicle_submit" value="1" class="px-4 py-2 text-xs font-bold text-white bg-primary rounded-lg hover:bg-on-primary-container transition-colors">Update Vehicle</button>
+                                </div>
+                            </form>
+                        <?php endif; ?>
                     </div>
                 <?php endif; ?>
                 <!-- Table Content -->
@@ -1090,16 +1605,16 @@ $endEntry = min($offset + count($vehicles), $filteredTotal);
                                 <th class="px-6 py-4 text-[11px] font-black text-slate-400 uppercase tracking-widest">
                                     Vehicle Details</th>
                                 <th class="px-6 py-4 text-[11px] font-black text-slate-400 uppercase tracking-widest">
-                                    VIN Number</th>
+                                    Customer</th>
                                 <th class="px-6 py-4 text-[11px] font-black text-slate-400 uppercase tracking-widest">
-                                    Owner / Contact</th>
-                                <th class="px-6 py-4 text-[11px] font-black text-slate-400 uppercase tracking-widest">
-                                    Last Service</th>
+                                    VIN / Plate</th>
                                 <th class="px-6 py-4 text-[11px] font-black text-slate-400 uppercase tracking-widest">
                                     Status</th>
+                                <th class="px-6 py-4 text-[11px] font-black text-slate-400 uppercase tracking-widest">
+                                    Actions</th>
                                 <th
                                     class="px-6 py-4 text-[11px] font-black text-slate-400 uppercase tracking-widest text-right">
-                                    Actions</th>
+                                    ID</th>
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-slate-100">
@@ -1111,9 +1626,8 @@ $endEntry = min($offset + count($vehicles), $filteredTotal);
                                 <?php foreach ($vehicles as $vehicle): ?>
                                     <?php
                                         $isActive = ($vehicle['status'] === 'Active');
-                                        $statusClass = $isActive
-                                            ? 'bg-emerald-100 text-emerald-700'
-                                            : 'bg-slate-200 text-slate-700';
+                                        $customerName = trim((string) ($vehicle['customer_name'] ?? ''));
+                                        $customerLabel = $customerName !== '' ? $customerName : 'Unassigned';
                                     ?>
                                     <tr class="hover:bg-slate-50/50 transition-colors group">
                                         <td class="px-6 py-4">
@@ -1122,20 +1636,43 @@ $endEntry = min($offset + count($vehicles), $filteredTotal);
                                                 <p class="text-xs text-slate-500"><?php echo h($vehicle['year_model'] ?: 'Year N/A'); ?> · <?php echo h($vehicle['fuel_type']); ?> · <?php echo h($vehicle['transmission_type']); ?></p>
                                             </div>
                                         </td>
-                                        <td class="px-6 py-4 font-mono text-xs text-slate-600"><?php echo h($vehicle['vin_number'] ?: 'N/A'); ?></td>
+                                        <td class="px-6 py-4">
+                                            <p class="text-sm font-semibold text-slate-900"><?php echo h($customerLabel); ?></p>
+                                            <p class="text-xs text-slate-500"><?php echo h($vehicle['customer_contact'] ?: ($vehicle['customer_email'] ?: 'No contact info')); ?></p>
+                                        </td>
                                         <td class="px-6 py-4">
                                             <p class="text-sm font-medium text-slate-900">Plate: <?php echo h($vehicle['plate_number'] ?: 'N/A'); ?></p>
-                                            <p class="text-xs text-slate-500">Engine: <?php echo h($vehicle['engine_number'] ?: 'N/A'); ?></p>
+                                            <p class="text-xs text-slate-500">VIN: <?php echo h($vehicle['vin_number'] ?: 'N/A'); ?></p>
                                         </td>
                                         <td class="px-6 py-4">
-                                            <p class="text-sm text-slate-700"><?php echo h(date('M d, Y', strtotime((string) $vehicle['date_added']))); ?></p>
-                                            <p class="text-[10px] text-slate-400 uppercase font-bold"><?php echo h(($vehicle['mileage_km'] !== null && $vehicle['mileage_km'] !== '') ? number_format((int) $vehicle['mileage_km']) . ' km' : 'Mileage N/A'); ?></p>
-                                        </td>
-                                        <td class="px-6 py-4">
-                                            <span class="inline-flex items-center gap-1.5 <?php echo $statusClass; ?> text-[10px] font-bold px-2 py-0.5 rounded-full uppercase">
+                                            <span class="inline-flex items-center gap-1.5 px-2 py-1 rounded-full border text-[10px] font-bold uppercase <?php echo h(status_badge_class((string) $vehicle['status'])); ?>">
                                                 <span class="w-1.5 h-1.5 rounded-full <?php echo $isActive ? 'bg-emerald-500' : 'bg-slate-500'; ?>"></span>
                                                 <?php echo h($vehicle['status']); ?>
                                             </span>
+                                        </td>
+                                        <td class="px-6 py-4">
+                                            <div class="flex items-center gap-2 flex-wrap">
+                                                <a href="vehicleadmin.php?<?php echo h(http_build_query(array_filter([
+                                                    'shop' => $loginSlug,
+                                                    'page' => $page,
+                                                    'q' => $searchTerm,
+                                                    'filter_status' => $filterStatus,
+                                                    'filter_brand' => $filterBrand,
+                                                    'user_id' => $customerUserId > 0 ? $customerUserId : null,
+                                                    'view_vehicle' => (int) $vehicle['vehicle_id'],
+                                                ], static fn ($value) => $value !== null && $value !== ''))); ?>"
+                                                    class="px-3 py-1.5 text-xs font-bold text-blue-700 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 transition-colors">View</a>
+                                                <a href="vehicleadmin.php?<?php echo h(http_build_query(array_filter([
+                                                    'shop' => $loginSlug,
+                                                    'page' => $page,
+                                                    'q' => $searchTerm,
+                                                    'filter_status' => $filterStatus,
+                                                    'filter_brand' => $filterBrand,
+                                                    'user_id' => $customerUserId > 0 ? $customerUserId : null,
+                                                    'edit_vehicle' => (int) $vehicle['vehicle_id'],
+                                                ], static fn ($value) => $value !== null && $value !== ''))); ?>#edit-vehicle-form"
+                                                    class="px-3 py-1.5 text-xs font-bold text-slate-700 bg-slate-100 border border-slate-200 rounded-lg hover:bg-slate-200 transition-colors">Edit</a>
+                                            </div>
                                         </td>
                                         <td class="px-6 py-4 text-right">
                                             <span class="text-[11px] text-slate-400 font-semibold">#<?php echo (int) $vehicle['vehicle_id']; ?></span>
@@ -1153,9 +1690,11 @@ $endEntry = min($offset + count($vehicles), $filteredTotal);
                     <div class="flex gap-2 items-center flex-wrap justify-end">
                         <?php
                             $baseParams = [
+                                'shop' => $loginSlug,
                                 'filter_status' => $filterStatus,
                                 'filter_brand' => $filterBrand,
                                 'q' => $searchTerm,
+                                'user_id' => $customerUserId > 0 ? $customerUserId : null,
                             ];
                             $prevDisabled = $page <= 1;
                             $nextDisabled = $page >= $totalPages;

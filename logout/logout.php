@@ -144,13 +144,80 @@ if ($cancelRedirectTo === '') {
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 	$action = isset($_POST['action']) ? (string)$_POST['action'] : '';
+	$destroySession = isset($_POST['destroy_session']) ? (int)$_POST['destroy_session'] : 0;
+
+	// Handle back button session destruction (AJAX request)
+	if ($destroySession === 1) {
+		require_once __DIR__ . '/../db.php';
+
+		$tenantID = isset($_SESSION['tenantID']) ? (int)$_SESSION['tenantID'] : null;
+		$user_id = $tenantID;
+		$user_name = isset($_SESSION['shopName']) ? $_SESSION['shopName'] : '';
+		$user_role = 'admin';
+		$actionLog = 'LOGOUT';
+		$entity_type = 'tenant';
+		$entity_id = $tenantID;
+		$details = 'Session destroyed - back button detected';
+		$ip_address = isset($_SERVER['REMOTE_ADDR']) ? $_SERVER['REMOTE_ADDR'] : '';
+		$user_agent = isset($_SERVER['HTTP_USER_AGENT']) ? $_SERVER['HTTP_USER_AGENT'] : '';
+
+		if ($tenantID) {
+			$stmt = $conn->prepare("INSERT INTO system_logs (tenantID, user_id, user_name, user_role, action, entity_type, entity_id, details, ip_address, user_agent, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())");
+			$stmt->bind_param('iissssisss', $tenantID, $user_id, $user_name, $user_role, $actionLog, $entity_type, $entity_id, $details, $ip_address, $user_agent);
+			$stmt->execute();
+			$stmt->close();
+		}
+
+		$_SESSION = [];
+
+		if (ini_get('session.use_cookies')) {
+			$params = session_get_cookie_params();
+			setcookie(
+				session_name(),
+				'',
+				time() - 42000,
+				$params['path'],
+				$params['domain'],
+				$params['secure'],
+				$params['httponly']
+			);
+		}
+
+		session_destroy();
+		
+		header('Content-Type: application/json');
+		echo json_encode(['status' => 'success', 'message' => 'Session destroyed']);
+		exit;
+	}
 
 	if ($action === 'cancel') {
 		header('Location: ' . $cancelRedirectTo);
 		exit;
 	}
 
+	// First click from admin pages: open logout confirmation template.
 	if ($action === 'confirm') {
+		$query = [];
+		if ($requestedRedirect !== '') {
+			$query['redirect'] = $requestedRedirect;
+		}
+		if ($requestedShopSlug !== '') {
+			$query['shop'] = $requestedShopSlug;
+		}
+		if ($cancelRedirectTo !== '') {
+			$query['return_to'] = $cancelRedirectTo;
+		}
+
+		$target = 'logout.php';
+		if (!empty($query)) {
+			$target .= '?' . http_build_query($query);
+		}
+
+		header('Location: ' . $target);
+		exit;
+	}
+
+	if ($action === 'do_logout') {
 		require_once __DIR__ . '/../db.php';
 
 		$tenantID = isset($_SESSION['tenantID']) ? (int)$_SESSION['tenantID'] : null;
@@ -262,12 +329,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 			cursor: pointer;
 		}
 
-		button[name="action"][value="confirm"] {
+		button[name="action"][value="do_logout"] {
 			background: var(--danger);
 			color: #fff;
 		}
 
-		button[name="action"][value="confirm"]:hover {
+		button[name="action"][value="do_logout"]:hover {
 			background: var(--danger-hover);
 		}
 
@@ -301,7 +368,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 			<input type="hidden" name="return_to" value="<?php echo htmlspecialchars($cancelRedirectTo, ENT_QUOTES, 'UTF-8'); ?>">
 			<div class="actions">
 				<button type="submit" name="action" value="cancel">Cancel</button>
-				<button type="submit" name="action" value="confirm">Yes, logout</button>
+				<button type="submit" name="action" value="do_logout">Yes, logout</button>
 			</div>
 		</form>
 	</div>

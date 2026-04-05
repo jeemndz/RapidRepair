@@ -32,22 +32,9 @@ if (!isset($conn) || !($conn instanceof mysqli)) {
     exit;
 }
 
-// Check if vehicleinformation table exists
-$tableCheckSql = "SELECT 1 FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'vehicleinformation' LIMIT 1";
-$tableExists = $conn->query($tableCheckSql) && $conn->query($tableCheckSql)->num_rows > 0;
-
-if (!$tableExists) {
-    http_response_code(500);
-    echo json_encode(['status' => 'error', 'message' => 'vehicleinformation table not found in database.']);
-    $conn->close();
-    exit;
-}
-
-
 // Health check for root GET
 if ($_SERVER['REQUEST_METHOD'] === 'GET' && empty($_GET)) {
-    echo json_encode(['status' => 'ok', 'message' => 'Vehicle API is running.', 'db' => 'connected']);
-    $conn->close();
+    echo json_encode(['status' => 'ok', 'message' => 'Vehicle API is running.']);
     exit;
 }
 
@@ -55,7 +42,6 @@ $tenantID = isset($_GET['tenantID']) && is_numeric($_GET['tenantID']) ? (int) $_
 $includeAllOnEmpty = isset($_GET['includeAllOnEmpty']) && $_GET['includeAllOnEmpty'] == '1';
 
 $vehicles = [];
-$fallbackUsed = false;
 
 // Query for tenant-specific vehicles
 if ($tenantID > 0) {
@@ -86,8 +72,8 @@ if ($tenantID > 0) {
     $stmt->close();
 }
 
-// Fallback: if no tenant-specific vehicles and includeAllOnEmpty requested, get all active vehicles
-if ((empty($vehicles) && $includeAllOnEmpty) || $tenantID <= 0) {
+// Fallback: if tenant vehicles are empty (or tenant is not provided) and includeAllOnEmpty requested, get all active vehicles
+if (($tenantID <= 0 || empty($vehicles)) && $includeAllOnEmpty) {
     $sql = "SELECT vehicle_id, tenantID, user_id, brand, model, year_model, plate_number, color, status, created_at, updated_at FROM vehicleinformation WHERE status = 'Active' ORDER BY brand ASC, model ASC";
     $stmt = $conn->prepare($sql);
     
@@ -112,7 +98,6 @@ if ((empty($vehicles) && $includeAllOnEmpty) || $tenantID <= 0) {
         $vehicles[] = $row;
     }
     $stmt->close();
-    $fallbackUsed = true;
 }
 
 $conn->close();
@@ -120,7 +105,6 @@ $conn->close();
 echo json_encode([
     'status' => 'success',
     'tenantID' => $tenantID,
-    'fallbackUsed' => $fallbackUsed,
-    'count' => count($vehicles),
+    'fallbackUsed' => ($includeAllOnEmpty && !empty($vehicles)),
     'vehicles' => $vehicles,
-], JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT);
+]);

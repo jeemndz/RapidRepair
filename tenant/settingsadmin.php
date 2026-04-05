@@ -167,6 +167,12 @@
                     <p class="text-sm font-semibold truncate">Marcus Smith</p>
                     <p class="text-xs text-slate-500 truncate">Shop Manager</p>
                 </div>
+                <form method="post" action="../logout/logout.php" class="inline">
+                    <input type="hidden" name="action" value="confirm" />
+                    <button type="submit" class="text-slate-400 hover:text-error transition-colors" title="Logout">
+                        <span class="material-symbols-outlined text-xl">logout</span>
+                    </button>
+                </form>
             </div>
         </div>
     </aside>
@@ -488,50 +494,71 @@
             <form id="roleForm" class="p-6 space-y-4">
                 <input type="hidden" id="roleId" name="role_id">
 
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                        <label for="roleName" class="block text-sm font-semibold text-slate-700 mb-2">Role Name *</label>
-                        <input type="text" id="roleName" name="role_name"
-                            class="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
-                            placeholder="e.g., Senior Technician" required>
-                    </div>
-                    <div>
-                        <label for="roleUsername" class="block text-sm font-semibold text-slate-700 mb-2">Username *</label>
-                        <input type="text" id="roleUsername" name="username"
-                            class="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
-                            placeholder="e.g., jamesd" required>
-                    </div>
-                </div>
-
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                        <label for="roleEmail" class="block text-sm font-semibold text-slate-700 mb-2">Email *</label>
-                        <input type="email" id="roleEmail" name="email"
-                            class="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
-                            placeholder="name@shop.com" required>
-                    </div>
-                    <div>
-                        <label for="rolePassword" class="block text-sm font-semibold text-slate-700 mb-2">Password <span id="passwordHint" class="text-xs font-normal text-slate-400">*</span></label>
-                        <input type="password" id="rolePassword" name="password"
-                            class="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
-                            placeholder="Enter secure password">
+                <div class="bg-slate-50 p-4 rounded-lg border border-slate-200 mb-4">
+                    <h4 class="text-sm font-bold text-slate-700 mb-4">Personal Information</h4>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label for="roleFirstName" class="block text-sm font-semibold text-slate-700 mb-2">First Name *</label>
+                            <input type="text" id="roleFirstName" name="first_name"
+                                class="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
+                                placeholder="e.g., James" required>
+                        </div>
+                        <div>
+                            <label for="roleLastName" class="block text-sm font-semibold text-slate-700 mb-2">Last Name *</label>
+                            <input type="text" id="roleLastName" name="last_name"
+                                class="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
+                                placeholder="e.g., Davis" required>
+                        </div>
                     </div>
                 </div>
 
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                        <label for="roleScope" class="block text-sm font-semibold text-slate-700 mb-2">Access Scope</label>
-                        <input type="text" id="roleScope" name="access_scope"
-                            class="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
-                            placeholder="e.g., Shop Floor, Front Desk">
+                <div class="bg-slate-50 p-4 rounded-lg border border-slate-200">
+                    <h4 class="text-sm font-bold text-slate-700 mb-4">Account Information</h4>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label for="roleUsername" class="block text-sm font-semibold text-slate-700 mb-2">Username *</label>
+                            <input type="text" id="roleUsername" name="username"
+                                class="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
+                                placeholder="e.g., jamesd" required>
+                        </div>
+                        <div>
+                            <label for="roleEmail" class="block text-sm font-semibold text-slate-700 mb-2">Email *</label>
+                            <input type="email" id="roleEmail" name="email"
+                                class="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
+                                placeholder="name@shop.com" required>
+                        </div>
                     </div>
-                    <div>
-                        <label for="roleStatus" class="block text-sm font-semibold text-slate-700 mb-2">Status</label>
-                        <select id="roleStatus" name="status"
-                            class="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary">
-                            <option value="Active">Active</option>
-                            <option value="Inactive">Inactive</option>
-                        </select>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                        <div>
+                            <label for="rolePassword" class="block text-sm font-semibold text-slate-700 mb-2">Password <span id="passwordHint" class="text-xs font-normal text-slate-400">*</span></label>
+                            <input type="password" id="rolePassword" name="password"
+                                class="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
+                                placeholder="Enter secure password">
+                        </div>
+                        <div>
+                            <label for="roleScope" class="block text-sm font-semibold text-slate-700 mb-2">Access Scope</label>
+                            <input type="text" id="roleScope" name="access_scope"
+                                class="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
+                                placeholder="e.g., Shop Floor, Front Desk">
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                        <div>
+                            <label for="roleStatus" class="block text-sm font-semibold text-slate-700 mb-2">Status</label>
+                            <select id="roleStatus" name="status"
+                                class="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary">
+                                <option value="Active">Active</option>
+                                <option value="Inactive">Inactive</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label for="roleName" class="block text-sm font-semibold text-slate-700 mb-2">Role Title</label>
+                            <input type="text" id="roleName" name="role_name"
+                                class="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
+                                placeholder="e.g., Senior Technician">
+                        </div>
                     </div>
                 </div>
 
@@ -627,6 +654,8 @@
 
                     if (data.success) {
                         const role = data.role;
+                        document.getElementById('roleFirstName').value = role.first_name || '';
+                        document.getElementById('roleLastName').value = role.last_name || '';
                         document.getElementById('roleName').value = role.role_name || '';
                         document.getElementById('roleUsername').value = role.username || '';
                         document.getElementById('roleEmail').value = role.email || '';
@@ -650,6 +679,8 @@
 
                 const data = {
                     action,
+                    first_name: (formData.get('first_name') || '').toString().trim(),
+                    last_name: (formData.get('last_name') || '').toString().trim(),
                     role_name: (formData.get('role_name') || '').toString().trim(),
                     username: (formData.get('username') || '').toString().trim(),
                     email: (formData.get('email') || '').toString().trim(),
@@ -662,8 +693,8 @@
                     data.role_id = this.roleId.value;
                 }
 
-                if (!data.role_name || !data.username || !data.email) {
-                    this.showError('Role name, username, and email are required');
+                if (!data.first_name || !data.last_name || !data.username || !data.email) {
+                    this.showError('First name, last name, username, and email are required');
                     return;
                 }
 
@@ -723,7 +754,7 @@
                                     <span class="material-symbols-outlined text-slate-500 text-lg">person</span>
                                 </div>
                                 <div>
-                                    <p class="text-sm font-bold text-slate-900">${this.escapeHtml(role.role_name || 'N/A')}</p>
+                                    <p class="text-sm font-bold text-slate-900">${this.escapeHtml((role.first_name || '') + ' ' + (role.last_name || ''))}</p>
                                     <p class="text-xs text-slate-500">${this.escapeHtml(role.email || 'No email')}</p>
                                 </div>
                             </div>

@@ -73,7 +73,7 @@ switch ($action) {
 
 function getRoles(mysqli $conn, int $tenantID): void
 {
-    $query = "SELECT role_id, role_name, username, email, access_scope, is_active, status, tenantID, created_at, updated_at
+    $query = "SELECT role_id, first_name, last_name, role_name, username, email, access_scope, is_active, status, tenantID, created_at, updated_at
               FROM roles
               WHERE tenantID = ?
               ORDER BY created_at DESC, role_id DESC";
@@ -108,7 +108,7 @@ function getRoleById(mysqli $conn, int $tenantID): void
         jsonResponse(400, ['success' => false, 'message' => 'Role ID is required']);
     }
 
-    $query = "SELECT role_id, role_name, username, email, access_scope, is_active, status, tenantID, created_at, updated_at
+    $query = "SELECT role_id, first_name, last_name, role_name, username, email, access_scope, is_active, status, tenantID, created_at, updated_at
               FROM roles
               WHERE role_id = ? AND tenantID = ?
               LIMIT 1";
@@ -138,6 +138,8 @@ function getRoleById(mysqli $conn, int $tenantID): void
 
 function addRole(mysqli $conn, int $tenantID): void
 {
+    $firstName = trim((string) ($_POST['first_name'] ?? ''));
+    $lastName = trim((string) ($_POST['last_name'] ?? ''));
     $roleName = trim((string) ($_POST['role_name'] ?? ''));
     $username = trim((string) ($_POST['username'] ?? ''));
     $email = trim((string) ($_POST['email'] ?? ''));
@@ -145,8 +147,8 @@ function addRole(mysqli $conn, int $tenantID): void
     $accessScope = trim((string) ($_POST['access_scope'] ?? ''));
     $status = (string) ($_POST['status'] ?? 'Active');
 
-    if ($roleName === '' || $username === '' || $email === '' || $password === '') {
-        jsonResponse(400, ['success' => false, 'message' => 'Role name, username, email, and password are required']);
+    if ($firstName === '' || $lastName === '' || $username === '' || $email === '' || $password === '') {
+        jsonResponse(400, ['success' => false, 'message' => 'First name, last name, username, email, and password are required']);
     }
 
     if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
@@ -179,15 +181,15 @@ function addRole(mysqli $conn, int $tenantID): void
         jsonResponse(409, ['success' => false, 'message' => 'Username or email already exists for this tenant']);
     }
 
-    $query = "INSERT INTO roles (role_name, username, email, password, access_scope, is_active, status, tenantID)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
+    $query = "INSERT INTO roles (first_name, last_name, role_name, username, email, password, access_scope, is_active, status, tenantID)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
 
     $stmt = $conn->prepare($query);
     if (!$stmt) {
         jsonResponse(500, ['success' => false, 'message' => 'Database error: ' . $conn->error]);
     }
 
-    $stmt->bind_param('sssssisi', $roleName, $username, $email, $hashedPassword, $accessScope, $isActive, $status, $tenantID);
+    $stmt->bind_param('sssssssisi', $firstName, $lastName, $roleName, $username, $email, $hashedPassword, $accessScope, $isActive, $status, $tenantID);
 
     if ($stmt->execute()) {
         $newRoleId = $stmt->insert_id;
@@ -213,6 +215,8 @@ function addRole(mysqli $conn, int $tenantID): void
 function updateRole(mysqli $conn, int $tenantID): void
 {
     $roleId = isset($_POST['role_id']) ? (int) $_POST['role_id'] : 0;
+    $firstName = trim((string) ($_POST['first_name'] ?? ''));
+    $lastName = trim((string) ($_POST['last_name'] ?? ''));
     $roleName = trim((string) ($_POST['role_name'] ?? ''));
     $username = trim((string) ($_POST['username'] ?? ''));
     $email = trim((string) ($_POST['email'] ?? ''));
@@ -220,8 +224,8 @@ function updateRole(mysqli $conn, int $tenantID): void
     $accessScope = trim((string) ($_POST['access_scope'] ?? ''));
     $status = (string) ($_POST['status'] ?? 'Active');
 
-    if ($roleId <= 0 || $roleName === '' || $username === '' || $email === '') {
-        jsonResponse(400, ['success' => false, 'message' => 'Role ID, role name, username, and email are required']);
+    if ($roleId <= 0 || $firstName === '' || $lastName === '' || $username === '' || $email === '') {
+        jsonResponse(400, ['success' => false, 'message' => 'Role ID, first name, last name, username, and email are required']);
     }
 
     if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
@@ -271,7 +275,7 @@ function updateRole(mysqli $conn, int $tenantID): void
     if ($password !== '') {
         $hashedPassword = password_hash($password, PASSWORD_DEFAULT);
         $query = "UPDATE roles
-                  SET role_name = ?, username = ?, email = ?, password = ?, access_scope = ?, is_active = ?, status = ?
+                  SET first_name = ?, last_name = ?, role_name = ?, username = ?, email = ?, password = ?, access_scope = ?, is_active = ?, status = ?
                   WHERE role_id = ? AND tenantID = ?";
 
         $stmt = $conn->prepare($query);
@@ -279,10 +283,10 @@ function updateRole(mysqli $conn, int $tenantID): void
             jsonResponse(500, ['success' => false, 'message' => 'Database error: ' . $conn->error]);
         }
 
-        $stmt->bind_param('sssssisii', $roleName, $username, $email, $hashedPassword, $accessScope, $isActive, $status, $roleId, $tenantID);
+        $stmt->bind_param('sssssssisii', $firstName, $lastName, $roleName, $username, $email, $hashedPassword, $accessScope, $isActive, $status, $roleId, $tenantID);
     } else {
         $query = "UPDATE roles
-                  SET role_name = ?, username = ?, email = ?, access_scope = ?, is_active = ?, status = ?
+                  SET first_name = ?, last_name = ?, role_name = ?, username = ?, email = ?, access_scope = ?, is_active = ?, status = ?
                   WHERE role_id = ? AND tenantID = ?";
 
         $stmt = $conn->prepare($query);
@@ -290,7 +294,7 @@ function updateRole(mysqli $conn, int $tenantID): void
             jsonResponse(500, ['success' => false, 'message' => 'Database error: ' . $conn->error]);
         }
 
-        $stmt->bind_param('ssssisii', $roleName, $username, $email, $accessScope, $isActive, $status, $roleId, $tenantID);
+        $stmt->bind_param('sssssissii', $firstName, $lastName, $roleName, $username, $email, $accessScope, $isActive, $status, $roleId, $tenantID);
     }
 
     if ($stmt->execute()) {

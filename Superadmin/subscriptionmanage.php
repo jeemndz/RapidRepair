@@ -1,5 +1,6 @@
 <?php
 session_start();
+include __DIR__ . "/../session_security.php";
 
 if (isset($_POST['logout_superadmin'])) {
     $_SESSION = [];
@@ -468,6 +469,9 @@ if ($mrrResult) {
 <head>
     <meta charset="utf-8" />
     <meta content="width=device-width, initial-scale=1.0" name="viewport" />
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
     <title>Subscription Management | RapidRepair</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
     <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
@@ -1618,6 +1622,7 @@ if ($mrrResult) {
             });
         });
     </script>
+    <?php echo getBackButtonDetectionScript(); ?>
 </body>
 
 </html>

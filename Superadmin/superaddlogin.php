@@ -2,6 +2,7 @@
 // superaddlogin.php
 session_start();
 require_once __DIR__ . "/../db.php"; // your database connection file
+include __DIR__ . "/../session_security.php";
 
 $message = "";
 
@@ -43,6 +44,9 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
 <head>
     <meta charset="utf-8">
     <meta content="width=device-width, initial-scale=1.0" name="viewport">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
     <title>Login | RepidRepair</title>
     <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -158,5 +162,6 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
             });
         }
     </script>
+    <?php echo getBackButtonDetectionScript(); ?>
 </body>
 </html>

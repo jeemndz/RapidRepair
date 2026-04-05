@@ -1,77 +1,561 @@
-<!DOCTYPE html>
+<?php
+session_start();
+require_once __DIR__ . '/../db.php';
+include __DIR__ . '/../session_security.php';
 
+if (!isset($_SESSION['tenantID'])) {
+    header('Location: tenantlogin.php');
+    exit;
+}
+
+$tenantID = (int) $_SESSION['tenantID'];
+
+
+
+$loginSlug = '';
+if (isset($_SESSION['login_slug']) && trim((string) $_SESSION['login_slug']) !== '') {
+    $loginSlug = trim((string) $_SESSION['login_slug']);
+} elseif (isset($_GET['shop']) && trim((string) $_GET['shop']) !== '') {
+    $loginSlug = trim((string) $_GET['shop']);
+    $_SESSION['login_slug'] = $loginSlug;
+}
+
+if ($loginSlug === '') {
+    session_unset();
+    session_destroy();
+    header('Location: tenantlogin.php');
+    exit;
+}
+
+$ownerStmt = mysqli_prepare($conn, 'SELECT shopName FROM owners WHERE tenantID = ? AND login_slug = ? LIMIT 1');
+if (!$ownerStmt) {
+    die('Unable to validate tenant.');
+}
+mysqli_stmt_bind_param($ownerStmt, 'is', $tenantID, $loginSlug);
+mysqli_stmt_execute($ownerStmt);
+$ownerResult = mysqli_stmt_get_result($ownerStmt);
+$owner = $ownerResult ? mysqli_fetch_assoc($ownerResult) : null;
+mysqli_stmt_close($ownerStmt);
+
+if (!$owner) {
+    session_unset();
+    session_destroy();
+    header('Location: tenantlogin.php');
+    exit;
+}
+
+$_SESSION['login_slug'] = $loginSlug;
+$shopName = !empty($owner['shopName']) ? $owner['shopName'] : 'AutoFix Pro';
+$shopQuery = urlencode($loginSlug);
+$currentScript = basename($_SERVER['PHP_SELF']);
+if (!isset($_GET['shop']) || trim((string) $_GET['shop']) !== $loginSlug) {
+    header('Location: ' . $currentScript . '?shop=' . $shopQuery);
+    exit;
+}
+
+function h($value): string
+{
+    return htmlspecialchars((string) $value, ENT_QUOTES, 'UTF-8');
+}
+
+function bindValues(mysqli_stmt $stmt, string $types, array &$values): bool
+{
+    $bindArgs = [$stmt, $types];
+    foreach ($values as $index => &$value) {
+        $bindArgs[] = &$value;
+    }
+
+    return call_user_func_array('mysqli_stmt_bind_param', $bindArgs);
+}
+
+function buildCustomerFilterSql(int $tenantID, string $searchTerm): array
+{
+    $whereParts = ['u.tenantID = ?', "u.role = 'client'"];
+    $types = 'i';
+    $params = [$tenantID];
+
+    if ($searchTerm !== '') {
+        $whereParts[] = "(
+            u.fullName LIKE CONCAT('%', ?, '%')
+            OR u.email LIKE CONCAT('%', ?, '%')
+            OR u.contactNumber LIKE CONCAT('%', ?, '%')
+            OR u.address LIKE CONCAT('%', ?, '%')
+            OR EXISTS (
+                SELECT 1
+                FROM vehicleinformation v
+                WHERE v.tenantID = u.tenantID
+                  AND v.user_id = u.user_id
+                  AND (
+                        v.brand LIKE CONCAT('%', ?, '%')
+                        OR v.model LIKE CONCAT('%', ?, '%')
+                        OR v.plate_number LIKE CONCAT('%', ?, '%')
+                  )
+            )
+        )";
+
+        for ($index = 0; $index < 7; $index++) {
+            $types .= 's';
+            $params[] = $searchTerm;
+        }
+    }
+
+    return [
+        'sql' => implode(' AND ', $whereParts),
+        'types' => $types,
+        'params' => $params,
+    ];
+}
+
+$actionMessage = '';
+$actionError = '';
+
+$formData = [
+    'fullName' => '',
+    'email' => '',
+    'contactNumber' => '',
+    'address' => '',
+    'password' => '',
+    'confirm_password' => '',
+];
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create_customer'])) {
+    foreach ($formData as $key => $value) {
+        $formData[$key] = isset($_POST[$key]) ? trim((string) $_POST[$key]) : $value;
+    }
+
+    if ($formData['fullName'] === '' || $formData['email'] === '' || $formData['contactNumber'] === '' || $formData['password'] === '') {
+        $actionError = 'Full name, email, contact number, and password are required.';
+    } elseif (!filter_var($formData['email'], FILTER_VALIDATE_EMAIL)) {
+        $actionError = 'Enter a valid email address.';
+    } elseif ($formData['password'] !== $formData['confirm_password']) {
+        $actionError = 'Passwords do not match.';
+    } elseif (strlen($formData['password']) < 6) {
+        $actionError = 'Password must be at least 6 characters long.';
+    } else {
+        $duplicateStmt = mysqli_prepare($conn, 'SELECT user_id FROM users WHERE email = ? LIMIT 1');
+        if ($duplicateStmt) {
+            mysqli_stmt_bind_param($duplicateStmt, 's', $formData['email']);
+            mysqli_stmt_execute($duplicateStmt);
+            $duplicateResult = mysqli_stmt_get_result($duplicateStmt);
+            if ($duplicateResult && mysqli_fetch_assoc($duplicateResult)) {
+                $actionError = 'That email address is already registered.';
+            }
+            mysqli_stmt_close($duplicateStmt);
+        } else {
+            $actionError = 'Unable to validate the new customer email.';
+        }
+
+        if ($actionError === '') {
+            $passwordHash = password_hash($formData['password'], PASSWORD_DEFAULT);
+            $address = $formData['address'] !== '' ? $formData['address'] : null;
+
+            $insertStmt = mysqli_prepare(
+                $conn,
+                'INSERT INTO users (tenantID, fullName, address, email, password, contactNumber, role) VALUES (?, ?, ?, ?, ?, ?, "client")'
+            );
+
+            if ($insertStmt) {
+                mysqli_stmt_bind_param(
+                    $insertStmt,
+                    'isssss',
+                    $tenantID,
+                    $formData['fullName'],
+                    $address,
+                    $formData['email'],
+                    $passwordHash,
+                    $formData['contactNumber']
+                );
+
+                if (mysqli_stmt_execute($insertStmt)) {
+                    mysqli_stmt_close($insertStmt);
+                    header('Location: customeradmin.php?shop=' . $shopQuery . '&customer_saved=1');
+                    exit;
+                }
+
+                $actionError = 'Unable to save customer right now.';
+                mysqli_stmt_close($insertStmt);
+            } else {
+                $actionError = 'Unable to prepare the customer insert query.';
+            }
+        }
+    }
+}
+
+$searchTerm = isset($_GET['q']) ? trim((string) $_GET['q']) : '';
+$page = isset($_GET['page']) ? max(1, (int) $_GET['page']) : 1;
+$perPage = 10;
+$offset = ($page - 1) * $perPage;
+$selectedCustomerId = isset($_GET['customer_id']) ? max(0, (int) $_GET['customer_id']) : 0;
+
+$customerStats = [
+    'total_customers' => 0,
+    'customers_with_vehicles' => 0,
+    'total_vehicles' => 0,
+    'active_vehicles' => 0,
+];
+
+$statsStmt = mysqli_prepare(
+    $conn,
+    'SELECT
+        COUNT(*) AS total_customers,
+        COALESCE(SUM(CASE WHEN EXISTS (
+            SELECT 1
+            FROM vehicleinformation v
+            WHERE v.tenantID = u.tenantID
+              AND v.user_id = u.user_id
+        ) THEN 1 ELSE 0 END), 0) AS customers_with_vehicles
+     FROM users u
+     WHERE u.tenantID = ?
+       AND u.role = "client"'
+);
+if ($statsStmt) {
+    mysqli_stmt_bind_param($statsStmt, 'i', $tenantID);
+    mysqli_stmt_execute($statsStmt);
+    $statsResult = mysqli_stmt_get_result($statsStmt);
+    if ($statsResult && $row = mysqli_fetch_assoc($statsResult)) {
+        $customerStats['total_customers'] = (int) ($row['total_customers'] ?? 0);
+        $customerStats['customers_with_vehicles'] = (int) ($row['customers_with_vehicles'] ?? 0);
+    }
+    mysqli_stmt_close($statsStmt);
+}
+
+$vehicleStatsStmt = mysqli_prepare(
+    $conn,
+    'SELECT
+        COUNT(*) AS total_vehicles,
+        COALESCE(SUM(CASE WHEN status = "Active" THEN 1 ELSE 0 END), 0) AS active_vehicles
+     FROM vehicleinformation
+     WHERE tenantID = ?'
+);
+if ($vehicleStatsStmt) {
+    mysqli_stmt_bind_param($vehicleStatsStmt, 'i', $tenantID);
+    mysqli_stmt_execute($vehicleStatsStmt);
+    $vehicleStatsResult = mysqli_stmt_get_result($vehicleStatsStmt);
+    if ($vehicleStatsResult && $row = mysqli_fetch_assoc($vehicleStatsResult)) {
+        $customerStats['total_vehicles'] = (int) ($row['total_vehicles'] ?? 0);
+        $customerStats['active_vehicles'] = (int) ($row['active_vehicles'] ?? 0);
+    }
+    mysqli_stmt_close($vehicleStatsStmt);
+}
+
+$filter = buildCustomerFilterSql($tenantID, $searchTerm);
+$filteredTotal = 0;
+$countSql = 'SELECT COUNT(*) AS total FROM users u WHERE ' . $filter['sql'];
+$countStmt = mysqli_prepare($conn, $countSql);
+if ($countStmt) {
+    $countParams = $filter['params'];
+    if (bindValues($countStmt, $filter['types'], $countParams)) {
+        mysqli_stmt_execute($countStmt);
+        $countResult = mysqli_stmt_get_result($countStmt);
+        if ($countResult && $countRow = mysqli_fetch_assoc($countResult)) {
+            $filteredTotal = (int) ($countRow['total'] ?? 0);
+        }
+    }
+    mysqli_stmt_close($countStmt);
+}
+
+$totalPages = max(1, (int) ceil(max(1, $filteredTotal) / $perPage));
+if ($page > $totalPages) {
+    $page = $totalPages;
+    $offset = ($page - 1) * $perPage;
+}
+
+if (isset($_GET['export']) && $_GET['export'] === '1') {
+    $exportSql = '
+        SELECT
+            u.user_id,
+            u.fullName,
+            u.email,
+            u.contactNumber,
+            u.address,
+            COALESCE((SELECT COUNT(*) FROM vehicleinformation v WHERE v.tenantID = u.tenantID AND v.user_id = u.user_id), 0) AS vehicle_count,
+            COALESCE((SELECT SUM(CASE WHEN v.status = "Active" THEN 1 ELSE 0 END) FROM vehicleinformation v WHERE v.tenantID = u.tenantID AND v.user_id = u.user_id), 0) AS active_vehicle_count,
+            (SELECT TRIM(CONCAT(COALESCE(v.brand, ""), " ", COALESCE(v.model, "")))
+             FROM vehicleinformation v
+             WHERE v.tenantID = u.tenantID AND v.user_id = u.user_id
+             ORDER BY v.date_added DESC, v.vehicle_id DESC
+             LIMIT 1) AS latest_vehicle_label,
+            (SELECT v.plate_number
+             FROM vehicleinformation v
+             WHERE v.tenantID = u.tenantID AND v.user_id = u.user_id
+             ORDER BY v.date_added DESC, v.vehicle_id DESC
+             LIMIT 1) AS latest_plate_number,
+            (SELECT v.date_added
+             FROM vehicleinformation v
+             WHERE v.tenantID = u.tenantID AND v.user_id = u.user_id
+             ORDER BY v.date_added DESC, v.vehicle_id DESC
+             LIMIT 1) AS latest_vehicle_date
+        FROM users u
+        WHERE ' . $filter['sql'] . '
+        ORDER BY u.fullName ASC
+    ';
+
+    $exportStmt = mysqli_prepare($conn, $exportSql);
+    if ($exportStmt) {
+        $exportParams = $filter['params'];
+        if (bindValues($exportStmt, $filter['types'], $exportParams)) {
+            mysqli_stmt_execute($exportStmt);
+            $exportResult = mysqli_stmt_get_result($exportStmt);
+
+            header('Content-Type: text/csv; charset=utf-8');
+            header('Content-Disposition: attachment; filename=customers_export_' . date('Ymd_His') . '.csv');
+
+            $output = fopen('php://output', 'w');
+            fputcsv($output, ['Customer ID', 'Full Name', 'Email', 'Contact Number', 'Address', 'Vehicles', 'Active Vehicles', 'Latest Vehicle', 'Latest Plate', 'Latest Vehicle Date']);
+
+            while ($exportResult && $row = mysqli_fetch_assoc($exportResult)) {
+                fputcsv($output, [
+                    $row['user_id'],
+                    $row['fullName'],
+                    $row['email'],
+                    $row['contactNumber'],
+                    $row['address'],
+                    $row['vehicle_count'],
+                    $row['active_vehicle_count'],
+                    trim((string) ($row['latest_vehicle_label'] ?? '')),
+                    $row['latest_plate_number'],
+                    $row['latest_vehicle_date'],
+                ]);
+            }
+
+            fclose($output);
+            mysqli_stmt_close($exportStmt);
+            exit;
+        }
+        mysqli_stmt_close($exportStmt);
+    }
+}
+
+$listSql = '
+    SELECT
+        u.user_id,
+        u.fullName,
+        u.email,
+        u.contactNumber,
+        u.address,
+        COALESCE((SELECT COUNT(*) FROM vehicleinformation v WHERE v.tenantID = u.tenantID AND v.user_id = u.user_id), 0) AS vehicle_count,
+        COALESCE((SELECT SUM(CASE WHEN v.status = "Active" THEN 1 ELSE 0 END) FROM vehicleinformation v WHERE v.tenantID = u.tenantID AND v.user_id = u.user_id), 0) AS active_vehicle_count,
+        (SELECT TRIM(CONCAT(COALESCE(v.brand, ""), " ", COALESCE(v.model, "")))
+         FROM vehicleinformation v
+         WHERE v.tenantID = u.tenantID AND v.user_id = u.user_id
+         ORDER BY v.date_added DESC, v.vehicle_id DESC
+         LIMIT 1) AS latest_vehicle_label,
+        (SELECT v.plate_number
+         FROM vehicleinformation v
+         WHERE v.tenantID = u.tenantID AND v.user_id = u.user_id
+         ORDER BY v.date_added DESC, v.vehicle_id DESC
+         LIMIT 1) AS latest_plate_number,
+        (SELECT v.status
+         FROM vehicleinformation v
+         WHERE v.tenantID = u.tenantID AND v.user_id = u.user_id
+         ORDER BY v.date_added DESC, v.vehicle_id DESC
+         LIMIT 1) AS latest_vehicle_status,
+        (SELECT v.date_added
+         FROM vehicleinformation v
+         WHERE v.tenantID = u.tenantID AND v.user_id = u.user_id
+         ORDER BY v.date_added DESC, v.vehicle_id DESC
+         LIMIT 1) AS latest_vehicle_date,
+        (SELECT v.vehicle_id
+         FROM vehicleinformation v
+         WHERE v.tenantID = u.tenantID AND v.user_id = u.user_id
+         ORDER BY v.date_added DESC, v.vehicle_id DESC
+         LIMIT 1) AS latest_vehicle_id
+    FROM users u
+    WHERE ' . $filter['sql'] . '
+    ORDER BY u.fullName ASC
+    LIMIT ?, ?
+';
+
+$customers = [];
+$listStmt = mysqli_prepare($conn, $listSql);
+if ($listStmt) {
+    $listParams = $filter['params'];
+    $listParams[] = $offset;
+    $listParams[] = $perPage;
+    $listTypes = $filter['types'] . 'ii';
+
+    if (bindValues($listStmt, $listTypes, $listParams)) {
+        mysqli_stmt_execute($listStmt);
+        $listResult = mysqli_stmt_get_result($listStmt);
+        while ($listResult && $row = mysqli_fetch_assoc($listResult)) {
+            $customers[] = $row;
+        }
+    }
+    mysqli_stmt_close($listStmt);
+}
+
+if ($selectedCustomerId <= 0 && !empty($customers)) {
+    $selectedCustomerId = (int) $customers[0]['user_id'];
+}
+
+$selectedCustomer = null;
+$selectedVehicles = [];
+$selectedCustomerVehiclesCount = 0;
+$selectedCustomerActiveVehicles = 0;
+if ($selectedCustomerId > 0) {
+    $selectedStmt = mysqli_prepare(
+        $conn,
+        'SELECT user_id, fullName, email, contactNumber, address FROM users WHERE user_id = ? AND tenantID = ? AND role = "client" LIMIT 1'
+    );
+    if ($selectedStmt) {
+        mysqli_stmt_bind_param($selectedStmt, 'ii', $selectedCustomerId, $tenantID);
+        mysqli_stmt_execute($selectedStmt);
+        $selectedResult = mysqli_stmt_get_result($selectedStmt);
+        $selectedCustomer = $selectedResult ? mysqli_fetch_assoc($selectedResult) : null;
+        mysqli_stmt_close($selectedStmt);
+    }
+
+    if ($selectedCustomer) {
+        $vehiclesStmt = mysqli_prepare(
+            $conn,
+            'SELECT vehicle_id, brand, model, year_model, plate_number, color, status, date_added
+             FROM vehicleinformation
+             WHERE tenantID = ? AND user_id = ?
+             ORDER BY date_added DESC, vehicle_id DESC
+             LIMIT 8'
+        );
+        if ($vehiclesStmt) {
+            mysqli_stmt_bind_param($vehiclesStmt, 'ii', $tenantID, $selectedCustomerId);
+            mysqli_stmt_execute($vehiclesStmt);
+            $vehiclesResult = mysqli_stmt_get_result($vehiclesStmt);
+            while ($vehiclesResult && $vehicleRow = mysqli_fetch_assoc($vehiclesResult)) {
+                $selectedVehicles[] = $vehicleRow;
+            }
+            mysqli_stmt_close($vehiclesStmt);
+        }
+
+        $selectedCountsStmt = mysqli_prepare(
+            $conn,
+            'SELECT
+                COUNT(*) AS total_vehicles,
+                COALESCE(SUM(CASE WHEN status = "Active" THEN 1 ELSE 0 END), 0) AS active_vehicles
+             FROM vehicleinformation
+             WHERE tenantID = ? AND user_id = ?'
+        );
+        if ($selectedCountsStmt) {
+            mysqli_stmt_bind_param($selectedCountsStmt, 'ii', $tenantID, $selectedCustomerId);
+            mysqli_stmt_execute($selectedCountsStmt);
+            $selectedCountsResult = mysqli_stmt_get_result($selectedCountsStmt);
+            if ($selectedCountsResult && $selectedCountsRow = mysqli_fetch_assoc($selectedCountsResult)) {
+                $selectedCustomerVehiclesCount = (int) ($selectedCountsRow['total_vehicles'] ?? 0);
+                $selectedCustomerActiveVehicles = (int) ($selectedCountsRow['active_vehicles'] ?? 0);
+            }
+            mysqli_stmt_close($selectedCountsStmt);
+        }
+    } else {
+        $selectedCustomerId = 0;
+    }
+}
+
+$recentActivity = [];
+$recentStmt = mysqli_prepare(
+    $conn,
+    'SELECT
+        v.vehicle_id,
+        v.brand,
+        v.model,
+        v.plate_number,
+        v.status,
+        v.date_added,
+        COALESCE(u.fullName, CONCAT("User #", v.user_id)) AS customer_name
+     FROM vehicleinformation v
+     LEFT JOIN users u ON u.user_id = v.user_id AND u.tenantID = v.tenantID
+     WHERE v.tenantID = ?
+     ORDER BY v.date_added DESC, v.vehicle_id DESC
+     LIMIT 5'
+);
+if ($recentStmt) {
+    mysqli_stmt_bind_param($recentStmt, 'i', $tenantID);
+    mysqli_stmt_execute($recentStmt);
+    $recentResult = mysqli_stmt_get_result($recentStmt);
+    while ($recentResult && $recentRow = mysqli_fetch_assoc($recentResult)) {
+        $recentActivity[] = $recentRow;
+    }
+    mysqli_stmt_close($recentStmt);
+}
+
+$startEntry = $filteredTotal > 0 ? $offset + 1 : 0;
+$endEntry = min($offset + count($customers), $filteredTotal);
+$selectedCustomerName = $selectedCustomer['fullName'] ?? 'Select a customer';
+
+function customerStatusClass(?string $status): string
+{
+    if ($status === 'Active') {
+        return 'bg-emerald-100 text-emerald-700';
+    }
+
+    if ($status === 'Inactive') {
+        return 'bg-slate-100 text-slate-600';
+    }
+
+    return 'bg-blue-100 text-blue-700';
+}
+
+function formatDateValue($value, string $fallback = 'No vehicle yet'): string
+{
+    if (empty($value)) {
+        return $fallback;
+    }
+
+    $timestamp = strtotime((string) $value);
+    if ($timestamp === false) {
+        return $fallback;
+    }
+
+    return date('M d, Y', $timestamp);
+}
+
+$exportParams = ['shop' => $loginSlug];
+if ($searchTerm !== '') {
+    $exportParams['q'] = $searchTerm;
+}
+if ($selectedCustomerId > 0) {
+    $exportParams['customer_id'] = $selectedCustomerId;
+}
+$exportUrl = 'customeradmin.php?' . http_build_query($exportParams + ['export' => 1]);
+$searchUrl = 'customeradmin.php?shop=' . $shopQuery;
+if ($selectedCustomerId > 0) {
+    $searchUrl .= '&customer_id=' . $selectedCustomerId;
+}
+?>
+<!DOCTYPE html>
 <html class="light" lang="en">
 
 <head>
     <meta charset="utf-8" />
     <meta content="width=device-width, initial-scale=1.0" name="viewport" />
-    <title>Customer Management - Cobalt Precision Service</title>
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
+    <title><?php echo h($shopName); ?> | Customer Management</title>
     <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@100;300;400;500;600;700;800;900&amp;display=swap"
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap"
         rel="stylesheet" />
-    <link
-        href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap"
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap"
         rel="stylesheet" />
     <script id="tailwind-config">
         tailwind.config = {
-            darkMode: "class",
+            darkMode: 'class',
             theme: {
                 extend: {
                     colors: {
-                        "tertiary": "#f59e0b",
-                        "outline": "#e2e8f0",
-                        "on-tertiary-fixed": "#7c2d12",
-                        "on-primary-fixed-variant": "#1d4ed8",
-                        "surface-variant": "#f1f5f9",
-                        "surface-container-lowest": "#ffffff",
-                        "surface-dim": "#d9d9e4",
-                        "on-primary": "#ffffff",
-                        "outline-variant": "#cbd5e1",
-                        "on-surface-variant": "#64748b",
-                        "on-error": "#ffffff",
-                        "error-container": "#fee2e2",
-                        "on-primary-fixed": "#1e3a8a",
-                        "on-tertiary-fixed-variant": "#9a3412",
-                        "tertiary-fixed": "#ffedd5",
-                        "surface-tint": "#1152d4",
-                        "tertiary-fixed-dim": "#fed7aa",
-                        "secondary-container": "#f1f5f9",
-                        "primary-fixed-dim": "#bfdbfe",
-                        "primary": "#1152d4",
-                        "on-secondary-container": "#1e293b",
-                        "on-secondary-fixed-variant": "#334155",
-                        "primary-container": "#eef2ff",
-                        "on-secondary": "#ffffff",
-                        "surface-container-low": "#ffffff",
-                        "surface-container-high": "#ffffff",
-                        "on-surface": "#0f172a",
-                        "error": "#ef4444",
-                        "surface": "#f6f6f8",
-                        "primary-fixed": "#dbeafe",
-                        "on-tertiary": "#ffffff",
-                        "inverse-surface": "#1e293b",
-                        "secondary": "#475569",
-                        "on-tertiary-container": "#92400e",
-                        "background": "#f6f6f8",
-                        "on-secondary-fixed": "#0f172a",
-                        "on-background": "#0f172a",
-                        "on-primary-container": "#1152d4",
-                        "inverse-primary": "#b4c5ff",
-                        "inverse-on-surface": "#f8fafc",
-                        "secondary-fixed": "#e2e8f0",
-                        "surface-container": "#ffffff",
-                        "surface-bright": "#ffffff",
-                        "on-error-container": "#991b1b",
-                        "tertiary-container": "#fef3c7",
-                        "surface-container-highest": "#ffffff",
-                        "secondary-fixed-dim": "#cbd5e1"
+                        primary: '#1152d4',
+                        'primary-container': '#eef2ff',
+                        background: '#f6f6f8',
+                        surface: '#ffffff',
+                        outline: '#e2e8f0',
+                        secondary: '#475569',
+                        'on-surface': '#0f172a',
+                        'on-background': '#0f172a',
+                        tertiary: '#f59e0b',
+                        error: '#ef4444',
                     },
                     fontFamily: {
-                        "headline": ["Inter"],
-                        "body": ["Inter"],
-                        "label": ["Inter"]
+                        headline: ['Inter'],
+                        body: ['Inter'],
+                        label: ['Inter'],
                     },
-                    borderRadius: { "DEFAULT": "0.125rem", "lg": "0.25rem", "xl": "0.5rem", "full": "0.75rem" },
+                    borderRadius: { DEFAULT: '0.125rem', lg: '0.5rem', xl: '0.75rem', full: '9999px' },
                 },
             },
         }
@@ -85,26 +569,11 @@
             font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
             vertical-align: middle;
         }
-
-        .custom-scrollbar::-webkit-scrollbar {
-            width: 4px;
-        }
-
-        .custom-scrollbar::-webkit-scrollbar-track {
-            background: transparent;
-        }
-
-        .custom-scrollbar::-webkit-scrollbar-thumb {
-            background: #cbd5e1;
-            border-radius: 10px;
-        }
     </style>
 </head>
 
-<body class="bg-background text-on-background antialiased overflow-hidden flex h-screen">
-    <!-- SideNavBar Component -->
-    <aside
-        class="w-64 flex-shrink-0 border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-y-auto flex flex-col relative">
+<body class="bg-background text-on-background antialiased flex min-h-screen overflow-hidden">
+    <aside class="w-64 flex-shrink-0 border-r border-slate-200 bg-white overflow-y-auto flex flex-col">
         <div class="p-6 flex-1">
             <div class="flex items-center gap-3 mb-8">
                 <div class="bg-primary rounded-lg p-2 text-white">
@@ -112,91 +581,101 @@
                 </div>
                 <div>
                     <h1 class="text-lg font-bold leading-none">AutoFix Pro</h1>
-                    <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Repair Management</p>
+                    <p class="text-xs text-slate-500 mt-1">Repair Management</p>
                 </div>
             </div>
             <nav class="space-y-1">
-                <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-                    href="dashboardadmin.php">
+                <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 hover:bg-slate-100 transition-colors"
+                    href="dashboardadmin.php?shop=<?php echo h($shopQuery); ?>">
                     <span class="material-symbols-outlined text-[22px]">dashboard</span>
                     Dashboard
                 </a>
-                <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-                    href="repairjobsadmin.php">
+                <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 hover:bg-slate-100 transition-colors"
+                    href="repairjobsadmin.php?shop=<?php echo h($shopQuery); ?>">
                     <span class="material-symbols-outlined text-[22px]">build</span>
                     Repair Jobs
                 </a>
-                <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-                    href="vehicleadmin.php">
+                <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 hover:bg-slate-100 transition-colors"
+                    href="vehicleadmin.php?shop=<?php echo h($shopQuery); ?>">
                     <span class="material-symbols-outlined text-[22px]">directions_car</span>
                     Vehicles
                 </a>
-                <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-                    href="appointmentadmin.php">
+                <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 hover:bg-slate-100 transition-colors"
+                    href="appointmentadmin.php?shop=<?php echo h($shopQuery); ?>">
                     <span class="material-symbols-outlined text-[22px]">event</span>
                     Appointments
                 </a>
-                <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-                    href="reportsadmin.php">
+                <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 hover:bg-slate-100 transition-colors"
+                    href="reportsadmin.php?shop=<?php echo h($shopQuery); ?>">
                     <span class="material-symbols-outlined text-[22px]">description</span>
                     Reports
                 </a>
-                <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-                    href="inventoryadmin.php">
+                <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 hover:bg-slate-100 transition-colors"
+                    href="inventoryadmin.php?shop=<?php echo h($shopQuery); ?>">
                     <span class="material-symbols-outlined text-[22px]">inventory_2</span>
                     Inventory
                 </a>
                 <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-primary/10 text-primary font-medium"
-                    href="customeradmin.php">
+                    href="customeradmin.php?shop=<?php echo h($shopQuery); ?>">
                     <span class="material-symbols-outlined text-[22px]">group</span>
                     Customers
                 </a>
-                <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-                    href="paymentsadmin.php">
+                <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 hover:bg-slate-100 transition-colors"
+                    href="paymentsadmin.php?shop=<?php echo h($shopQuery); ?>">
                     <span class="material-symbols-outlined text-[22px]">payments</span>
                     Payments
                 </a>
-                <div class="pt-4 mt-4 border-t border-slate-100 dark:border-slate-800">
-                    <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-                        href="settingsadmin.php">
+                <div class="pt-4 mt-4 border-t border-slate-100">
+                    <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 hover:bg-slate-100 transition-colors"
+                        href="settingsadmin.php?shop=<?php echo h($shopQuery); ?>">
                         <span class="material-symbols-outlined text-[22px]">settings</span>
                         Settings
                     </a>
                 </div>
             </nav>
         </div>
-        <div class="p-4 border-t border-slate-200 dark:border-slate-800">
+        <div class="p-4 border-t border-slate-200">
             <div class="flex items-center gap-3">
                 <div
-                    class="size-10 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center overflow-hidden shrink-0">
-                    <img alt="Admin Profile" class="w-full h-full object-cover"
-                        data-alt="User avatar for admin profile picture"
-                        src="https://lh3.googleusercontent.com/aida-public/AB6AXuDeh_igjzq55wP-MQUqlN5a7g7ERzT91RAZllys2xTPdmr_K6ugTc7NEPOG48E87bvkhiEKuMOE9TZ0njKOCLQ7Nhccix3HVxsYdR2tXeyTCkjam7s1q8ngQOzslzdGRLROqouBtkGpnSewuAyIscdu673vBatOqI9TKHP1RCzarhxH8GqVYpWDnccgDrczUMroOqof3VFA7U9HLzMcDyURIrkC9dU2KtSkusqfbOvLaUs_zR14qlpZVSgASdGK8sw1SCeDf4A38q-8" />
+                    class="size-10 rounded-full bg-slate-200 flex items-center justify-center overflow-hidden shrink-0">
+                    <span class="material-symbols-outlined text-slate-500">person</span>
                 </div>
                 <div class="flex-1 min-w-0">
-                    <p class="text-sm font-semibold truncate">Marcus Smith</p>
+                    <p class="text-sm font-semibold truncate"><?php echo h($_SESSION['fullName'] ?? 'Shop Manager'); ?>
+                    </p>
                     <p class="text-xs text-slate-500 truncate">Shop Manager</p>
                 </div>
-                <button class="text-slate-400 hover:text-error transition-colors">
-                    <span class="material-symbols-outlined text-xl">logout</span>
-                </button>
+                <form method="post" action="../logout/logout.php" class="inline">
+                    <input type="hidden" name="action" value="confirm" />
+                    <input type="hidden" name="shop" value="<?php echo h($loginSlug); ?>" />
+                    <button type="submit" class="text-slate-400 hover:text-error transition-colors" title="Logout">
+                        <span class="material-symbols-outlined text-xl">logout</span>
+                    </button>
+                </form>
             </div>
         </div>
     </aside>
-    <!-- Main Content Shell -->
-    <main class="flex-1 flex flex-col h-full overflow-hidden">
-        <!-- Top Nav Bar -->
+
+    <main class="flex-1 flex flex-col h-screen overflow-hidden">
         <header
-            class="sticky top-0 z-40 w-full border-b border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md flex items-center justify-between px-8 h-16">
-            <div class="flex items-center gap-6">
-                <h2 class="text-lg font-black text-slate-900 dark:white tracking-tight">Customer Management</h2>
-                <div class="relative hidden lg:block">
+            class="sticky top-0 z-40 w-full border-b border-slate-200 bg-white/85 backdrop-blur-md flex items-center justify-between px-8 h-16">
+            <div class="flex items-center gap-6 min-w-0">
+                <div>
+                    <h2 class="text-lg font-black text-slate-900 tracking-tight">Customer Management</h2>
+                </div>
+                <form method="get" action="customeradmin.php" class="relative hidden lg:block">
+                    <input type="hidden" name="shop" value="<?php echo h($loginSlug); ?>" />
+                    <?php if ($selectedCustomerId > 0): ?>
+                        <input type="hidden" name="customer_id" value="<?php echo (int) $selectedCustomerId; ?>" />
+                    <?php endif; ?>
                     <span
                         class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">search</span>
                     <input
-                        class="bg-surface-variant border-none rounded-lg pl-10 pr-4 py-1.5 text-sm w-64 focus:ring-2 focus:ring-primary/20"
-                        placeholder="Search customers..." type="text" />
-                </div>
+                        class="bg-slate-100 border-none rounded-lg pl-10 pr-4 py-2 text-sm w-80 focus:ring-2 focus:ring-primary/20"
+                        placeholder="Search customers or vehicles..." type="text" name="q"
+                        value="<?php echo h($searchTerm); ?>" />
+                </form>
+                <span class="hidden xl:inline-flex items-center px-2.5 py-1 rounded-full bg-blue-50 text-blue-700 text-[11px] font-bold uppercase tracking-wide"><?php echo h($loginSlug); ?></span>
             </div>
             <div class="flex items-center gap-4">
                 <button class="p-2 text-slate-500 hover:text-primary transition-all">
@@ -208,8 +687,8 @@
                 <div class="h-8 w-px bg-slate-200 mx-2"></div>
                 <div class="flex items-center gap-3">
                     <div class="text-right hidden sm:block">
-                        <p class="text-xs font-bold text-on-background">Alex Rivet</p>
-                        <p class="text-[10px] text-slate-500 uppercase font-semibold">Service Lead</p>
+                        <p class="text-xs font-bold text-on-background"><?php echo h($shopName); ?></p>
+                        <p class="text-[10px] text-slate-500 uppercase font-semibold">Admin</p>
                     </div>
                     <img alt="Manager Avatar" class="h-10 w-10 rounded-full border-2 border-primary/20 object-cover"
                         data-alt="professional male service manager portrait in modern automotive office environment"
@@ -217,342 +696,412 @@
                 </div>
             </div>
         </header>
-        <!-- Canvas -->
-        <div class="flex-1 overflow-y-auto p-8 bg-[#f6f6f8]">
-            <!-- Header & Action Row -->
-            <div class="flex justify-between items-end mb-8">
+
+        <div class="flex-1 overflow-y-auto p-8">
+            <div class="flex flex-wrap items-end justify-between gap-4 mb-8">
                 <div>
-                    <h2 class="text-[30px] font-black tracking-tight text-on-surface">Customer Directory</h2>
-                    <p class="text-secondary mt-1 font-medium">Manage and monitor customer relationships and vehicle
-                        service history.</p>
+                    <h2 class="text-[30px] font-black tracking-tight text-on-surface"><?php echo h($shopName); ?>
+                        Customers</h2>
+                    <p class="text-secondary mt-1 font-medium">Manage customer accounts and see every vehicle linked to
+                        each account.</p>
                 </div>
                 <div class="flex items-center gap-3">
-                    <button
-                        class="px-4 py-2.5 border border-outline bg-white text-secondary font-bold text-sm rounded-lg flex items-center gap-2 hover:bg-slate-50 transition-colors shadow-sm">
-                        <span class="material-symbols-outlined text-lg" data-icon="file_download">file_download</span>
-                        Export List
-                    </button>
-                    <button
-                        class="px-6 py-2.5 bg-primary text-white font-bold text-sm rounded-lg flex items-center gap-2 hover:brightness-110 transition-all shadow-sm active:scale-95">
-                        <span class="material-symbols-outlined text-lg" data-icon="person_add">person_add</span>
-                        Add New Customer
-                    </button>
+                    <span class="text-xs font-semibold text-slate-500 uppercase tracking-wider">Showing</span>
+                    <span
+                        class="text-sm font-bold text-on-surface"><?php echo $startEntry; ?>-<?php echo $endEntry; ?></span>
+                    <span class="text-xs text-slate-500">of <?php echo number_format($filteredTotal); ?></span>
                 </div>
             </div>
-            <!-- Metric Cards (Bento Style) -->
+
+            <?php if (isset($_GET['customer_saved']) && $_GET['customer_saved'] === '1'): ?>
+                <div
+                    class="mb-6 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-emerald-800 text-sm font-medium">
+                    Customer created successfully.
+                </div>
+            <?php endif; ?>
+            <?php if ($actionError !== ''): ?>
+                <div class="mb-6 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-red-700 text-sm font-medium">
+                    <?php echo h($actionError); ?>
+                </div>
+            <?php endif; ?>
+            <?php if ($actionMessage !== ''): ?>
+                <div
+                    class="mb-6 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-emerald-800 text-sm font-medium">
+                    <?php echo h($actionMessage); ?>
+                </div>
+            <?php endif; ?>
+
             <div class="grid grid-cols-4 gap-6 mb-8">
                 <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
                     <div class="flex justify-between items-start mb-4">
-                        <div class="p-2 bg-primary-container rounded-lg">
-                            <span class="material-symbols-outlined text-primary" data-icon="group">group</span>
+                        <div class="p-2 bg-primary-container rounded-lg text-primary">
+                            <span class="material-symbols-outlined">group</span>
                         </div>
-                        <span class="text-[10px] font-bold text-green-600 bg-green-50 px-2 py-1 rounded-full">+12% vs
-                            LY</span>
+                        <span
+                            class="text-[10px] font-bold text-green-600 bg-green-50 px-2 py-1 rounded-full">Customers</span>
                     </div>
                     <p class="text-slate-500 text-xs font-bold uppercase tracking-wider">Total Customers</p>
-                    <h3 class="text-2xl font-black text-on-surface mt-1">2,842</h3>
+                    <h3 class="text-2xl font-black text-on-surface mt-1">
+                        <?php echo number_format($customerStats['total_customers']); ?></h3>
                 </div>
                 <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
                     <div class="flex justify-between items-start mb-4">
-                        <div class="p-2 bg-primary-container rounded-lg">
-                            <span class="material-symbols-outlined text-primary"
-                                data-icon="person_add">person_add</span>
+                        <div class="p-2 bg-primary-container rounded-lg text-primary">
+                            <span class="material-symbols-outlined">directions_car</span>
                         </div>
                         <span
-                            class="text-[10px] font-bold text-green-600 bg-green-50 px-2 py-1 rounded-full">+4.3%</span>
+                            class="text-[10px] font-bold text-green-600 bg-green-50 px-2 py-1 rounded-full">Linked</span>
                     </div>
-                    <p class="text-slate-500 text-xs font-bold uppercase tracking-wider">New This Month</p>
-                    <h3 class="text-2xl font-black text-on-surface mt-1">158</h3>
+                    <p class="text-slate-500 text-xs font-bold uppercase tracking-wider">Customers With Vehicles</p>
+                    <h3 class="text-2xl font-black text-on-surface mt-1">
+                        <?php echo number_format($customerStats['customers_with_vehicles']); ?></h3>
                 </div>
                 <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
                     <div class="flex justify-between items-start mb-4">
-                        <div class="p-2 bg-primary-container rounded-lg">
-                            <span class="material-symbols-outlined text-primary"
-                                data-icon="rebase_edit">rebase_edit</span>
+                        <div class="p-2 bg-primary-container rounded-lg text-primary">
+                            <span class="material-symbols-outlined">garage</span>
                         </div>
                         <span
-                            class="text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-1 rounded-full">Stable</span>
+                            class="text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-1 rounded-full">Fleet</span>
                     </div>
-                    <p class="text-slate-500 text-xs font-bold uppercase tracking-wider">Returning Rate</p>
-                    <h3 class="text-2xl font-black text-on-surface mt-1">74.2%</h3>
+                    <p class="text-slate-500 text-xs font-bold uppercase tracking-wider">Total Vehicles</p>
+                    <h3 class="text-2xl font-black text-on-surface mt-1">
+                        <?php echo number_format($customerStats['total_vehicles']); ?></h3>
                 </div>
                 <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
                     <div class="flex justify-between items-start mb-4">
-                        <div class="p-2 bg-primary-container rounded-lg">
-                            <span class="material-symbols-outlined text-primary"
-                                data-icon="engineering">engineering</span>
+                        <div class="p-2 bg-primary-container rounded-lg text-primary">
+                            <span class="material-symbols-outlined">engineering</span>
                         </div>
                         <span
                             class="text-[10px] font-bold text-primary bg-primary-container px-2 py-1 rounded-full">Live</span>
                     </div>
-                    <p class="text-slate-500 text-xs font-bold uppercase tracking-wider">Active Service Requests</p>
-                    <h3 class="text-2xl font-black text-on-surface mt-1">42</h3>
+                    <p class="text-slate-500 text-xs font-bold uppercase tracking-wider">Active Vehicles</p>
+                    <h3 class="text-2xl font-black text-on-surface mt-1">
+                        <?php echo number_format($customerStats['active_vehicles']); ?></h3>
                 </div>
             </div>
+
+            <div id="add-customer" class="bg-white rounded-xl border border-slate-200 shadow-sm p-6 mb-8">
+                <div class="flex items-center justify-between gap-4 mb-6">
+                    <div>
+                        <h3 class="font-bold text-on-surface text-lg">Add Customer</h3>
+                        <p class="text-sm text-slate-500">Create a new client account in this tenant.</p>
+                    </div>
+                    <span class="text-xs font-semibold uppercase tracking-widest text-slate-400">Role: client</span>
+                </div>
+                <form method="post" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-6 gap-4">
+                    <input type="hidden" name="shop" value="<?php echo h($loginSlug); ?>" />
+                    <div class="xl:col-span-2">
+                        <label class="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">Full
+                            Name</label>
+                        <input name="fullName" value="<?php echo h($formData['fullName']); ?>"
+                            class="w-full rounded-lg border-slate-200 focus:border-primary focus:ring-primary/20"
+                            type="text" placeholder="Jane Doe" required />
+                    </div>
+                    <div>
+                        <label
+                            class="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">Email</label>
+                        <input name="email" value="<?php echo h($formData['email']); ?>"
+                            class="w-full rounded-lg border-slate-200 focus:border-primary focus:ring-primary/20"
+                            type="email" placeholder="jane@example.com" required />
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">Contact
+                            Number</label>
+                        <input name="contactNumber" value="<?php echo h($formData['contactNumber']); ?>"
+                            class="w-full rounded-lg border-slate-200 focus:border-primary focus:ring-primary/20"
+                            type="text" placeholder="09XXXXXXXXX" required />
+                    </div>
+                    <div class="xl:col-span-2">
+                        <label
+                            class="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">Address</label>
+                        <input name="address" value="<?php echo h($formData['address']); ?>"
+                            class="w-full rounded-lg border-slate-200 focus:border-primary focus:ring-primary/20"
+                            type="text" placeholder="Street, city, province" />
+                    </div>
+                    <div>
+                        <label
+                            class="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">Password</label>
+                        <input name="password"
+                            class="w-full rounded-lg border-slate-200 focus:border-primary focus:ring-primary/20"
+                            type="password" placeholder="Set login password" required />
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">Confirm
+                            Password</label>
+                        <input name="confirm_password"
+                            class="w-full rounded-lg border-slate-200 focus:border-primary focus:ring-primary/20"
+                            type="password" placeholder="Repeat password" required />
+                    </div>
+                    <div class="xl:col-span-6 flex items-center justify-between gap-4 pt-2">
+                        <p class="text-xs text-slate-500">The new customer will be created under this tenant and can be
+                            linked to vehicles immediately.</p>
+                        <button name="create_customer" value="1" type="submit"
+                            class="px-5 py-2.5 bg-primary text-white font-bold text-sm rounded-lg hover:brightness-110 transition-all shadow-sm">
+                            Save Customer
+                        </button>
+                    </div>
+                </form>
+            </div>
+
             <div class="grid grid-cols-12 gap-8">
-                <!-- Main Directory Table -->
                 <div
-                    class="col-span-12 lg:col-span-9 bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
-                    <div class="px-6 py-4 border-b border-slate-100 flex justify-between items-center">
-                        <h3 class="font-bold text-on-surface">Active Customers</h3>
-                        <div class="flex gap-2">
-                            <button class="p-1.5 hover:bg-slate-50 rounded text-slate-400"><span
-                                    class="material-symbols-outlined text-lg"
-                                    data-icon="filter_list">filter_list</span></button>
-                            <button class="p-1.5 hover:bg-slate-50 rounded text-slate-400"><span
-                                    class="material-symbols-outlined text-lg" data-icon="sort">sort</span></button>
+                    class="col-span-12 xl:col-span-8 bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
+                    <div class="px-6 py-4 border-b border-slate-100 flex flex-wrap items-center justify-between gap-3">
+                        <div>
+                            <h3 class="font-bold text-on-surface">Customer Directory</h3>
+                            <p class="text-xs text-slate-500">Each row includes the latest linked vehicle summary.</p>
                         </div>
+                        <form method="get" action="customeradmin.php" class="flex items-center gap-2">
+                            <input type="hidden" name="shop" value="<?php echo h($loginSlug); ?>" />
+                            <?php if ($selectedCustomerId > 0): ?>
+                                <input type="hidden" name="customer_id" value="<?php echo (int) $selectedCustomerId; ?>" />
+                            <?php endif; ?>
+                            <input name="q" value="<?php echo h($searchTerm); ?>"
+                                class="rounded-lg border-slate-200 text-sm px-3 py-2 w-64" type="text"
+                                placeholder="Search customers or vehicles" />
+                            <button class="px-4 py-2 bg-slate-900 text-white text-sm font-bold rounded-lg"
+                                type="submit">Search</button>
+                        </form>
                     </div>
                     <div class="overflow-x-auto">
                         <table class="w-full text-left">
                             <thead>
                                 <tr
-                                    class="bg-slate-50/50 text-slate-500 text-[10px] uppercase font-bold tracking-widest">
-                                    <th class="px-6 py-4">Customer Name</th>
-                                    <th class="px-6 py-4">Contact Info</th>
+                                    class="bg-slate-50/70 text-slate-500 text-[10px] uppercase font-bold tracking-widest">
+                                    <th class="px-6 py-4">Customer</th>
+                                    <th class="px-6 py-4">Contact</th>
                                     <th class="px-6 py-4">Vehicles</th>
-                                    <th class="px-6 py-4">Last Visit</th>
-                                    <th class="px-6 py-4">Status</th>
+                                    <th class="px-6 py-4">Latest Vehicle</th>
+                                    <th class="px-6 py-4">Latest Visit</th>
                                     <th class="px-6 py-4 text-right">Actions</th>
                                 </tr>
                             </thead>
                             <tbody class="divide-y divide-slate-100">
-                                <tr class="hover:bg-slate-50/50 transition-colors">
-                                    <td class="px-6 py-4">
-                                        <div class="flex items-center gap-3">
-                                            <img class="w-9 h-9 rounded-lg border border-slate-200"
-                                                data-alt="professional male customer headshot with neutral background"
-                                                src="https://lh3.googleusercontent.com/aida-public/AB6AXuCmYlowwU26tLrCllwmqzZvTA8nzFLkBAPFa2cfCRSmSqGAV3XJyzd2nLPuXhWM4cEHCCAE_Mb4xNyZoKm3Bf60StxfSKq9VyFBYV_pwdnJ332rteKyn_fAEQjgb-OvggneZq_MR19t9FLoqObSdBzAS_gUO21suOJBnuKxYTRoGBBS31lS9xWZFDSs-ZcnWncNFAKzmeHq_XNayb8snuPBxmEmUDYdnVHFIBrEO1qE1j2wazPRtQ8_enmfDVzzTD3j5mpRnpCho5me" />
-                                            <div>
-                                                <p class="text-sm font-bold text-on-surface">Julian D. Sterling</p>
-                                                <p class="text-[11px] text-slate-500 font-medium">ID: #CS-8921</p>
-                                            </div>
-                                        </div>
-                                    </td>
-                                    <td class="px-6 py-4">
-                                        <p class="text-sm text-on-surface">julian.s@example.com</p>
-                                        <p class="text-xs text-slate-500">(555) 012-4492</p>
-                                    </td>
-                                    <td class="px-6 py-4">
-                                        <div class="flex items-center gap-2">
-                                            <span
-                                                class="px-2 py-0.5 bg-slate-100 text-slate-700 text-[11px] font-bold rounded">2</span>
-                                            <span class="text-sm text-on-surface">2022 Porsche 911</span>
-                                        </div>
-                                    </td>
-                                    <td class="px-6 py-4">
-                                        <p class="text-sm text-on-surface">Oct 12, 2023</p>
-                                        <p class="text-[11px] text-primary font-bold">Annual Inspection</p>
-                                    </td>
-                                    <td class="px-6 py-4">
-                                        <span
-                                            class="inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-green-100 text-green-700 uppercase tracking-tighter">Active</span>
-                                    </td>
-                                    <td class="px-6 py-4 text-right">
-                                        <div class="flex justify-end gap-2">
-                                            <button
-                                                class="p-1.5 hover:bg-primary-container text-primary rounded transition-colors"
-                                                title="View History">
-                                                <span class="material-symbols-outlined text-lg"
-                                                    data-icon="history">history</span>
-                                            </button>
-                                            <button
-                                                class="p-1.5 hover:bg-slate-100 text-secondary rounded transition-colors"
-                                                title="Edit Profile">
-                                                <span class="material-symbols-outlined text-lg"
-                                                    data-icon="edit">edit</span>
-                                            </button>
-                                        </div>
-                                    </td>
-                                </tr>
-                                <tr class="hover:bg-slate-50/50 transition-colors">
-                                    <td class="px-6 py-4">
-                                        <div class="flex items-center gap-3">
-                                            <img class="w-9 h-9 rounded-lg border border-slate-200"
-                                                data-alt="professional female customer headshot with neutral background"
-                                                src="https://lh3.googleusercontent.com/aida-public/AB6AXuDzkySTUDDFKo6VHPxN2Rs6wYpYqbr5BP-TwIEOZseULDT24d4Su_loc0F62_A6q4lj4cseocTeBhoRJ7Qp99976G557PVWQamdVM4YwHfVisjFWQEL3E6-Zp3wPXaUN9GVw4ZeZ6unKKmP9m_upHdl5gtUia06g-l7OUlOSzKQmTXOMGFlLLIuec10BkDLatMJrFj4BWVG2OEOLYzrMdLkmO73CRF7fqRvf9zMxETRwM2PthnK4mXEN7ym0ThmTMjOuTq3gLTQW7WJ" />
-                                            <div>
-                                                <p class="text-sm font-bold text-on-surface">Elena Moretti</p>
-                                                <p class="text-[11px] text-slate-500 font-medium">ID: #CS-7712</p>
-                                            </div>
-                                        </div>
-                                    </td>
-                                    <td class="px-6 py-4">
-                                        <p class="text-sm text-on-surface">e.moretti@domain.com</p>
-                                        <p class="text-xs text-slate-500">(555) 901-3321</p>
-                                    </td>
-                                    <td class="px-6 py-4">
-                                        <div class="flex items-center gap-2">
-                                            <span
-                                                class="px-2 py-0.5 bg-slate-100 text-slate-700 text-[11px] font-bold rounded">1</span>
-                                            <span class="text-sm text-on-surface">2019 Audi RS6</span>
-                                        </div>
-                                    </td>
-                                    <td class="px-6 py-4">
-                                        <p class="text-sm text-on-surface">Nov 02, 2023</p>
-                                        <p class="text-[11px] text-primary font-bold">Brake Service</p>
-                                    </td>
-                                    <td class="px-6 py-4">
-                                        <span
-                                            class="inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-green-100 text-green-700 uppercase tracking-tighter">Active</span>
-                                    </td>
-                                    <td class="px-6 py-4 text-right">
-                                        <div class="flex justify-end gap-2">
-                                            <button
-                                                class="p-1.5 hover:bg-primary-container text-primary rounded transition-colors">
-                                                <span class="material-symbols-outlined text-lg"
-                                                    data-icon="history">history</span>
-                                            </button>
-                                            <button
-                                                class="p-1.5 hover:bg-slate-100 text-secondary rounded transition-colors">
-                                                <span class="material-symbols-outlined text-lg"
-                                                    data-icon="edit">edit</span>
-                                            </button>
-                                        </div>
-                                    </td>
-                                </tr>
-                                <tr class="hover:bg-slate-50/50 transition-colors">
-                                    <td class="px-6 py-4">
-                                        <div class="flex items-center gap-3">
-                                            <img class="w-9 h-9 rounded-lg border border-slate-200"
-                                                data-alt="professional male customer headshot with neutral background"
-                                                src="https://lh3.googleusercontent.com/aida-public/AB6AXuBy6Ifmae3P0P2HdlPZ9_NM4vLl8t9wEVaKVgmTr8YiOEXnVI6ueDWTbJgEtXZlS5QLf8HWUf0CJnoeH_lp1PocuyJt2-TW2NGUrqQJXrqNb5GHH_NRghkc99Ey8-RgSOVtzwk5LNojrCCHNu8cnRoFt9p2xxvO-AmSqUM8oVpwViFqf-GyzaUIWl8uyrbyE_wIEmDfi2sVAa75VaVYByj5S0E7cjMzYWwqbAq9oYR4U5DPyHaNObLnfpPkAEZRxrTLIKeEfMZdjdDe" />
-                                            <div>
-                                                <p class="text-sm font-bold text-on-surface">Robert Kincaid</p>
-                                                <p class="text-[11px] text-slate-500 font-medium">ID: #CS-4410</p>
-                                            </div>
-                                        </div>
-                                    </td>
-                                    <td class="px-6 py-4">
-                                        <p class="text-sm text-on-surface">rob.k@techcorp.io</p>
-                                        <p class="text-xs text-slate-500">(555) 234-9981</p>
-                                    </td>
-                                    <td class="px-6 py-4">
-                                        <div class="flex items-center gap-2">
-                                            <span
-                                                class="px-2 py-0.5 bg-slate-100 text-slate-700 text-[11px] font-bold rounded">3</span>
-                                            <span class="text-sm text-on-surface">2021 BMW M5</span>
-                                        </div>
-                                    </td>
-                                    <td class="px-6 py-4">
-                                        <p class="text-sm text-on-surface">May 15, 2023</p>
-                                        <p class="text-[11px] text-slate-400 font-bold">In-Transit</p>
-                                    </td>
-                                    <td class="px-6 py-4">
-                                        <span
-                                            class="inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-500 uppercase tracking-tighter">Inactive</span>
-                                    </td>
-                                    <td class="px-6 py-4 text-right">
-                                        <div class="flex justify-end gap-2">
-                                            <button
-                                                class="p-1.5 hover:bg-primary-container text-primary rounded transition-colors">
-                                                <span class="material-symbols-outlined text-lg"
-                                                    data-icon="history">history</span>
-                                            </button>
-                                            <button
-                                                class="p-1.5 hover:bg-slate-100 text-secondary rounded transition-colors">
-                                                <span class="material-symbols-outlined text-lg"
-                                                    data-icon="edit">edit</span>
-                                            </button>
-                                        </div>
-                                    </td>
-                                </tr>
+                                <?php if (empty($customers)): ?>
+                                    <tr>
+                                        <td colspan="6" class="px-6 py-16 text-center text-slate-500">
+                                            No customers found for the current filters.
+                                        </td>
+                                    </tr>
+                                <?php else: ?>
+                                    <?php foreach ($customers as $customer): ?>
+                                        <?php $isSelected = $selectedCustomerId === (int) $customer['user_id']; ?>
+                                        <tr
+                                            class="hover:bg-slate-50/60 transition-colors <?php echo $isSelected ? 'bg-primary-container/30' : ''; ?>">
+                                            <td class="px-6 py-4">
+                                                <div class="flex items-center gap-3">
+                                                    <div
+                                                        class="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center text-slate-500 font-bold">
+                                                        <?php echo h(strtoupper(substr((string) $customer['fullName'], 0, 1) ?: '?')); ?>
+                                                    </div>
+                                                    <div>
+                                                        <p class="text-sm font-bold text-on-surface">
+                                                            <?php echo h($customer['fullName']); ?></p>
+                                                        <p class="text-[11px] text-slate-500 font-medium">ID:
+                                                            #<?php echo (int) $customer['user_id']; ?></p>
+                                                    </div>
+                                                </div>
+                                            </td>
+                                            <td class="px-6 py-4">
+                                                <p class="text-sm text-on-surface"><?php echo h($customer['email']); ?></p>
+                                                <p class="text-xs text-slate-500"><?php echo h($customer['contactNumber']); ?>
+                                                </p>
+                                            </td>
+                                            <td class="px-6 py-4">
+                                                <div class="flex items-center gap-2">
+                                                    <span
+                                                        class="px-2 py-0.5 bg-slate-100 text-slate-700 text-[11px] font-bold rounded"><?php echo (int) $customer['vehicle_count']; ?></span>
+                                                    <span class="text-sm text-on-surface">Vehicles linked</span>
+                                                </div>
+                                            </td>
+                                            <td class="px-6 py-4">
+                                                <p class="text-sm text-on-surface">
+                                                    <?php echo h(trim((string) ($customer['latest_vehicle_label'] ?: 'No vehicle yet'))); ?>
+                                                </p>
+                                                <p class="text-[11px] text-slate-500">
+                                                    <?php echo h($customer['latest_plate_number'] ?: 'No plate number'); ?></p>
+                                            </td>
+                                            <td class="px-6 py-4">
+                                                <p class="text-sm text-on-surface">
+                                                    <?php echo h(formatDateValue($customer['latest_vehicle_date'])); ?></p>
+                                                <p class="text-[11px] text-slate-500">
+                                                    <?php echo h($customer['latest_vehicle_status'] ?: 'No vehicle yet'); ?></p>
+                                            </td>
+                                            <td class="px-6 py-4 text-right">
+                                                <div class="flex justify-end gap-2">
+                                                    <a class="p-1.5 hover:bg-primary-container text-primary rounded transition-colors"
+                                                        title="View linked vehicles"
+                                                        href="customeradmin.php?<?php echo h(http_build_query(['shop' => $loginSlug, 'customer_id' => (int) $customer['user_id'], 'q' => $searchTerm])); ?>#linked-vehicles">
+                                                        <span class="material-symbols-outlined text-lg">history</span>
+                                                    </a>
+                                                    <a class="p-1.5 hover:bg-slate-100 text-secondary rounded transition-colors"
+                                                        title="Open vehicle admin"
+                                                        href="vehicleadmin.php?<?php echo h(http_build_query(['shop' => $loginSlug, 'user_id' => (int) $customer['user_id']])); ?>">
+                                                        <span class="material-symbols-outlined text-lg">directions_car</span>
+                                                    </a>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    <?php endforeach; ?>
+                                <?php endif; ?>
                             </tbody>
                         </table>
                     </div>
                     <div
-                        class="mt-auto px-6 py-4 border-t border-slate-100 flex items-center justify-between bg-slate-50/30">
+                        class="mt-auto px-6 py-4 border-t border-slate-100 flex flex-wrap items-center justify-between gap-3 bg-slate-50/40">
                         <p class="text-xs text-slate-500 font-medium">Showing <span
-                                class="text-on-surface font-bold">1-10</span> of 2,842 customers</p>
+                                class="text-on-surface font-bold"><?php echo $startEntry; ?>-<?php echo $endEntry; ?></span>
+                            of <?php echo number_format($filteredTotal); ?> customers</p>
                         <div class="flex gap-1">
-                            <button
-                                class="p-2 border border-outline rounded bg-white hover:bg-slate-50 disabled:opacity-50"><span
-                                    class="material-symbols-outlined text-sm"
-                                    data-icon="chevron_left">chevron_left</span></button>
-                            <button class="px-3 py-1 bg-primary text-white text-xs font-bold rounded">1</button>
-                            <button class="px-3 py-1 hover:bg-slate-100 text-xs font-bold rounded">2</button>
-                            <button class="px-3 py-1 hover:bg-slate-100 text-xs font-bold rounded">3</button>
-                            <button class="p-2 border border-outline rounded bg-white hover:bg-slate-50"><span
-                                    class="material-symbols-outlined text-sm"
-                                    data-icon="chevron_right">chevron_right</span></button>
+                            <?php
+                            $pageParams = ['shop' => $loginSlug, 'q' => $searchTerm];
+                            if ($selectedCustomerId > 0) {
+                                $pageParams['customer_id'] = $selectedCustomerId;
+                            }
+                            ?>
+                            <a class="p-2 border border-outline rounded bg-white hover:bg-slate-50 <?php echo $page <= 1 ? 'pointer-events-none opacity-50' : ''; ?>"
+                                href="customeradmin.php?<?php echo h(http_build_query($pageParams + ['page' => max(1, $page - 1)])); ?>">
+                                <span class="material-symbols-outlined text-sm">chevron_left</span>
+                            </a>
+                            <?php for ($pageNumber = max(1, $page - 1); $pageNumber <= min($totalPages, $page + 1); $pageNumber++): ?>
+                                <a class="px-3 py-1 <?php echo $pageNumber === $page ? 'bg-primary text-white' : 'hover:bg-slate-100'; ?> text-xs font-bold rounded"
+                                    href="customeradmin.php?<?php echo h(http_build_query($pageParams + ['page' => $pageNumber])); ?>">
+                                    <?php echo $pageNumber; ?>
+                                </a>
+                            <?php endfor; ?>
+                            <a class="p-2 border border-outline rounded bg-white hover:bg-slate-50 <?php echo $page >= $totalPages ? 'pointer-events-none opacity-50' : ''; ?>"
+                                href="customeradmin.php?<?php echo h(http_build_query($pageParams + ['page' => min($totalPages, $page + 1)])); ?>">
+                                <span class="material-symbols-outlined text-sm">chevron_right</span>
+                            </a>
                         </div>
                     </div>
                 </div>
-                <!-- Activity Feed Sidebar -->
-                <div class="col-span-12 lg:col-span-3 space-y-6">
+
+                <div class="col-span-12 xl:col-span-4 space-y-6">
+                    <div id="linked-vehicles" class="bg-white rounded-xl border border-slate-200 shadow-sm p-6">
+                        <div class="flex items-start justify-between gap-3 mb-5">
+                            <div>
+                                <h3 class="font-bold text-on-surface">Linked Vehicles</h3>
+                                <p class="text-xs text-slate-500"><?php echo h($selectedCustomerName); ?></p>
+                            </div>
+                            <span
+                                class="text-[10px] font-bold uppercase tracking-widest text-primary bg-primary-container px-2 py-1 rounded-full"><?php echo $selectedCustomerVehiclesCount; ?>
+                                vehicles</span>
+                        </div>
+
+                        <?php if ($selectedCustomer): ?>
+                            <div class="rounded-xl bg-slate-50 p-4 mb-4 border border-slate-200">
+                                <p class="text-sm font-bold text-on-surface"><?php echo h($selectedCustomer['fullName']); ?>
+                                </p>
+                                <p class="text-xs text-slate-500 mt-1"><?php echo h($selectedCustomer['email']); ?></p>
+                                <p class="text-xs text-slate-500 mt-1"><?php echo h($selectedCustomer['contactNumber']); ?>
+                                </p>
+                                <p class="text-xs text-slate-500 mt-1">
+                                    <?php echo h($selectedCustomer['address'] ?: 'No address set'); ?></p>
+                                <div class="grid grid-cols-2 gap-3 mt-4 text-center">
+                                    <div class="rounded-lg bg-white border border-slate-200 p-3">
+                                        <p class="text-lg font-black text-on-surface">
+                                            <?php echo $selectedCustomerVehiclesCount; ?></p>
+                                        <p class="text-[10px] uppercase tracking-widest text-slate-500">Vehicles</p>
+                                    </div>
+                                    <div class="rounded-lg bg-white border border-slate-200 p-3">
+                                        <p class="text-lg font-black text-on-surface">
+                                            <?php echo $selectedCustomerActiveVehicles; ?></p>
+                                        <p class="text-[10px] uppercase tracking-widest text-slate-500">Active</p>
+                                    </div>
+                                </div>
+                                <div class="flex gap-2 mt-4">
+                                    <a href="vehicleadmin.php?<?php echo h(http_build_query(['shop' => $loginSlug, 'user_id' => $selectedCustomerId, 'add_vehicle' => 1])); ?>"
+                                        class="flex-1 inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-primary text-white text-xs font-bold">
+                                        <span class="material-symbols-outlined text-sm">add_circle</span>
+                                        Add Vehicle
+                                    </a>
+                                    <a href="vehicleadmin.php?<?php echo h(http_build_query(['shop' => $loginSlug, 'user_id' => $selectedCustomerId])); ?>"
+                                        class="flex-1 inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg border border-outline text-secondary text-xs font-bold bg-white">
+                                        <span class="material-symbols-outlined text-sm">garage</span>
+                                        Open Vehicles
+                                    </a>
+                                </div>
+                            </div>
+
+                            <div class="space-y-3">
+                                <?php if (empty($selectedVehicles)): ?>
+                                    <div class="rounded-xl border border-dashed border-slate-200 p-4 text-sm text-slate-500">No
+                                        vehicles are linked to this customer yet.</div>
+                                <?php else: ?>
+                                    <?php foreach ($selectedVehicles as $vehicleRow): ?>
+                                        <div class="rounded-xl border border-slate-200 p-4">
+                                            <div class="flex items-start justify-between gap-3">
+                                                <div>
+                                                    <p class="text-sm font-bold text-on-surface">
+                                                        <?php echo h(trim((string) $vehicleRow['brand'] . ' ' . (string) $vehicleRow['model'])); ?>
+                                                    </p>
+                                                    <p class="text-xs text-slate-500 mt-1">
+                                                        <?php echo h(($vehicleRow['year_model'] ?: '----') . ' • ' . ($vehicleRow['plate_number'] ?: 'No plate')); ?>
+                                                    </p>
+                                                </div>
+                                                <span
+                                                    class="text-[10px] font-bold uppercase tracking-widest px-2 py-1 rounded-full <?php echo customerStatusClass($vehicleRow['status'] ?? null); ?>"><?php echo h($vehicleRow['status'] ?? 'Unknown'); ?></span>
+                                            </div>
+                                            <div class="mt-3 flex items-center justify-between text-[11px] text-slate-500">
+                                                <span><?php echo h($vehicleRow['color'] ?: 'No color set'); ?></span>
+                                                <span><?php echo h(formatDateValue($vehicleRow['date_added'], 'Unknown date')); ?></span>
+                                            </div>
+                                        </div>
+                                    <?php endforeach; ?>
+                                <?php endif; ?>
+                            </div>
+                        <?php else: ?>
+                            <div class="rounded-xl border border-dashed border-slate-200 p-4 text-sm text-slate-500">
+                                Select a customer from the table to see their linked vehicles.
+                            </div>
+                        <?php endif; ?>
+                    </div>
+
                     <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-6">
-                        <h3 class="font-bold text-on-surface mb-6 flex items-center gap-2">
-                            <span class="material-symbols-outlined text-primary text-xl"
-                                data-icon="notifications_active">notifications_active</span>
+                        <h3 class="font-bold text-on-surface mb-5 flex items-center gap-2">
+                            <span class="material-symbols-outlined text-primary text-xl">notifications_active</span>
                             Recent Activity
                         </h3>
-                        <div
-                            class="space-y-6 relative before:absolute before:left-[11px] before:top-2 before:bottom-2 before:w-[2px] before:bg-slate-100">
-                            <!-- Activity Item 1 -->
-                            <div class="relative pl-8">
-                                <div
-                                    class="absolute left-0 top-1 w-[24px] h-[24px] bg-primary text-white rounded-full flex items-center justify-center z-10">
-                                    <span class="material-symbols-outlined text-xs"
-                                        data-icon="person_add">person_add</span>
-                                </div>
-                                <p class="text-sm font-bold text-on-surface">New Registration</p>
-                                <p class="text-xs text-slate-500 mt-0.5">Marcus Webb registered as a new customer.</p>
-                                <p class="text-[10px] text-slate-400 font-bold uppercase mt-2">12 mins ago</p>
-                            </div>
-                            <!-- Activity Item 2 -->
-                            <div class="relative pl-8">
-                                <div
-                                    class="absolute left-0 top-1 w-[24px] h-[24px] bg-tertiary text-white rounded-full flex items-center justify-center z-10">
-                                    <span class="material-symbols-outlined text-xs"
-                                        data-icon="directions_car">directions_car</span>
-                                </div>
-                                <p class="text-sm font-bold text-on-surface">Vehicle Updated</p>
-                                <p class="text-xs text-slate-500 mt-0.5">Julian D. Sterling added a 2024 Tesla Model S.
-                                </p>
-                                <p class="text-[10px] text-slate-400 font-bold uppercase mt-2">1 hour ago</p>
-                            </div>
-                            <!-- Activity Item 3 -->
-                            <div class="relative pl-8">
-                                <div
-                                    class="absolute left-0 top-1 w-[24px] h-[24px] bg-green-500 text-white rounded-full flex items-center justify-center z-10">
-                                    <span class="material-symbols-outlined text-xs" data-icon="task_alt">task_alt</span>
-                                </div>
-                                <p class="text-sm font-bold text-on-surface">Service Completed</p>
-                                <p class="text-xs text-slate-500 mt-0.5">Elena Moretti's Audi RS6 service finalized.</p>
-                                <p class="text-[10px] text-slate-400 font-bold uppercase mt-2">3 hours ago</p>
-                            </div>
-                            <!-- Activity Item 4 -->
-                            <div class="relative pl-8">
-                                <div
-                                    class="absolute left-0 top-1 w-[24px] h-[24px] bg-slate-400 text-white rounded-full flex items-center justify-center z-10">
-                                    <span class="material-symbols-outlined text-xs"
-                                        data-icon="edit_square">edit_square</span>
-                                </div>
-                                <p class="text-sm font-bold text-on-surface">Profile Modified</p>
-                                <p class="text-xs text-slate-500 mt-0.5">Contact info updated for Robert Kincaid.</p>
-                                <p class="text-[10px] text-slate-400 font-bold uppercase mt-2">Yesterday</p>
-                            </div>
+                        <div class="space-y-4">
+                            <?php if (empty($recentActivity)): ?>
+                                <div class="text-sm text-slate-500">No recent vehicle activity yet.</div>
+                            <?php else: ?>
+                                <?php foreach ($recentActivity as $activity): ?>
+                                    <div class="rounded-xl border border-slate-200 p-4">
+                                        <div class="flex items-start justify-between gap-3">
+                                            <div>
+                                                <p class="text-sm font-bold text-on-surface">
+                                                    <?php echo h($activity['customer_name']); ?></p>
+                                                <p class="text-xs text-slate-500 mt-1">
+                                                    <?php echo h(trim((string) $activity['brand'] . ' ' . (string) $activity['model'])); ?>
+                                                    • <?php echo h($activity['plate_number'] ?: 'No plate'); ?></p>
+                                            </div>
+                                            <span
+                                                class="text-[10px] font-bold uppercase tracking-widest px-2 py-1 rounded-full <?php echo customerStatusClass($activity['status'] ?? null); ?>"><?php echo h($activity['status'] ?? 'Unknown'); ?></span>
+                                        </div>
+                                        <p class="text-[11px] text-slate-400 mt-3">
+                                            <?php echo h(formatDateValue($activity['date_added'], 'Unknown date')); ?></p>
+                                    </div>
+                                <?php endforeach; ?>
+                            <?php endif; ?>
                         </div>
-                        <button
-                            class="w-full mt-6 py-2 text-xs font-bold text-primary hover:bg-primary-container rounded transition-colors">
-                            View All Activity
-                        </button>
                     </div>
-                    <!-- Quick Insight Card -->
+
                     <div
-                        class="bg-gradient-to-br from-primary to-blue-800 rounded-xl p-6 text-white shadow-md relative overflow-hidden">
+                        class="bg-gradient-to-br from-primary to-slate-800 rounded-xl p-6 text-white shadow-md relative overflow-hidden">
                         <div class="relative z-10">
-                            <p class="text-xs font-bold uppercase tracking-widest opacity-80">Customer Loyalty</p>
-                            <h4 class="text-xl font-black mt-2 leading-tight">642 Priority Customers</h4>
-                            <p class="text-xs mt-3 opacity-90 leading-relaxed">Priority customers represent 78% of your
-                                monthly revenue. Consider a seasonal campaign.</p>
-                            <button
-                                class="mt-6 w-full py-2.5 bg-white text-primary font-bold text-xs rounded shadow-lg active:scale-95 transition-all">Launch
-                                Campaign</button>
+                            <p class="text-xs font-bold uppercase tracking-widest opacity-80">Customer Coverage</p>
+                            <h4 class="text-xl font-black mt-2 leading-tight">
+                                <?php echo number_format($customerStats['customers_with_vehicles']); ?> customers
+                                already linked</h4>
+                            <p class="text-xs mt-3 opacity-90 leading-relaxed">Use the open vehicle button to move
+                                directly into the filtered vehicle list for the selected customer.</p>
                         </div>
                         <div class="absolute -right-4 -bottom-4 opacity-10">
-                            <span class="material-symbols-outlined text-[120px]"
-                                data-icon="auto_awesome">auto_awesome</span>
+                            <span class="material-symbols-outlined text-[120px]">auto_awesome</span>
                         </div>
                     </div>
                 </div>

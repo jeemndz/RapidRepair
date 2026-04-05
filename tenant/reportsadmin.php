@@ -169,9 +169,12 @@
                     <p class="text-sm font-semibold truncate">Marcus Smith</p>
                     <p class="text-xs text-slate-500 truncate">Shop Manager</p>
                 </div>
-                <button class="text-slate-400 hover:text-error transition-colors">
-                    <span class="material-symbols-outlined text-xl">logout</span>
-                </button>
+                <form method="post" action="../logout/logout.php" class="inline">
+                    <input type="hidden" name="action" value="confirm" />
+                    <button type="submit" class="text-slate-400 hover:text-error transition-colors" title="Logout">
+                        <span class="material-symbols-outlined text-xl">logout</span>
+                    </button>
+                </form>
             </div>
         </div>
     </aside>

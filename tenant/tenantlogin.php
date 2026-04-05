@@ -42,88 +42,164 @@ if (isset($_POST['login'])) {
     } elseif ($loginInput === '') {
         $error = "Enter your username or email.";
     } else {
-        // Validate login within the exact shop context to block cross-tenant access.
-        $stmt = mysqli_prepare(
+        // Step 1: Get tenantID from owners table using login_slug
+        $tenantStmt = mysqli_prepare(
             $conn,
-            "SELECT * FROM owners 
-             WHERE login_slug = ? 
-             AND (email = ? OR username = ?)
+            "SELECT tenantID FROM owners 
+             WHERE login_slug = ?
              LIMIT 1"
         );
-        mysqli_stmt_bind_param($stmt, "sss", $requestedShop, $loginInput, $loginInput);
-        mysqli_stmt_execute($stmt);
-        $query = mysqli_stmt_get_result($stmt);
-        $user = mysqli_fetch_assoc($query);
+        mysqli_stmt_bind_param($tenantStmt, "s", $requestedShop);
+        mysqli_stmt_execute($tenantStmt);
+        $tenantResult = mysqli_stmt_get_result($tenantStmt);
+        $tenantRow = mysqli_fetch_assoc($tenantResult);
+        $tenantID = $tenantRow ? (int)$tenantRow['tenantID'] : 0;
+        mysqli_stmt_close($tenantStmt);
 
-        if ($user) {
+        if ($tenantID <= 0) {
+            $error = "Invalid login link. Please use your shop's login page.";
+        } else {
+            // Step 2: Try to authenticate as owner
+            $ownerStmt = mysqli_prepare(
+                $conn,
+                "SELECT * FROM owners 
+                 WHERE login_slug = ? 
+                 AND (email = ? OR username = ?)
+                 LIMIT 1"
+            );
+            mysqli_stmt_bind_param($ownerStmt, "sss", $requestedShop, $loginInput, $loginInput);
+            mysqli_stmt_execute($ownerStmt);
+            $ownerQuery = mysqli_stmt_get_result($ownerStmt);
+            $ownerUser = mysqli_fetch_assoc($ownerQuery);
+            mysqli_stmt_close($ownerStmt);
 
-            // Check if this is the first login
-            if (isset($user['first_login']) && $user['first_login'] == 1) {
-                // First login: compare plain text password
-                if ($password === $user['password']) {
-                    $_SESSION['tenantID'] = $user['tenantID'];
-                    $_SESSION['shopName'] = $user['shopName'];
-                    $_SESSION['login_slug'] = isset($user['login_slug']) ? $user['login_slug'] : '';
+            if ($ownerUser) {
+                // Owner login
+                // Check if this is the first login
+                if (isset($ownerUser['first_login']) && $ownerUser['first_login'] == 1) {
+                    // First login: compare plain text password
+                    if ($password === $ownerUser['password']) {
+                        $_SESSION['tenantID'] = $ownerUser['tenantID'];
+                        $_SESSION['shopName'] = $ownerUser['shopName'];
+                        $_SESSION['login_slug'] = isset($ownerUser['login_slug']) ? $ownerUser['login_slug'] : '';
+                        $_SESSION['userType'] = 'owner';
+                        $_SESSION['userId'] = $ownerUser['tenantID'];
 
-                    // --- Tenant login logging (new ENUM schema) ---
-                    $tenantID = (int) $user['tenantID'];
-                    $user_id = $tenantID;
-                    $user_name = $user['shopName'];
-                    $user_role = 'admin'; // Default to admin for tenant login
-                    $actionLog = 'LOGIN';
-                    $entity_type = 'tenant';
-                    $entity_id = $tenantID;
-                    $details = 'Tenant logged in (first login)';
-                    $ip_address = isset($_SERVER['REMOTE_ADDR']) ? $_SERVER['REMOTE_ADDR'] : '';
-                    $user_agent = isset($_SERVER['HTTP_USER_AGENT']) ? $_SERVER['HTTP_USER_AGENT'] : '';
-                    if ($tenantID) {
-                        $stmt = $conn->prepare("INSERT INTO system_logs (tenantID, user_id, user_name, user_role, action, entity_type, entity_id, details, ip_address, user_agent, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())");
-                        $stmt->bind_param('iissssisss', $tenantID, $user_id, $user_name, $user_role, $actionLog, $entity_type, $entity_id, $details, $ip_address, $user_agent);
-                        $stmt->execute();
-                        $stmt->close();
+                        // --- Owner login logging ---
+                        $tenantID = (int) $ownerUser['tenantID'];
+                        $user_id = $tenantID;
+                        $user_name = $ownerUser['shopName'];
+                        $user_role = 'admin';
+                        $actionLog = 'LOGIN';
+                        $entity_type = 'tenant';
+                        $entity_id = $tenantID;
+                        $details = 'Owner logged in (first login)';
+                        $ip_address = isset($_SERVER['REMOTE_ADDR']) ? $_SERVER['REMOTE_ADDR'] : '';
+                        $user_agent = isset($_SERVER['HTTP_USER_AGENT']) ? $_SERVER['HTTP_USER_AGENT'] : '';
+                        if ($tenantID) {
+                            $stmt = $conn->prepare("INSERT INTO system_logs (tenantID, user_id, user_name, user_role, action, entity_type, entity_id, details, ip_address, user_agent, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())");
+                            $stmt->bind_param('iissssisss', $tenantID, $user_id, $user_name, $user_role, $actionLog, $entity_type, $entity_id, $details, $ip_address, $user_agent);
+                            $stmt->execute();
+                            $stmt->close();
+                        }
+
+                        // First-time owners must update their temporary password
+                        header("Location: changetemppass.php?shop=" . urlencode($ownerUser['login_slug']));
+                        exit;
+                    } else {
+                        $error = "Incorrect password.";
                     }
-
-                    // First-time owners must update their temporary password
-                    header("Location: changetemppass.php?shop=" . urlencode($user['login_slug']));
-                    exit;
                 } else {
-                    $error = "Incorrect password.";
+                    // Subsequent owner logins: use hashed password verification
+                    if (password_verify($password, $ownerUser['password'])) {
+                        $_SESSION['tenantID'] = $ownerUser['tenantID'];
+                        $_SESSION['shopName'] = $ownerUser['shopName'];
+                        $_SESSION['login_slug'] = isset($ownerUser['login_slug']) ? $ownerUser['login_slug'] : '';
+                        $_SESSION['userType'] = 'owner';
+                        $_SESSION['userId'] = $ownerUser['tenantID'];
+
+                        // --- Owner login logging ---
+                        $tenantID = (int) $ownerUser['tenantID'];
+                        $user_id = $tenantID;
+                        $user_name = $ownerUser['shopName'];
+                        $user_role = 'admin';
+                        $actionLog = 'LOGIN';
+                        $entity_type = 'tenant';
+                        $entity_id = $tenantID;
+                        $details = 'Owner logged in';
+                        $ip_address = isset($_SERVER['REMOTE_ADDR']) ? $_SERVER['REMOTE_ADDR'] : '';
+                        $user_agent = isset($_SERVER['HTTP_USER_AGENT']) ? $_SERVER['HTTP_USER_AGENT'] : '';
+                        if ($tenantID) {
+                            $stmt = $conn->prepare("INSERT INTO system_logs (tenantID, user_id, user_name, user_role, action, entity_type, entity_id, details, ip_address, user_agent, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())");
+                            $stmt->bind_param('iissssisss', $tenantID, $user_id, $user_name, $user_role, $actionLog, $entity_type, $entity_id, $details, $ip_address, $user_agent);
+                            $stmt->execute();
+                            $stmt->close();
+                        }
+
+                        // Returning owners proceed directly to dashboard
+                        header("Location: dashboardadmin.php?shop=" . urlencode($ownerUser['login_slug']));
+                        exit;
+                    } else {
+                        $error = "Incorrect password.";
+                    }
                 }
             } else {
-                // Subsequent logins: use hashed password verification
-                if (password_verify($password, $user['password'])) {
-                    $_SESSION['tenantID'] = $user['tenantID'];
-                    $_SESSION['shopName'] = $user['shopName'];
-                    $_SESSION['login_slug'] = isset($user['login_slug']) ? $user['login_slug'] : '';
+                // Step 3: Try to authenticate as staff role member
+                $roleStmt = mysqli_prepare(
+                    $conn,
+                    "SELECT role_id, first_name, last_name, username, email, password, role_name, access_scope, is_active, status
+                     FROM roles 
+                     WHERE tenantID = ? 
+                     AND (email = ? OR username = ?)
+                     AND is_active = 1
+                     AND status = 'Active'
+                     LIMIT 1"
+                );
+                mysqli_stmt_bind_param($roleStmt, "iss", $tenantID, $loginInput, $loginInput);
+                mysqli_stmt_execute($roleStmt);
+                $roleQuery = mysqli_stmt_get_result($roleStmt);
+                $roleUser = mysqli_fetch_assoc($roleQuery);
+                mysqli_stmt_close($roleStmt);
 
-                    // --- Tenant login logging (new ENUM schema) ---
-                    $tenantID = (int) $user['tenantID'];
-                    $user_id = $tenantID;
-                    $user_name = $user['shopName'];
-                    $user_role = 'admin'; // Default to admin for tenant login
-                    $actionLog = 'LOGIN';
-                    $entity_type = 'tenant';
-                    $entity_id = $tenantID;
-                    $details = 'Tenant logged in';
-                    $ip_address = isset($_SERVER['REMOTE_ADDR']) ? $_SERVER['REMOTE_USER'] : '';
-                    $user_agent = isset($_SERVER['HTTP_USER_AGENT']) ? $_SERVER['HTTP_USER_AGENT'] : '';
-                    if ($tenantID) {
-                        $stmt = $conn->prepare("INSERT INTO system_logs (tenantID, user_id, user_name, user_role, action, entity_type, entity_id, details, ip_address, user_agent, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())");
-                        $stmt->bind_param('iissssisss', $tenantID, $user_id, $user_name, $user_role, $actionLog, $entity_type, $entity_id, $details, $ip_address, $user_agent);
-                        $stmt->execute();
-                        $stmt->close();
+                if ($roleUser) {
+                    // Staff role login
+                    if (password_verify($password, $roleUser['password'])) {
+                        $_SESSION['tenantID'] = $tenantID;
+                        $_SESSION['login_slug'] = $requestedShop;
+                        $_SESSION['userType'] = 'staff';
+                        $_SESSION['userId'] = (int)$roleUser['role_id'];
+                        $_SESSION['username'] = $roleUser['username'];
+                        $_SESSION['userRole'] = $roleUser['role_name'];
+                        $_SESSION['firstName'] = $roleUser['first_name'];
+                        $_SESSION['lastName'] = $roleUser['last_name'];
+
+                        // --- Staff role login logging ---
+                        $user_id = (int)$roleUser['role_id'];
+                        $user_name = $roleUser['first_name'] . ' ' . $roleUser['last_name'];
+                        $user_role = substr($roleUser['role_name'], 0, 50);
+                        $actionLog = 'LOGIN';
+                        $entity_type = 'role';
+                        $entity_id = $user_id;
+                        $details = 'Staff member logged in';
+                        $ip_address = isset($_SERVER['REMOTE_ADDR']) ? $_SERVER['REMOTE_ADDR'] : '';
+                        $user_agent = isset($_SERVER['HTTP_USER_AGENT']) ? $_SERVER['HTTP_USER_AGENT'] : '';
+                        if ($tenantID) {
+                            $stmt = $conn->prepare("INSERT INTO system_logs (tenantID, user_id, user_name, user_role, action, entity_type, entity_id, details, ip_address, user_agent, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())");
+                            $stmt->bind_param('iissssisss', $tenantID, $user_id, $user_name, $user_role, $actionLog, $entity_type, $entity_id, $details, $ip_address, $user_agent);
+                            $stmt->execute();
+                            $stmt->close();
+                        }
+
+                        // Staff members proceed directly to dashboard
+                        header("Location: dashboardadmin.php?shop=" . urlencode($requestedShop));
+                        exit;
+                    } else {
+                        $error = "Incorrect password.";
                     }
-
-                    // Returning owners proceed directly to dashboard
-                    header("Location: dashboardadmin.php?shop=" . urlencode($user['login_slug']));
-                    exit;
                 } else {
-                    $error = "Incorrect password.";
+                    $error = "This username or email is not authorized for this shop login page.";
                 }
             }
-
-        } else {
-            $error = "This username or email is not authorized for this shop login page.";
         }
     }
 }
@@ -135,6 +211,9 @@ if (isset($_POST['login'])) {
 <head>
     <meta charset="utf-8" />
     <meta content="width=device-width, initial-scale=1.0" name="viewport" />
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
 
     <title>RapidRepair - Partner Login</title>
 
