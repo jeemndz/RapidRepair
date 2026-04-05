@@ -105,7 +105,6 @@ if ($method === 'POST') {
         ]);
     }
 
-    // CREATE APPOINTMENT
     $tenantID = isset($input['tenantID']) ? (int) $input['tenantID'] : 0;
     $user_id = isset($input['user_id']) ? (int) $input['user_id'] : 0;
     $vehicle_id = isset($input['vehicle_id']) ? (int) $input['vehicle_id'] : 0;
@@ -193,14 +192,14 @@ if ($method === 'POST') {
         }
 
         $params = array_merge($service_ids, [$tenantID]);
-        $bindNames = [];
-        $bindNames[] = $types;
+        $bindParams = [];
+        $bindParams[] = $types;
 
         foreach ($params as $key => $value) {
-            $bindNames[] = &$params[$key];
+            $bindParams[] = &$params[$key];
         }
 
-        call_user_func_array([$stmt, 'bind_param'], $bindNames);
+        call_user_func_array([$stmt, 'bind_param'], $bindParams);
 
         if (!$stmt->execute()) {
             throw new Exception('Service lookup failed: ' . $stmt->error);
