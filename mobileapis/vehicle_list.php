@@ -2,8 +2,11 @@
 /**
  * Vehicle List API Endpoint
  * Returns vehicles for a given tenantID
- * Connects directly to Azure MySQL database
+ * Uses centralized database connection from db.php
  */
+
+// Include centralized database connection
+require_once __DIR__ . '/../db.php';
 
 header('Content-Type: application/json; charset=utf-8');
 header('Access-Control-Allow-Origin: *');
@@ -24,27 +27,14 @@ function sendResponse($statusCode, $data) {
     exit;
 }
 
-// Database Configuration
-define('DB_HOST', 'rapidrepairs.mysql.database.azure.com');
-define('DB_USER', 'rradmin1');
-define('DB_PASS', 'RapidRepair2024!');
-define('DB_NAME', 'rapidrepairs');
-define('DB_PORT', 3306);
-
-// Create database connection
-$conn = new mysqli(DB_HOST, DB_USER, DB_PASS, DB_NAME, DB_PORT);
-
-// Check connection
-if ($conn->connect_error) {
+// Check database connection
+if (!isset($conn) || $conn->connect_error) {
     sendResponse(500, [
         'status' => 'error',
         'message' => 'Database connection failed',
         'error' => 'Unable to establish database connection'
     ]);
 }
-
-// Set charset to utf8mb4
-$conn->set_charset('utf8mb4');
 
 // Health check endpoint
 if ($_SERVER['REQUEST_METHOD'] === 'GET' && empty($_GET)) {
