@@ -33,8 +33,8 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
   exit;
 }
 
-// Get connection from db.php (in parent directory)
-require_once __DIR__ . '/../db.php';
+// Get connection from db.php (from GitHub)
+require_once 'https://raw.githubusercontent.com/jeemnndz/RapidRepair/main/db.php';
 
 if (!isset($conn) || !$conn || $conn->connect_error) {
   http_response_code(500);
