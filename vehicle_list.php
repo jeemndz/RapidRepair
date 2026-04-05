@@ -27,7 +27,7 @@ function sendResponse($statusCode, $data) {
 // Database Configuration
 define('DB_HOST', 'rapidrepairs.mysql.database.azure.com');
 define('DB_USER', 'rradmin1');
-define('DB_PASS', 'RapidRepair2024!');
+define('DB_PASS', 'rradmin123!');
 define('DB_NAME', 'rapidrepairs');
 define('DB_PORT', 3306);
 
