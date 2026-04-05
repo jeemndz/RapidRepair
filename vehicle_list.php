@@ -1,74 +1,125 @@
 <?php
-header('Content-Type: application/json');
+/**
+ * Vehicle List API Endpoint
+ * Returns vehicles for a given tenantID
+ * Connects directly to Azure MySQL database
+ */
+
+header('Content-Type: application/json; charset=utf-8');
 header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
 header('Access-Control-Allow-Headers: Content-Type, Authorization');
-include "db.php"; // your MySQL connection
+header('X-API-Version: 1.0');
 
+// Handle preflight requests
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     http_response_code(200);
-    echo json_encode(['status' => 'success']);
     exit;
 }
 
-// Try to include db.php from the same folder or parent (robust for API use)
-$dbFileFound = false;
-if (file_exists(__DIR__ . '/../db.php')) {
-    require_once __DIR__ . '/../db.php';
-    $dbFileFound = true;
-} elseif (file_exists(__DIR__ . '/db.php')) {
-    require_once __DIR__ . '/db.php';
-    $dbFileFound = true;
-}
-
-if (!$dbFileFound) {
-    http_response_code(500);
-    echo json_encode(['status' => 'error', 'message' => 'db.php not found.', 'dir' => __DIR__]);
+// Response helper function
+function sendResponse($statusCode, $data) {
+    http_response_code($statusCode);
+    echo json_encode($data, JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT);
     exit;
 }
 
-if (!isset($conn) || !($conn instanceof mysqli)) {
-    http_response_code(500);
-    echo json_encode(['status' => 'error', 'message' => 'Database connection not available.']);
-    exit;
+// Database Configuration
+define('DB_HOST', 'rapidrepairs.mysql.database.azure.com');
+define('DB_USER', 'rradmin1');
+define('DB_PASS', 'RapidRepair2024!');
+define('DB_NAME', 'rapidrepairs');
+define('DB_PORT', 3306);
+
+// Create database connection
+$conn = new mysqli(DB_HOST, DB_USER, DB_PASS, DB_NAME, DB_PORT);
+
+// Check connection
+if ($conn->connect_error) {
+    sendResponse(500, [
+        'status' => 'error',
+        'message' => 'Database connection failed',
+        'error' => 'Unable to establish database connection'
+    ]);
 }
 
-// Health check for root GET
+// Set charset to utf8mb4
+$conn->set_charset('utf8mb4');
+
+// Health check endpoint
 if ($_SERVER['REQUEST_METHOD'] === 'GET' && empty($_GET)) {
-    echo json_encode(['status' => 'ok', 'message' => 'Vehicle API is running.']);
-    exit;
+    sendResponse(200, [
+        'status' => 'ok',
+        'message' => 'Vehicle List API is running',
+        'timestamp' => date('Y-m-d H:i:s')
+    ]);
 }
 
-$tenantIDRaw = $_REQUEST['tenantID'] ?? 0;
-$includeAllRaw = $_REQUEST['includeAllOnEmpty'] ?? 0;
-
-$tenantID = is_numeric($tenantIDRaw) ? (int) $tenantIDRaw : 0;
-$includeAllOnEmpty = $includeAllRaw == '1';
+// Get parameters
+$tenantID = isset($_GET['tenantID']) ? (int)$_GET['tenantID'] : (isset($_POST['tenantID']) ? (int)$_POST['tenantID'] : 0);
+$user_id = isset($_GET['user_id']) ? (int)$_GET['user_id'] : (isset($_POST['user_id']) ? (int)$_POST['user_id'] : 0);
+$includeAllOnEmpty = isset($_GET['includeAllOnEmpty']) ? $_GET['includeAllOnEmpty'] === '1' : false;
 
 $vehicles = [];
 
-// Query for tenant-specific vehicles
+// Query vehicle information
 if ($tenantID > 0) {
-    $sql = "SELECT vehicle_id, tenantID, user_id, brand, model, year_model, plate_number, color, status, created_at, updated_at FROM vehicleinformation WHERE tenantID = ? AND status = 'Active' ORDER BY brand ASC, model ASC";
+    // Get vehicles for specific tenant
+    $sql = "SELECT 
+                vehicle_id,
+                tenantID,
+                user_id,
+                brand,
+                model,
+                year_model,
+                fuel_type,
+                transmission_type,
+                engine_number,
+                mileage_km,
+                vin_number,
+                plate_number,
+                color,
+                status,
+                created_at,
+                updated_at
+            FROM vehicleinformation 
+            WHERE tenantID = ?";
+    
+    // Add user filter if provided
+    if ($user_id > 0) {
+        $sql .= " AND user_id = ?";
+    }
+    
+    $sql .= " AND status = 'Active' 
+            ORDER BY created_at DESC, brand ASC, model ASC";
+    
     $stmt = $conn->prepare($sql);
-
+    
     if (!$stmt) {
-        http_response_code(500);
-        echo json_encode(['status' => 'error', 'message' => 'Unable to prepare statement: ' . $conn->error]);
-        $conn->close();
-        exit;
+        sendResponse(500, [
+            'status' => 'error',
+            'message' => 'Failed to prepare statement',
+            'error' => $conn->error
+        ]);
     }
-
-    $stmt->bind_param('i', $tenantID);
-
+    
+    // Bind parameters
+    if ($user_id > 0) {
+        $stmt->bind_param('ii', $tenantID, $user_id);
+    } else {
+        $stmt->bind_param('i', $tenantID);
+    }
+    
+    // Execute query
     if (!$stmt->execute()) {
-        http_response_code(500);
-        echo json_encode(['status' => 'error', 'message' => 'Query execution failed: ' . $stmt->error]);
-        $stmt->close();
-        $conn->close();
-        exit;
+        sendResponse(500, [
+            'status' => 'error',
+            'message' => 'Query execution failed',
+            'error' => $stmt->error
+        ]);
     }
-
+    
+    // Get results
     $result = $stmt->get_result();
     while ($row = $result->fetch_assoc()) {
         $vehicles[] = $row;
@@ -76,39 +127,52 @@ if ($tenantID > 0) {
     $stmt->close();
 }
 
-// Fallback: if tenant vehicles are empty (or tenant is not provided) and includeAllOnEmpty requested, get all active vehicles
-if (($tenantID <= 0 || empty($vehicles)) && $includeAllOnEmpty) {
-    $sql = "SELECT vehicle_id, tenantID, user_id, brand, model, year_model, plate_number, color, status, created_at, updated_at FROM vehicleinformation WHERE status = 'Active' ORDER BY brand ASC, model ASC";
+// Fallback: Get all active vehicles if no tenant vehicles found and flag is set
+if (empty($vehicles) && $includeAllOnEmpty) {
+    $sql = "SELECT 
+                vehicle_id,
+                tenantID,
+                user_id,
+                brand,
+                model,
+                year_model,
+                fuel_type,
+                transmission_type,
+                engine_number,
+                mileage_km,
+                vin_number,
+                plate_number,
+                color,
+                status,
+                created_at,
+                updated_at
+            FROM vehicleinformation 
+            WHERE status = 'Active'
+            ORDER BY created_at DESC, brand ASC, model ASC
+            LIMIT 100";
+    
     $stmt = $conn->prepare($sql);
-
-    if (!$stmt) {
-        http_response_code(500);
-        echo json_encode(['status' => 'error', 'message' => 'Unable to prepare fallback statement: ' . $conn->error]);
-        $conn->close();
-        exit;
-    }
-
-    if (!$stmt->execute()) {
-        http_response_code(500);
-        echo json_encode(['status' => 'error', 'message' => 'Fallback query execution failed: ' . $stmt->error]);
+    
+    if ($stmt) {
+        if ($stmt->execute()) {
+            $result = $stmt->get_result();
+            while ($row = $result->fetch_assoc()) {
+                $vehicles[] = $row;
+            }
+        }
         $stmt->close();
-        $conn->close();
-        exit;
     }
-
-    $result = $stmt->get_result();
-    $vehicles = [];
-    while ($row = $result->fetch_assoc()) {
-        $vehicles[] = $row;
-    }
-    $stmt->close();
 }
 
 $conn->close();
 
-echo json_encode([
+// Send successful response
+sendResponse(200, [
     'status' => 'success',
     'tenantID' => $tenantID,
-    'fallbackUsed' => ($includeAllOnEmpty && !empty($vehicles)),
+    'user_id' => $user_id,
+    'vehicleCount' => count($vehicles),
     'vehicles' => $vehicles,
+    'timestamp' => date('Y-m-d H:i:s')
 ]);
+?>
