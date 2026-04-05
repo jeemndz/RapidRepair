@@ -28,27 +28,32 @@ function jsonResponse($statusCode, $payload) {
     exit;
 }
 
-function getJsonInput() {
+function getRequestData() {
     $raw = file_get_contents('php://input');
-    $decoded = json_decode($raw, true);
-    return is_array($decoded) ? $decoded : $_POST;
-}
+    $json = json_decode($raw, true);
 
-function validateDateFormat($date) {
-    return (bool) preg_match('/^\d{4}-\d{2}-\d{2}$/', $date);
-}
+    if (is_array($json) && !empty($json)) {
+        return $json;
+    }
 
-function validateTimeFormat($time) {
-    return (bool) preg_match('/^\d{2}:\d{2}(:\d{2})?$/', $time);
+    if (!empty($_POST)) {
+        return $_POST;
+    }
+
+    return [];
 }
 
 function normalizeServiceIds($service_ids) {
     if (is_array($service_ids)) {
-        return array_values(array_filter(array_map('intval', $service_ids), fn($id) => $id > 0));
+        return array_values(array_filter(array_map('intval', $service_ids), function ($id) {
+            return $id > 0;
+        }));
     }
 
     if (is_string($service_ids) && trim($service_ids) !== '') {
-        return array_values(array_filter(array_map('intval', explode(',', $service_ids)), fn($id) => $id > 0));
+        return array_values(array_filter(array_map('intval', explode(',', $service_ids)), function ($id) {
+            return $id > 0;
+        }));
     }
 
     return [];
@@ -57,13 +62,13 @@ function normalizeServiceIds($service_ids) {
 $method = $_SERVER['REQUEST_METHOD'];
 
 if ($method === 'POST') {
-    $input = getJsonInput();
+    $input = getRequestData();
 
     $action = isset($input['action']) ? trim($input['action']) : 'create';
 
     if ($action === 'update') {
-        $appointment_id = isset($input['appointment_id']) ? (int) $input['appointment_id'] : 0;
-        $tenantID = isset($input['tenantID']) ? (int) $input['tenantID'] : 0;
+        $appointment_id = isset($input['appointment_id']) ? (int)$input['appointment_id'] : 0;
+        $tenantID = isset($input['tenantID']) ? (int)$input['tenantID'] : 0;
         $status = isset($input['status']) ? trim($input['status']) : '';
 
         if ($appointment_id <= 0 || $tenantID <= 0 || $status === '') {
@@ -105,33 +110,33 @@ if ($method === 'POST') {
         ]);
     }
 
-    $tenantID = isset($input['tenantID']) ? (int) $input['tenantID'] : 0;
-    $user_id = isset($input['user_id']) ? (int) $input['user_id'] : 0;
-    $vehicle_id = isset($input['vehicle_id']) ? (int) $input['vehicle_id'] : 0;
+    $tenantID = isset($input['tenantID']) ? (int)$input['tenantID'] : 0;
+    $user_id = isset($input['user_id']) ? (int)$input['user_id'] : 0;
+    $vehicle_id = isset($input['vehicle_id']) ? (int)$input['vehicle_id'] : 0;
     $appointment_date = isset($input['appointment_date']) ? trim($input['appointment_date']) : '';
     $appointment_time = isset($input['appointment_time']) ? trim($input['appointment_time']) : '';
     $notes = isset($input['notes']) ? trim($input['notes']) : '';
-    $service_ids = normalizeServiceIds($input['service_ids'] ?? []);
-    $total_amount = isset($input['total_amount']) ? (float) $input['total_amount'] : 0;
+    $service_ids = normalizeServiceIds(isset($input['service_ids']) ? $input['service_ids'] : []);
+    $total_amount = isset($input['total_amount']) ? (float)$input['total_amount'] : 0;
 
     if ($tenantID <= 0) {
-        jsonResponse(400, ['status' => 'error', 'message' => 'Invalid or missing tenantID']);
+        jsonResponse(400, ['status' => 'error', 'message' => 'Invalid tenantID']);
     }
 
     if ($user_id <= 0) {
-        jsonResponse(400, ['status' => 'error', 'message' => 'Invalid or missing user_id']);
+        jsonResponse(400, ['status' => 'error', 'message' => 'Invalid user_id']);
     }
 
     if ($vehicle_id <= 0) {
-        jsonResponse(400, ['status' => 'error', 'message' => 'Invalid or missing vehicle_id']);
+        jsonResponse(400, ['status' => 'error', 'message' => 'Invalid vehicle_id']);
     }
 
-    if (!$appointment_date || !validateDateFormat($appointment_date)) {
-        jsonResponse(400, ['status' => 'error', 'message' => 'Invalid appointment_date format. Use YYYY-MM-DD']);
+    if ($appointment_date === '') {
+        jsonResponse(400, ['status' => 'error', 'message' => 'Invalid appointment_date']);
     }
 
-    if (!$appointment_time || !validateTimeFormat($appointment_time)) {
-        jsonResponse(400, ['status' => 'error', 'message' => 'Invalid appointment_time format. Use HH:MM:SS or HH:MM']);
+    if ($appointment_time === '') {
+        jsonResponse(400, ['status' => 'error', 'message' => 'Invalid appointment_time']);
     }
 
     if (empty($service_ids)) {
@@ -177,43 +182,6 @@ if ($method === 'POST') {
         $appointment_id = $conn->insert_id;
         $stmt->close();
 
-        $placeholders = implode(',', array_fill(0, count($service_ids), '?'));
-        $types = str_repeat('i', count($service_ids)) . 'i';
-
-        $serviceQuery = "
-            SELECT service_id, price
-            FROM services
-            WHERE service_id IN ($placeholders) AND tenantID = ?
-        ";
-
-        $stmt = $conn->prepare($serviceQuery);
-        if (!$stmt) {
-            throw new Exception('Service lookup prepare failed: ' . $conn->error);
-        }
-
-        $params = array_merge($service_ids, [$tenantID]);
-        $bindParams = [];
-        $bindParams[] = $types;
-
-        foreach ($params as $key => $value) {
-            $bindParams[] = &$params[$key];
-        }
-
-        call_user_func_array([$stmt, 'bind_param'], $bindParams);
-
-        if (!$stmt->execute()) {
-            throw new Exception('Service lookup failed: ' . $stmt->error);
-        }
-
-        $result = $stmt->get_result();
-        $servicePrices = [];
-
-        while ($row = $result->fetch_assoc()) {
-            $servicePrices[(int) $row['service_id']] = (float) $row['price'];
-        }
-
-        $stmt->close();
-
         $serviceInsertQuery = "
             INSERT INTO appointment_services
             (appointment_id, tenantID, service_id, service_price, duration_minutes, notes, created_at)
@@ -229,7 +197,8 @@ if ($method === 'POST') {
         $service_notes = '';
 
         foreach ($service_ids as $service_id) {
-            $service_price = $servicePrices[$service_id] ?? 0;
+            $service_id = (int)$service_id;
+            $service_price = 0;
 
             $stmt->bind_param(
                 'iiidis',
@@ -250,7 +219,7 @@ if ($method === 'POST') {
 
         $paymentMethod = 'Pending';
         $paymentStatus = 'Pending';
-        $referenceNumber = 'RR-' . str_pad((string) $appointment_id, 5, '0', STR_PAD_LEFT);
+        $referenceNumber = 'RR-' . str_pad((string)$appointment_id, 5, '0', STR_PAD_LEFT);
         $amountPaid = 0;
         $balance = $total_amount;
 
@@ -310,10 +279,10 @@ if ($method === 'GET') {
     $action = isset($_GET['action']) ? trim($_GET['action']) : 'list';
 
     if ($action === 'list') {
-        $tenantID = isset($_GET['tenantID']) ? (int) $_GET['tenantID'] : 0;
-        $user_id = isset($_GET['user_id']) ? (int) $_GET['user_id'] : 0;
-        $limit = isset($_GET['limit']) ? (int) $_GET['limit'] : 50;
-        $offset = isset($_GET['offset']) ? (int) $_GET['offset'] : 0;
+        $tenantID = isset($_GET['tenantID']) ? (int)$_GET['tenantID'] : 0;
+        $user_id = isset($_GET['user_id']) ? (int)$_GET['user_id'] : 0;
+        $limit = isset($_GET['limit']) ? (int)$_GET['limit'] : 50;
+        $offset = isset($_GET['offset']) ? (int)$_GET['offset'] : 0;
 
         if ($tenantID <= 0) {
             jsonResponse(400, ['status' => 'error', 'message' => 'Invalid tenantID']);
@@ -375,8 +344,8 @@ if ($method === 'GET') {
     }
 
     if ($action === 'delete') {
-        $appointment_id = isset($_GET['appointment_id']) ? (int) $_GET['appointment_id'] : 0;
-        $tenantID = isset($_GET['tenantID']) ? (int) $_GET['tenantID'] : 0;
+        $appointment_id = isset($_GET['appointment_id']) ? (int)$_GET['appointment_id'] : 0;
+        $tenantID = isset($_GET['tenantID']) ? (int)$_GET['tenantID'] : 0;
 
         if ($appointment_id <= 0 || $tenantID <= 0) {
             jsonResponse(400, [
