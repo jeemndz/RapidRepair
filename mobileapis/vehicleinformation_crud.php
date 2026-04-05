@@ -78,7 +78,7 @@ function getConnection()
 
 function sanitize($value)
 {
-    return trim((string) $value);
+    return trim((string)$value);
 }
 
 function getRequestData()
@@ -107,7 +107,7 @@ function validateRequired($requiredFields, $data)
     $missing = [];
 
     foreach ($requiredFields as $field) {
-        if (!isset($data[$field]) || trim((string) $data[$field]) === '') {
+        if (!isset($data[$field]) || trim((string)$data[$field]) === '') {
             $missing[] = $field;
         }
     }
@@ -118,22 +118,22 @@ function validateRequired($requiredFields, $data)
 function normalizeVehicle($row)
 {
     return [
-        'vehicle_id' => (int) $row['vehicle_id'],
-        'tenantID' => (int) $row['tenantID'],
-        'user_id' => (int) $row['user_id'],
-        'brand' => (string) $row['brand'],
-        'model' => (string) $row['model'],
-        'year' => (string) $row['year_model'],
-        'year_model' => (string) $row['year_model'],
-        'fuel_type' => (string) $row['fuel_type'],
-        'transmission_type' => (string) $row['transmission_type'],
-        'engine_number' => $row['engine_number'] !== null ? (string) $row['engine_number'] : '',
-        'mileage_km' => (int) $row['mileage_km'],
-        'vin_number' => $row['vin_number'] !== null ? (string) $row['vin_number'] : '',
-        'plate_number' => (string) $row['plate_number'],
-        'color' => $row['color'] !== null ? (string) $row['color'] : '',
-        'status' => (string) $row['status'],
-        'date_added' => (string) $row['date_added'],
+        'vehicle_id' => (int)$row['vehicle_id'],
+        'tenantID' => (int)$row['tenantID'],
+        'user_id' => (int)$row['user_id'],
+        'brand' => (string)$row['brand'],
+        'model' => (string)$row['model'],
+        'year' => (string)$row['year_model'],
+        'year_model' => (string)$row['year_model'],
+        'fuel_type' => (string)$row['fuel_type'],
+        'transmission_type' => (string)$row['transmission_type'],
+        'engine_number' => $row['engine_number'] !== null ? (string)$row['engine_number'] : '',
+        'mileage_km' => (int)$row['mileage_km'],
+        'vin_number' => $row['vin_number'] !== null ? (string)$row['vin_number'] : '',
+        'plate_number' => (string)$row['plate_number'],
+        'color' => $row['color'] !== null ? (string)$row['color'] : '',
+        'status' => (string)$row['status'],
+        'date_added' => (string)$row['date_added'],
     ];
 }
 
@@ -163,8 +163,8 @@ function fetchVehicleById($conn, $vehicle_id)
 
 function handleListVehicles($conn, $data)
 {
-    $tenantID = isset($data['tenantID']) ? (int) $data['tenantID'] : 0;
-    $user_id = isset($data['user_id']) ? (int) $data['user_id'] : 0;
+    $tenantID = isset($data['tenantID']) ? (int)$data['tenantID'] : 0;
+    $user_id = isset($data['user_id']) ? (int)$data['user_id'] : 0;
 
     if ($tenantID <= 0 || $user_id <= 0) {
         errorResponse('Invalid tenantID or user_id.');
@@ -207,15 +207,15 @@ function handleCreateVehicle($conn, $data)
         errorResponse('Missing required fields: ' . implode(', ', $missing));
     }
 
-    $tenantID = (int) $data['tenantID'];
-    $user_id = (int) $data['user_id'];
+    $tenantID = (int)$data['tenantID'];
+    $user_id = (int)$data['user_id'];
     $brand = sanitize($data['brand']);
     $model = sanitize($data['model']);
     $year_model = sanitize($data['year_model']);
     $fuel_type = isset($data['fuel_type']) ? sanitize($data['fuel_type']) : 'Gasoline';
     $transmission_type = isset($data['transmission_type']) ? sanitize($data['transmission_type']) : 'Manual';
     $engine_number = isset($data['engine_number']) && $data['engine_number'] !== '' ? sanitize($data['engine_number']) : null;
-    $mileage_km = isset($data['mileage_km']) && $data['mileage_km'] !== '' ? (int) $data['mileage_km'] : 0;
+    $mileage_km = isset($data['mileage_km']) && $data['mileage_km'] !== '' ? (int)$data['mileage_km'] : 0;
     $vin_number = isset($data['vin_number']) && $data['vin_number'] !== '' ? sanitize($data['vin_number']) : null;
     $plate_number = strtoupper(sanitize($data['plate_number']));
     $color = isset($data['color']) && $data['color'] !== '' ? sanitize($data['color']) : null;
@@ -312,9 +312,9 @@ function handleUpdateVehicle($conn, $data)
         errorResponse('Missing vehicle_id, tenantID, or user_id.');
     }
 
-    $vehicle_id = (int) $data['vehicle_id'];
-    $tenantID = (int) $data['tenantID'];
-    $user_id = (int) $data['user_id'];
+    $vehicle_id = (int)$data['vehicle_id'];
+    $tenantID = (int)$data['tenantID'];
+    $user_id = (int)$data['user_id'];
 
     if ($vehicle_id <= 0 || $tenantID <= 0 || $user_id <= 0) {
         errorResponse('Invalid vehicle_id, tenantID, or user_id.');
@@ -364,13 +364,13 @@ function handleUpdateVehicle($conn, $data)
 
     foreach ($fieldTypes as $field => $type) {
         if (array_key_exists($field, $data) && $data[$field] !== '') {
-            $value = $type === 'i' ? (int) $data[$field] : sanitize($data[$field]);
+            $value = $type === 'i' ? (int)$data[$field] : sanitize($data[$field]);
 
             if ($field === 'plate_number') {
                 $value = strtoupper($value);
             }
 
-            if ($field === 'year_model' && !preg_match('/^\d{4}$/', (string) $value)) {
+            if ($field === 'year_model' && !preg_match('/^\d{4}$/', (string)$value)) {
                 errorResponse('Year must be in YYYY format.');
             }
 
@@ -421,9 +421,9 @@ function handleDeleteVehicle($conn, $data)
         errorResponse('Missing vehicle_id, tenantID, or user_id.');
     }
 
-    $vehicle_id = (int) $data['vehicle_id'];
-    $tenantID = (int) $data['tenantID'];
-    $user_id = (int) $data['user_id'];
+    $vehicle_id = (int)$data['vehicle_id'];
+    $tenantID = (int)$data['tenantID'];
+    $user_id = (int)$data['user_id'];
 
     if ($vehicle_id <= 0 || $tenantID <= 0 || $user_id <= 0) {
         errorResponse('Invalid vehicle_id, tenantID, or user_id.');
