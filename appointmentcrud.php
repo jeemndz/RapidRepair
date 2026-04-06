@@ -363,7 +363,7 @@ try {
             foreach ($service_ids as $service_id) {
                 $service_price = (float)$services[$service_id];
                 $stmt->bind_param(
-                    'iiidss',
+                    'iiidis',
                     $appointment_id,
                     $tenantID,
                     $service_id,
@@ -638,7 +638,7 @@ try {
             $service_price = (float)$services[$service_id];
 
             $stmt->bind_param(
-                'iiidss',
+                'iiidis',
                 $appointment_id,
                 $tenantID,
                 $service_id,
@@ -703,122 +703,6 @@ try {
                 'total_amount' => $finalTotal
             ]
         ]);
-    }
-
-    if ($method === 'GET') {
-        $action = trim((string)($_GET['action'] ?? 'list'));
-        $tenantID = normalizeTenantID($_GET['tenantID'] ?? null);
-
-        if ($action === 'list') {
-            $user_id = isset($_GET['user_id']) ? (int)$_GET['user_id'] : 0;
-            $limit = max(1, min((int)($_GET['limit'] ?? 50), 100));
-            $offset = max(0, (int)($_GET['offset'] ?? 0));
-
-            if ($user_id > 0) {
-                $stmt = $conn->prepare("
-                    SELECT *
-                    FROM appointments
-                    WHERE tenantID = ? AND user_id = ?
-                    ORDER BY appointment_date DESC, appointment_time DESC
-                    LIMIT ? OFFSET ?
-                ");
-                if (!$stmt) {
-                    throw new Exception('Prepare failed: ' . $conn->error);
-                }
-                $stmt->bind_param('iiii', $tenantID, $user_id, $limit, $offset);
-            } else {
-                $stmt = $conn->prepare("
-                    SELECT *
-                    FROM appointments
-                    WHERE tenantID = ?
-                    ORDER BY appointment_date DESC, appointment_time DESC
-                    LIMIT ? OFFSET ?
-                ");
-                if (!$stmt) {
-                    throw new Exception('Prepare failed: ' . $conn->error);
-                }
-                $stmt->bind_param('iii', $tenantID, $limit, $offset);
-            }
-
-            if (!$stmt->execute()) {
-                $err = $stmt->error;
-                $stmt->close();
-                throw new Exception('Query failed: ' . $err);
-            }
-
-            $result = $stmt->get_result();
-            $rows = [];
-
-            while ($row = $result->fetch_assoc()) {
-                $rows[] = $row;
-            }
-
-            $stmt->close();
-
-            respond(200, ['status' => 'success', 'data' => $rows]);
-        }
-
-        if ($action === 'delete') {
-            $appointment_id = (int)($_GET['appointment_id'] ?? 0);
-
-            if ($appointment_id <= 0) {
-                respond(400, ['status' => 'error', 'message' => 'Missing appointment_id']);
-            }
-
-            $conn->begin_transaction();
-
-            $stmt = $conn->prepare("DELETE FROM appointment_services WHERE appointment_id = ? AND tenantID = ?");
-            if (!$stmt) {
-                throw new Exception('Prepare failed: ' . $conn->error);
-            }
-            $stmt->bind_param('ii', $appointment_id, $tenantID);
-            if (!$stmt->execute()) {
-                $err = $stmt->error;
-                $stmt->close();
-                throw new Exception('Delete appointment services failed: ' . $err);
-            }
-            $stmt->close();
-
-            $stmt = $conn->prepare("DELETE FROM payments WHERE appointment_id = ? AND tenantID = ?");
-            if (!$stmt) {
-                throw new Exception('Prepare failed: ' . $conn->error);
-            }
-            $stmt->bind_param('ii', $appointment_id, $tenantID);
-            if (!$stmt->execute()) {
-                $err = $stmt->error;
-                $stmt->close();
-                throw new Exception('Delete payments failed: ' . $err);
-            }
-            $stmt->close();
-
-            $stmt = $conn->prepare("DELETE FROM appointments WHERE appointment_id = ? AND tenantID = ?");
-            if (!$stmt) {
-                throw new Exception('Prepare failed: ' . $conn->error);
-            }
-            $stmt->bind_param('ii', $appointment_id, $tenantID);
-            if (!$stmt->execute()) {
-                $err = $stmt->error;
-                $stmt->close();
-                throw new Exception('Delete appointment failed: ' . $err);
-            }
-
-            if ($stmt->affected_rows < 1) {
-                $stmt->close();
-                $conn->rollback();
-                respond(404, ['status' => 'error', 'message' => 'Appointment not found for this tenant']);
-            }
-
-            $stmt->close();
-            $conn->commit();
-
-            respond(200, [
-                'status' => 'success',
-                'message' => 'Appointment deleted successfully',
-                'data' => ['appointment_id' => $appointment_id]
-            ]);
-        }
-
-        respond(400, ['status' => 'error', 'message' => 'Invalid action']);
     }
 
     respond(405, ['status' => 'error', 'message' => 'Method not allowed']);
