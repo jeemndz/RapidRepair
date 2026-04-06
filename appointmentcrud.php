@@ -237,7 +237,7 @@ function handleListAppointments($conn, $data)
             'status' => (string) $row['status'],
             'notes' => $row['notes'] !== null ? (string) $row['notes'] : '',
             'total_amount' => (float) $row['total_amount'],
-            'referenceNumber' => $row['referenceNumberr'] !== null ? (string) $row['referenceNumber'] : null,
+            'referenceNumber' => $row['referenceNumber'] !== null ? (string) $row['referenceNumber'] : null,
             'job_order_no' => $row['job_order_no'] !== null ? (string) $row['job_order_no'] : null,
             'job_status' => $row['job_status'] !== null ? (string) $row['job_status'] : null,
             'created_at' => (string) $row['created_at'],
