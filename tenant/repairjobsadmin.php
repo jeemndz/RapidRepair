@@ -107,6 +107,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_job_status']))
         exit;
     }
 
+    // Check if job is already completed - prevent status changes
+    $checkCompletedStmt = mysqli_prepare(
+        $conn,
+        'SELECT job_status FROM repair_jobs WHERE repair_job_id = ? AND tenantID = ? LIMIT 1'
+    );
+    if ($checkCompletedStmt) {
+        mysqli_stmt_bind_param($checkCompletedStmt, 'ii', $repairJobId, $tenantID);
+        mysqli_stmt_execute($checkCompletedStmt);
+        $checkCompletedResult = mysqli_stmt_get_result($checkCompletedStmt);
+        if ($checkCompletedResult && $checkCompletedRow = mysqli_fetch_assoc($checkCompletedResult)) {
+            if ($checkCompletedRow['job_status'] === 'Completed') {
+                $redirectParams['msg'] = 'error';
+                header('Location: repairjobsadmin.php?' . http_build_query(array_filter($redirectParams, static fn($v) => $v !== '')));
+                mysqli_stmt_close($checkCompletedStmt);
+                exit;
+            }
+        }
+        mysqli_stmt_close($checkCompletedStmt);
+    }
+
     $updateJobStmt = mysqli_prepare(
         $conn,
         'UPDATE repair_jobs
@@ -209,24 +229,20 @@ function serviceStatusSelectClass(string $status): string
 
 function generateJobOrderNo(mysqli $conn, int $tenantID): string
 {
-    $checkStmt = mysqli_prepare($conn, 'SELECT repair_job_id FROM repair_jobs WHERE tenantID = ? AND job_order_no = ? LIMIT 1');
-    if (!$checkStmt) {
-        return 'RO-' . date('YmdHis') . '-' . random_int(100, 999);
+    // Get the next sequential number for this tenant
+    $countStmt = mysqli_prepare($conn, 'SELECT COUNT(*) as total FROM repair_jobs WHERE tenantID = ?');
+    if (!$countStmt) {
+        return 'RR-' . str_pad((string) random_int(1, 99999), 5, '0', STR_PAD_LEFT);
     }
-
-    for ($i = 0; $i < 8; $i++) {
-        $candidate = 'RO-' . date('Ymd') . '-' . str_pad((string) random_int(0, 999999), 6, '0', STR_PAD_LEFT);
-        mysqli_stmt_bind_param($checkStmt, 'is', $tenantID, $candidate);
-        mysqli_stmt_execute($checkStmt);
-        $result = mysqli_stmt_get_result($checkStmt);
-        if (!$result || !mysqli_fetch_assoc($result)) {
-            mysqli_stmt_close($checkStmt);
-            return $candidate;
-        }
-    }
-
-    mysqli_stmt_close($checkStmt);
-    return 'RO-' . date('YmdHis') . '-' . random_int(1000, 9999);
+    
+    mysqli_stmt_bind_param($countStmt, 'i', $tenantID);
+    mysqli_stmt_execute($countStmt);
+    $countResult = mysqli_stmt_get_result($countStmt);
+    $countRow = mysqli_fetch_assoc($countResult);
+    mysqli_stmt_close($countStmt);
+    
+    $nextNumber = ((int) ($countRow['total'] ?? 0)) + 1;
+    return 'RR-' . str_pad((string) $nextNumber, 5, '0', STR_PAD_LEFT);
 }
 
 // Auto-move confirmed appointments into maintenance (repair jobs) if missing.
@@ -641,7 +657,14 @@ $upcomingCountStmt = mysqli_prepare(
      FROM appointments a
      WHERE a.tenantID = ?
        AND a.status IN ('Pending', 'Confirmed', 'In Progress')
-       AND (a.appointment_date > CURDATE() OR (a.appointment_date = CURDATE() AND a.appointment_time >= CURTIME()))"
+       AND (a.appointment_date > CURDATE() OR (a.appointment_date = CURDATE() AND a.appointment_time >= CURTIME()))
+       AND NOT EXISTS (
+            SELECT 1
+            FROM repair_jobs rj
+            WHERE rj.appointment_id = a.appointment_id
+              AND rj.tenantID = a.tenantID
+              AND rj.job_status = 'Completed'
+       )"
 );
 if ($upcomingCountStmt) {
     mysqli_stmt_bind_param($upcomingCountStmt, 'i', $tenantID);
@@ -677,6 +700,13 @@ $upcomingStmt = mysqli_prepare(
      WHERE a.tenantID = ?
        AND a.status IN ('Pending', 'Confirmed', 'In Progress')
        AND (a.appointment_date > CURDATE() OR (a.appointment_date = CURDATE() AND a.appointment_time >= CURTIME()))
+       AND NOT EXISTS (
+            SELECT 1
+            FROM repair_jobs rj
+            WHERE rj.appointment_id = a.appointment_id
+              AND rj.tenantID = a.tenantID
+              AND rj.job_status = 'Completed'
+       )
      ORDER BY a.appointment_date ASC, a.appointment_time ASC
          LIMIT ?, ?"
 );
@@ -942,132 +972,6 @@ if ($upcomingStmt) {
                 </div>
             </section>
 
-            <section class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden mb-8">
-                <div class="px-6 py-5 border-b border-slate-100 flex items-center justify-between">
-                    <div>
-                        <h3 class="text-lg font-bold text-slate-900">Maintenance Progress</h3>
-                        <p class="text-xs text-slate-500 font-medium">Service-level progress for active repair work.</p>
-                    </div>
-                    <span class="text-xs font-bold text-slate-500"><?php echo number_format(count($progressRows)); ?>
-                        rows</span>
-                </div>
-                <div class="overflow-x-auto">
-                    <table class="w-full text-left">
-                        <thead>
-                            <tr class="bg-slate-50/50">
-                                <th class="px-6 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">Job
-                                    / Vehicle</th>
-                                <th class="px-6 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">
-                                    Customer</th>
-                                <th class="px-6 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">
-                                    Work Notes</th>
-                                <th class="px-6 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">
-                                    Technician</th>
-                                <th class="px-6 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">Bay
-                                </th>
-                                <th class="px-6 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">
-                                    Status Update</th>
-                            </tr>
-                        </thead>
-                        <tbody class="divide-y divide-slate-100">
-                            <?php if (count($progressRows) === 0): ?>
-                                <tr>
-                                    <td colspan="6" class="px-6 py-10 text-center text-sm text-slate-500">No repair service
-                                        records found for this filter.</td>
-                                </tr>
-                            <?php else: ?>
-                                <?php foreach ($progressRows as $row): ?>
-                                    <?php
-                                    $vehicleText = trim(((string) ($row['year_model'] ?? '')) . ' ' . ((string) ($row['brand'] ?? '')) . ' ' . ((string) ($row['model'] ?? '')));
-                                    if ($vehicleText === '') {
-                                        $vehicleText = 'Vehicle record';
-                                    }
-                                    ?>
-                                    <tr class="hover:bg-slate-50/50 transition-colors">
-                                        <td class="px-6 py-4">
-                                            <div class="font-bold text-sm text-slate-900">
-                                                <?php echo h($row['job_order_no'] ?: ('#JOB-' . (int) $row['repair_job_id'])); ?>
-                                            </div>
-                                            <div class="text-xs text-slate-500"><?php echo h($vehicleText); ?></div>
-                                        </td>
-                                        <td class="px-6 py-4 text-sm font-medium text-slate-700">
-                                            <?php echo h($row['customer_name']); ?></td>
-                                        <td class="px-6 py-4 text-sm text-slate-700">
-                                            <?php
-                                            $workNote = trim((string) ($row['progress_notes'] ?? ''));
-                                            if ($workNote === '') {
-                                                $workNote = trim((string) ($row['diagnosis_notes'] ?? ''));
-                                            }
-                                            if ($workNote === '') {
-                                                $workNote = trim((string) ($row['concern'] ?? ''));
-                                            }
-                                            echo h($workNote !== '' ? $workNote : 'No notes yet');
-                                            ?>
-                                        </td>
-                                        <td class="px-6 py-4 text-sm text-slate-600">
-                                            <?php echo h($row['assigned_technician'] ?: 'Unassigned'); ?></td>
-                                        <td class="px-6 py-4 text-sm font-bold text-slate-500">
-                                            <?php echo h($row['bay_no'] ?: 'N/A'); ?></td>
-                                        <td class="px-6 py-4">
-                                            <form method="post" class="flex items-center gap-2">
-                                                <input type="hidden" name="csrf_token" value="<?php echo h($csrfToken); ?>">
-                                                <input type="hidden" name="repair_job_id"
-                                                    value="<?php echo (int) $row['repair_job_id']; ?>">
-                                                <input type="hidden" name="update_job_status" value="1">
-                                                <select name="job_status"
-                                                    class="border-none text-xs font-bold py-1.5 px-3 rounded-lg focus:ring-0 cursor-pointer w-40 <?php echo h(statusBadgeClass((string) $row['job_status'])); ?>">
-                                                    <?php foreach ($jobStatuses as $status): ?>
-                                                        <option value="<?php echo h($status); ?>" <?php echo $row['job_status'] === $status ? 'selected' : ''; ?>>
-                                                            <?php echo h($status); ?></option>
-                                                    <?php endforeach; ?>
-                                                </select>
-                                                <button type="submit"
-                                                    class="px-2.5 py-1.5 text-xs font-bold text-white bg-blue-700 rounded hover:bg-blue-800">Save</button>
-                                            </form>
-                                        </td>
-                                    </tr>
-                                <?php endforeach; ?>
-                            <?php endif; ?>
-                        </tbody>
-                    </table>
-                </div>
-                <div class="px-6 py-4 border-t border-slate-100 bg-slate-50/40 flex items-center justify-between">
-                    <p class="text-xs text-slate-500 font-medium">Showing
-                        <?php echo number_format(count($progressRows)); ?> of
-                        <?php echo number_format($progressTotalRows); ?> records</p>
-                    <div class="flex items-center gap-2">
-                        <?php if ($progressPage > 1): ?>
-                            <a href="repairjobsadmin.php?<?php echo h(http_build_query(array_filter([
-                                'shop' => $loginSlug,
-                                'q' => $search,
-                                'job_status' => $jobStatusFilter,
-                                'service_status' => $serviceStatusFilter,
-                                'priority' => $priorityFilter,
-                                'upcoming_page' => $upcomingPage,
-                                'progress_page' => $progressPage - 1,
-                                'jobs_page' => $jobsPage,
-                            ], static fn($v) => $v !== ''))); ?>"
-                                class="px-3 py-1.5 text-xs font-semibold rounded-lg border border-slate-300 bg-white hover:bg-slate-100">Previous</a>
-                        <?php endif; ?>
-                        <span class="px-2 py-1 text-xs font-semibold text-slate-600">Page
-                            <?php echo (int) $progressPage; ?> of <?php echo (int) $progressTotalPages; ?></span>
-                        <?php if ($progressPage < $progressTotalPages): ?>
-                            <a href="repairjobsadmin.php?<?php echo h(http_build_query(array_filter([
-                                'shop' => $loginSlug,
-                                'q' => $search,
-                                'job_status' => $jobStatusFilter,
-                                'service_status' => $serviceStatusFilter,
-                                'priority' => $priorityFilter,
-                                'upcoming_page' => $upcomingPage,
-                                'progress_page' => $progressPage + 1,
-                                'jobs_page' => $jobsPage,
-                            ], static fn($v) => $v !== ''))); ?>"
-                                class="px-3 py-1.5 text-xs font-semibold rounded-lg border border-slate-300 bg-white hover:bg-slate-100">Next</a>
-                        <?php endif; ?>
-                    </div>
-                </div>
-            </section>
-
             <section class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
                 <div class="px-6 py-5 border-b border-slate-100 flex items-center justify-between">
                     <div>
@@ -1146,7 +1050,7 @@ if ($upcomingStmt) {
                                     ?>
                                     <tr class="hover:bg-slate-50/50 transition-colors">
                                         <td class="px-6 py-4">
-                                            <div class="font-bold text-sm text-slate-900"><?php echo h($job['job_order_no']); ?>
+                                            <div class="font-bold text-sm text-slate-900"><?php echo h(!empty($job['job_order_no']) ? $job['job_order_no'] : 'RJO-' . $job['repair_job_id']); ?>
                                             </div>
                                             <div class="text-xs text-slate-500">
                                                 <?php echo h($vehicleText !== '' ? $vehicleText : 'Vehicle record'); ?></div>
@@ -1166,20 +1070,24 @@ if ($upcomingStmt) {
                                                 class="inline-flex px-2 py-1 rounded-full text-xs font-bold <?php echo h(statusBadgeClass((string) $job['job_status'])); ?>"><?php echo h($job['job_status']); ?></span>
                                         </td>
                                         <td class="px-6 py-4">
-                                            <form method="post" class="flex items-center gap-2">
-                                                <input type="hidden" name="csrf_token" value="<?php echo h($csrfToken); ?>">
-                                                <input type="hidden" name="repair_job_id"
-                                                    value="<?php echo (int) $job['repair_job_id']; ?>">
-                                                <input type="hidden" name="update_job_status" value="1">
-                                                <select name="job_status" class="rounded-lg border-slate-300 text-xs">
-                                                    <?php foreach ($jobStatuses as $status): ?>
-                                                        <option value="<?php echo h($status); ?>" <?php echo $job['job_status'] === $status ? 'selected' : ''; ?>>
-                                                            <?php echo h($status); ?></option>
-                                                    <?php endforeach; ?>
-                                                </select>
-                                                <button type="submit"
-                                                    class="text-blue-700 hover:underline text-xs font-bold">Save</button>
-                                            </form>
+                                            <?php if ($job['job_status'] === 'Completed'): ?>
+                                                <span class="text-xs text-slate-500 font-semibold">Locked</span>
+                                            <?php else: ?>
+                                                <form method="post" class="flex items-center gap-2">
+                                                    <input type="hidden" name="csrf_token" value="<?php echo h($csrfToken); ?>">
+                                                    <input type="hidden" name="repair_job_id"
+                                                        value="<?php echo (int) $job['repair_job_id']; ?>">
+                                                    <input type="hidden" name="update_job_status" value="1">
+                                                    <select name="job_status" class="rounded-lg border-slate-300 text-xs">
+                                                        <?php foreach ($jobStatuses as $status): ?>
+                                                            <option value="<?php echo h($status); ?>" <?php echo $job['job_status'] === $status ? 'selected' : ''; ?>>
+                                                                <?php echo h($status); ?></option>
+                                                        <?php endforeach; ?>
+                                                    </select>
+                                                    <button type="submit"
+                                                        class="text-blue-700 hover:underline text-xs font-bold">Save</button>
+                                                </form>
+                                            <?php endif; ?>
                                         </td>
                                     </tr>
                                 <?php endforeach; ?>

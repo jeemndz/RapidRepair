@@ -98,17 +98,19 @@ $reviewForm = [
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_review'])) {
     $postedToken = isset($_POST['csrf_token']) ? (string) $_POST['csrf_token'] : '';
     $reviewForm['appointment_id'] = isset($_POST['appointment_id']) ? (int) $_POST['appointment_id'] : 0;
+    $appointmentStatus = isset($_POST['appointment_status']) ? trim((string) $_POST['appointment_status']) : '';
     $reviewForm['job_status'] = isset($_POST['job_status']) ? trim((string) $_POST['job_status']) : '';
     $reviewForm['assigned_technician'] = isset($_POST['assigned_technician']) ? trim((string) $_POST['assigned_technician']) : '';
     $reviewForm['bay_no'] = isset($_POST['bay_no']) ? trim((string) $_POST['bay_no']) : '';
 
-    $showReviewModal = true;
     $reviewAppointmentId = $reviewForm['appointment_id'];
 
     if (!hash_equals($csrfToken, $postedToken)) {
         $actionError = 'Invalid request token. Please refresh and try again.';
     } elseif ($reviewForm['appointment_id'] <= 0) {
         $actionError = 'Invalid appointment selected for review.';
+    } elseif (!in_array($appointmentStatus, ['Pending', 'Confirmed', 'Cancelled'], true)) {
+        $actionError = 'Invalid appointment status selected.';
     } elseif (!in_array($reviewForm['job_status'], $allowedJobStatuses, true)) {
         $actionError = 'Invalid repair job status selected.';
     } elseif ($reviewForm['assigned_technician'] === '') {
@@ -139,7 +141,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_review'])) {
     if ($actionError === '') {
         $apptStmt = mysqli_prepare(
             $conn,
-            'SELECT appointment_id, user_id, vehicle_id FROM appointments WHERE appointment_id = ? AND tenantID = ? LIMIT 1'
+            'SELECT appointment_id, user_id, vehicle_id, total_amount FROM appointments WHERE appointment_id = ? AND tenantID = ? LIMIT 1'
         );
 
         if (!$apptStmt) {
@@ -172,82 +174,177 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_review'])) {
             $repairRow = $repairResult ? mysqli_fetch_assoc($repairResult) : null;
             mysqli_stmt_close($checkRepairStmt);
 
-            mysqli_begin_transaction($conn);
-            $saveOk = true;
+            if (mysqli_begin_transaction($conn)) {
+                $saveOk = true;
+                $repairJobId = 0;
 
-            if ($repairRow) {
-                $updateRepairStmt = mysqli_prepare(
+                // Update appointment status first
+                $updateApptStmt = mysqli_prepare(
                     $conn,
-                    'UPDATE repair_jobs
-                     SET job_status = ?, assigned_technician = ?, bay_no = ?, updated_at = NOW()
-                     WHERE repair_job_id = ? AND tenantID = ? LIMIT 1'
+                    'UPDATE appointments SET status = ?, updated_at = NOW() WHERE appointment_id = ? AND tenantID = ? LIMIT 1'
                 );
-
-                if (!$updateRepairStmt) {
+                if (!$updateApptStmt) {
                     $saveOk = false;
-                    $actionError = 'Unable to update repair job details.';
+                    $actionError = 'Unable to update appointment status: ' . mysqli_error($conn);
                 } else {
-                    $repairJobId = (int) $repairRow['repair_job_id'];
-                    mysqli_stmt_bind_param(
-                        $updateRepairStmt,
-                        'sssii',
-                        $reviewForm['job_status'],
-                        $reviewForm['assigned_technician'],
-                        $reviewForm['bay_no'],
-                        $repairJobId,
-                        $tenantID
-                    );
-                    if (!mysqli_stmt_execute($updateRepairStmt)) {
+                    mysqli_stmt_bind_param($updateApptStmt, 'sii', $appointmentStatus, $reviewForm['appointment_id'], $tenantID);
+                    if (!mysqli_stmt_execute($updateApptStmt)) {
                         $saveOk = false;
-                        $actionError = 'Repair job update failed.';
+                        $actionError = 'Appointment status update failed: ' . mysqli_stmt_error($updateApptStmt);
                     }
-                    mysqli_stmt_close($updateRepairStmt);
+                    mysqli_stmt_close($updateApptStmt);
+                }
+
+                if ($saveOk && $repairRow) {
+                    $grandTotal = (float) ($apptRow['total_amount'] ?? 0);
+                    $updateRepairStmt = mysqli_prepare(
+                        $conn,
+                        'UPDATE repair_jobs
+                         SET job_status = ?, assigned_technician = ?, bay_no = ?, grand_total = ?, updated_at = NOW()
+                         WHERE repair_job_id = ? AND tenantID = ? LIMIT 1'
+                    );
+
+                    if (!$updateRepairStmt) {
+                        $saveOk = false;
+                        $actionError = 'Unable to update repair job details: ' . mysqli_error($conn);
+                    } else {
+                        $repairJobId = (int) $repairRow['repair_job_id'];
+                        mysqli_stmt_bind_param(
+                            $updateRepairStmt,
+                            'sssdii',
+                            $reviewForm['job_status'],
+                            $reviewForm['assigned_technician'],
+                            $reviewForm['bay_no'],
+                            $grandTotal,
+                            $repairJobId,
+                            $tenantID
+                        );
+                        if (!mysqli_stmt_execute($updateRepairStmt)) {
+                            $saveOk = false;
+                            $actionError = 'Repair job update failed: ' . mysqli_stmt_error($updateRepairStmt);
+                        }
+                        mysqli_stmt_close($updateRepairStmt);
+                    }
+                } elseif ($saveOk) {
+                    $newJobOrderNo = generateRepairJobOrderNo($conn, $tenantID);
+                    $grandTotal = (float) ($apptRow['total_amount'] ?? 0);
+                    $insertRepairStmt = mysqli_prepare(
+                        $conn,
+                        'INSERT INTO repair_jobs
+                        (tenantID, appointment_id, user_id, vehicle_id, job_order_no, bay_no, assigned_technician, job_status, priority, grand_total)
+                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+                    );
+
+                    if (!$insertRepairStmt) {
+                        $saveOk = false;
+                        $actionError = 'Unable to create repair job details: ' . mysqli_error($conn);
+                    } else {
+                        $defaultPriority = 'Normal';
+                        mysqli_stmt_bind_param(
+                            $insertRepairStmt,
+                            'iiiisssssd',
+                            $tenantID,
+                            $reviewForm['appointment_id'],
+                            $apptRow['user_id'],
+                            $apptRow['vehicle_id'],
+                            $newJobOrderNo,
+                            $reviewForm['bay_no'],
+                            $reviewForm['assigned_technician'],
+                            $reviewForm['job_status'],
+                            $defaultPriority,
+                            $grandTotal
+                        );
+                        if (!mysqli_stmt_execute($insertRepairStmt)) {
+                            $saveOk = false;
+                            $actionError = 'Repair job creation failed: ' . mysqli_stmt_error($insertRepairStmt);
+                        } else {
+                            $repairJobId = (int) mysqli_insert_id($conn);
+                        }
+                        mysqli_stmt_close($insertRepairStmt);
+                    }
+                }
+
+                // Link appointment services to repair job (for new jobs or to ensure consistency)
+                if ($saveOk && $repairJobId > 0) {
+                    // Get appointment services
+                    $apptServicesStmt = mysqli_prepare(
+                        $conn,
+                        'SELECT service_id, service_price, duration_minutes, notes FROM appointment_services WHERE appointment_id = ? AND tenantID = ?'
+                    );
+                    if ($apptServicesStmt) {
+                        mysqli_stmt_bind_param($apptServicesStmt, 'ii', $reviewForm['appointment_id'], $tenantID);
+                        mysqli_stmt_execute($apptServicesStmt);
+                        $apptServicesResult = mysqli_stmt_get_result($apptServicesStmt);
+                        
+                        // Clear existing services if updating
+                        if ($repairRow) {
+                            $deleteServicesStmt = mysqli_prepare(
+                                $conn,
+                                'DELETE FROM repair_job_services WHERE repair_job_id = ? AND tenantID = ?'
+                            );
+                            if ($deleteServicesStmt) {
+                                mysqli_stmt_bind_param($deleteServicesStmt, 'ii', $repairJobId, $tenantID);
+                                mysqli_stmt_execute($deleteServicesStmt);
+                                mysqli_stmt_close($deleteServicesStmt);
+                            }
+                        }
+
+                        // Insert services
+                        $insertJobServiceStmt = mysqli_prepare(
+                            $conn,
+                            'INSERT INTO repair_job_services (repair_job_id, tenantID, service_id, service_price, estimated_duration_minutes, service_status, remarks)
+                             VALUES (?, ?, ?, ?, ?, "In Progress", ?)'
+                        );
+                        if ($insertJobServiceStmt) {
+                            while ($apptServicesResult && $serviceRow = mysqli_fetch_assoc($apptServicesResult)) {
+                                $serviceId = (int) ($serviceRow['service_id'] ?? 0);
+                                if ($serviceId > 0) {
+                                    $servicePrice = (float) ($serviceRow['service_price'] ?? 0);
+                                    $estimatedDuration = isset($serviceRow['duration_minutes']) ? (int) $serviceRow['duration_minutes'] : null;
+                                    $remarks = trim((string) ($serviceRow['notes'] ?? ''));
+                                    $remarksValue = $remarks !== '' ? $remarks : null;
+
+                                    mysqli_stmt_bind_param(
+                                        $insertJobServiceStmt,
+                                        'iiidis',
+                                        $repairJobId,
+                                        $tenantID,
+                                        $serviceId,
+                                        $servicePrice,
+                                        $estimatedDuration,
+                                        $remarksValue
+                                    );
+
+                                    if (!mysqli_stmt_execute($insertJobServiceStmt)) {
+                                        $saveOk = false;
+                                        $actionError = 'Failed to link services: ' . mysqli_stmt_error($insertJobServiceStmt);
+                                        break;
+                                    }
+                                }
+                            }
+                            mysqli_stmt_close($insertJobServiceStmt);
+                        }
+                        mysqli_stmt_close($apptServicesStmt);
+                    }
+                }
+
+                if ($saveOk && mysqli_commit($conn)) {
+                    $actionMessage = 'Review details saved successfully.';
+                    $showReviewModal = false;
+                    $reviewAppointmentId = 0;
+                    header('Location: appointmentadmin.php?shop=' . urlencode($loginSlug));
+                    exit;
+                } else {
+                    if ($saveOk) {
+                        $actionError = 'Transaction commit failed: ' . mysqli_error($conn);
+                    }
+                    mysqli_rollback($conn);
+                    $showReviewModal = true;
                 }
             } else {
-                $newJobOrderNo = 'RJO-' . date('Ymd') . '-' . str_pad((string) $reviewForm['appointment_id'], 5, '0', STR_PAD_LEFT);
-                $insertRepairStmt = mysqli_prepare(
-                    $conn,
-                    'INSERT INTO repair_jobs
-                    (tenantID, appointment_id, user_id, vehicle_id, job_order_no, bay_no, assigned_technician, job_status, priority)
-                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
-                );
-
-                if (!$insertRepairStmt) {
-                    $saveOk = false;
-                    $actionError = 'Unable to create repair job details.';
-                } else {
-                    $defaultPriority = 'Normal';
-                    mysqli_stmt_bind_param(
-                        $insertRepairStmt,
-                        'iiiisssss',
-                        $tenantID,
-                        $reviewForm['appointment_id'],
-                        $apptRow['user_id'],
-                        $apptRow['vehicle_id'],
-                        $newJobOrderNo,
-                        $reviewForm['bay_no'],
-                        $reviewForm['assigned_technician'],
-                        $reviewForm['job_status'],
-                        $defaultPriority
-                    );
-                    if (!mysqli_stmt_execute($insertRepairStmt)) {
-                        $saveOk = false;
-                        $actionError = 'Repair job creation failed.';
-                    }
-                    mysqli_stmt_close($insertRepairStmt);
-                }
+                $actionError = 'Unable to start transaction: ' . mysqli_error($conn);
+                $showReviewModal = true;
             }
-
-            if ($saveOk) {
-                mysqli_commit($conn);
-                $actionMessage = 'Review details saved successfully.';
-                $showReviewModal = false;
-                $reviewAppointmentId = 0;
-                header('Location: appointmentadmin.php?shop=' . urlencode($loginSlug));
-                exit;
-            }
-
-            mysqli_rollback($conn);
         }
     }
 }
@@ -476,6 +573,24 @@ function h($value)
     return htmlspecialchars((string) $value, ENT_QUOTES, 'UTF-8');
 }
 
+function generateRepairJobOrderNo(mysqli $conn, int $tenantID): string
+{
+    // Get the next sequential number for this tenant
+    $countStmt = mysqli_prepare($conn, 'SELECT COUNT(*) as total FROM repair_jobs WHERE tenantID = ?');
+    if (!$countStmt) {
+        return 'RR-' . str_pad((string) random_int(1, 99999), 5, '0', STR_PAD_LEFT);
+    }
+    
+    mysqli_stmt_bind_param($countStmt, 'i', $tenantID);
+    mysqli_stmt_execute($countStmt);
+    $countResult = mysqli_stmt_get_result($countStmt);
+    $countRow = mysqli_fetch_assoc($countResult);
+    mysqli_stmt_close($countStmt);
+    
+    $nextNumber = ((int) ($countRow['total'] ?? 0)) + 1;
+    return 'RR-' . str_pad((string) $nextNumber, 5, '0', STR_PAD_LEFT);
+}
+
 $customerOptions = [];
 $customerOptionsStmt = mysqli_prepare(
     $conn,
@@ -568,7 +683,7 @@ if ($showReviewModal && $reviewAppointmentId > 0) {
          FROM appointments a
          LEFT JOIN users u ON u.user_id = a.user_id
          LEFT JOIN vehicleinformation v ON v.vehicle_id = a.vehicle_id AND v.tenantID = a.tenantID
-         LEFT JOIN appointment_services aps ON aps.appointment_id = a.appointment_id
+         LEFT JOIN appointment_services aps ON aps.appointment_id = a.appointment_id AND aps.tenantID = a.tenantID
          LEFT JOIN services s ON s.service_id = aps.service_id AND s.tenantID = a.tenantID
          LEFT JOIN repair_jobs rj ON rj.appointment_id = a.appointment_id AND rj.tenantID = a.tenantID
          WHERE a.appointment_id = ? AND a.tenantID = ?
@@ -722,7 +837,7 @@ $appointmentsSql = "
     FROM appointments a
     LEFT JOIN users u ON u.user_id = a.user_id
     LEFT JOIN vehicleinformation v ON v.vehicle_id = a.vehicle_id AND v.tenantID = a.tenantID
-    LEFT JOIN appointment_services aps ON aps.appointment_id = a.appointment_id
+    LEFT JOIN appointment_services aps ON aps.appointment_id = a.appointment_id AND aps.tenantID = a.tenantID
     LEFT JOIN services s ON s.service_id = aps.service_id AND s.tenantID = a.tenantID
     WHERE " . implode(' AND ', $whereParts) . "
     GROUP BY
@@ -762,11 +877,18 @@ $upcomingSql = "
     FROM appointments a
     LEFT JOIN users u ON u.user_id = a.user_id
     LEFT JOIN vehicleinformation v ON v.vehicle_id = a.vehicle_id AND v.tenantID = a.tenantID
-    LEFT JOIN appointment_services aps ON aps.appointment_id = a.appointment_id
+    LEFT JOIN appointment_services aps ON aps.appointment_id = a.appointment_id AND aps.tenantID = a.tenantID
     LEFT JOIN services s ON s.service_id = aps.service_id AND s.tenantID = a.tenantID
     WHERE a.tenantID = $tenantID
       AND a.status IN ('Confirmed', 'In Progress')
       AND (a.appointment_date > CURDATE() OR (a.appointment_date = CURDATE() AND a.appointment_time >= CURTIME()))
+      AND NOT EXISTS (
+            SELECT 1
+            FROM repair_jobs rj
+            WHERE rj.appointment_id = a.appointment_id
+              AND rj.tenantID = a.tenantID
+              AND rj.job_status = 'Completed'
+       )
     GROUP BY
         a.appointment_id,
         a.appointment_date,
@@ -821,10 +943,10 @@ $historyStmt = mysqli_prepare(
         v.plate_number,
         COALESCE(GROUP_CONCAT(DISTINCT s.service_name ORDER BY s.service_name SEPARATOR ', '), 'No service linked') AS requested_services
      FROM appointments a
-         INNER JOIN repair_jobs rj ON rj.appointment_id = a.appointment_id AND rj.tenantID = a.tenantID
+         LEFT JOIN repair_jobs rj ON rj.appointment_id = a.appointment_id AND rj.tenantID = a.tenantID
      LEFT JOIN users u ON u.user_id = a.user_id
      LEFT JOIN vehicleinformation v ON v.vehicle_id = a.vehicle_id AND v.tenantID = a.tenantID
-     LEFT JOIN appointment_services aps ON aps.appointment_id = a.appointment_id
+     LEFT JOIN appointment_services aps ON aps.appointment_id = a.appointment_id AND aps.tenantID = a.tenantID
      LEFT JOIN services s ON s.service_id = aps.service_id AND s.tenantID = a.tenantID
      WHERE a.tenantID = ?
              AND rj.job_status = 'Completed'
@@ -1091,7 +1213,7 @@ if ($historyStmt) {
                                                     <?php echo in_array($serviceId, $createForm['service_ids'], true) ? 'checked' : ''; ?>>
                                                 <span>
                                                     <span class="font-semibold"><?php echo h($serviceOption['service_name']); ?></span>
-                                                    <span class="text-slate-500"> - $<?php echo h(number_format((float) ($serviceOption['price'] ?? 0), 2)); ?></span>
+                                                    <span class="text-slate-500"> - ₱<?php echo h(number_format((float) ($serviceOption['price'] ?? 0), 2)); ?></span>
                                                     <?php if ((int) ($serviceOption['duration_minutes'] ?? 0) > 0): ?>
                                                         <span class="text-slate-500">(<?php echo (int) $serviceOption['duration_minutes']; ?> mins)</span>
                                                     <?php endif; ?>
@@ -1277,14 +1399,23 @@ if ($historyStmt) {
 
                             <!-- Edit Form Section -->
                             <div class="border border-slate-200 rounded-lg p-4 bg-white">
-                                <h4 class="font-bold text-xs uppercase text-slate-600 mb-4">Update Job Assignment</h4>
+                                <h4 class="font-bold text-xs uppercase text-slate-600 mb-4">Update Appointment & Job Details</h4>
                                 <form method="post" class="grid grid-cols-1 md:grid-cols-3 gap-4">
                             <input type="hidden" name="csrf_token" value="<?php echo h($csrfToken); ?>" />
                             <input type="hidden" name="save_review" value="1" />
                             <input type="hidden" name="appointment_id" value="<?php echo (int) $reviewDetails['appointment_id']; ?>" />
 
                             <div>
-                                <label class="text-xs font-bold uppercase text-slate-500">Status</label>
+                                <label class="text-xs font-bold uppercase text-slate-500">Appointment Status</label>
+                                <select name="appointment_status" class="mt-1 w-full rounded-lg border-slate-300 text-sm" required>
+                                    <option value="Pending" <?php echo $reviewDetails['appt_status'] === 'Pending' ? 'selected' : ''; ?>>Pending</option>
+                                    <option value="Confirmed" <?php echo $reviewDetails['appt_status'] === 'Confirmed' ? 'selected' : ''; ?>>Confirmed</option>
+                                    <option value="Cancelled" <?php echo $reviewDetails['appt_status'] === 'Cancelled' ? 'selected' : ''; ?>>Cancelled</option>
+                                </select>
+                            </div>
+
+                            <div>
+                                <label class="text-xs font-bold uppercase text-slate-500">Job Status</label>
                                 <select name="job_status" class="mt-1 w-full rounded-lg border-slate-300 text-sm" required>
                                     <?php foreach ($allowedJobStatuses as $jobStatusOption): ?>
                                         <option value="<?php echo h($jobStatusOption); ?>" <?php echo $reviewForm['job_status'] === $jobStatusOption ? 'selected' : ''; ?>><?php echo h($jobStatusOption); ?></option>
@@ -1436,7 +1567,16 @@ if ($historyStmt) {
                                             <div class="text-xs text-slate-500"><?php echo h(date('h:i A', strtotime((string) $row['appointment_time']))); ?></div>
                                         </td>
                                         <td class="px-5 py-4">
-                                            <span class="inline-flex px-2 py-1 rounded-full text-xs font-bold <?php echo h($badge); ?>"><?php echo h($status); ?></span>
+                                            <form method="post" class="inline-flex gap-2">
+                                                <input type="hidden" name="csrf_token" value="<?php echo h($csrfToken); ?>" />
+                                                <input type="hidden" name="appointment_id" value="<?php echo h($row['appointment_id']); ?>" />
+                                                <select name="status" class="px-2 py-1 rounded text-xs font-bold border border-slate-300 focus:outline-none focus:ring-2 focus:ring-primary" onchange="this.form.submit()">
+                                                    <?php foreach ($allowedStatuses as $statusOption): ?>
+                                                        <option value="<?php echo h($statusOption); ?>" <?php echo $status === $statusOption ? 'selected' : ''; ?>><?php echo h($statusOption); ?></option>
+                                                    <?php endforeach; ?>
+                                                </select>
+                                                <input type="hidden" name="update_status" value="1" />
+                                            </form>
                                         </td>
                                         <td class="px-5 py-4 font-semibold">
                                             <?php
