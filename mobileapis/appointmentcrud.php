@@ -61,7 +61,7 @@ function getConnection()
 
 function sanitize($value)
 {
-    return trim((string)$value);
+    return trim((string) $value);
 }
 
 function getRequestData()
@@ -90,7 +90,7 @@ function validateRequired($requiredFields, $data)
     $missing = [];
 
     foreach ($requiredFields as $field) {
-        if (!isset($data[$field]) || trim((string)$data[$field]) === '') {
+        if (!isset($data[$field]) || trim((string) $data[$field]) === '') {
             $missing[] = $field;
         }
     }
@@ -124,17 +124,17 @@ function normalizeServiceIds($value)
 function normalizeAppointment($row)
 {
     return [
-        'appointment_id' => (int)$row['appointment_id'],
-        'tenantID' => (int)$row['tenantID'],
-        'user_id' => (int)$row['user_id'],
-        'vehicle_id' => (int)$row['vehicle_id'],
-        'appointment_date' => (string)$row['appointment_date'],
-        'appointment_time' => (string)$row['appointment_time'],
-        'status' => (string)$row['status'],
-        'notes' => $row['notes'] !== null ? (string)$row['notes'] : '',
-        'total_amount' => (float)$row['total_amount'],
-        'created_at' => (string)$row['created_at'],
-        'updated_at' => (string)$row['updated_at'],
+        'appointment_id' => (int) $row['appointment_id'],
+        'tenantID' => (int) $row['tenantID'],
+        'user_id' => (int) $row['user_id'],
+        'vehicle_id' => (int) $row['vehicle_id'],
+        'appointment_date' => (string) $row['appointment_date'],
+        'appointment_time' => (string) $row['appointment_time'],
+        'status' => (string) $row['status'],
+        'notes' => $row['notes'] !== null ? (string) $row['notes'] : '',
+        'total_amount' => (float) $row['total_amount'],
+        'created_at' => (string) $row['created_at'],
+        'updated_at' => (string) $row['updated_at'],
     ];
 }
 
@@ -164,10 +164,10 @@ function fetchAppointmentById($conn, $appointment_id, $tenantID)
 
 function handleListAppointments($conn, $data)
 {
-    $tenantID = isset($data['tenantID']) ? (int)$data['tenantID'] : 0;
-    $user_id = isset($data['user_id']) ? (int)$data['user_id'] : 0;
-    $limit = max(1, min((int)($data['limit'] ?? 50), 100));
-    $offset = max(0, (int)($data['offset'] ?? 0));
+    $tenantID = isset($data['tenantID']) ? (int) $data['tenantID'] : 0;
+    $user_id = isset($data['user_id']) ? (int) $data['user_id'] : 0;
+    $limit = max(1, min((int) ($data['limit'] ?? 50), 100));
+    $offset = max(0, (int) ($data['offset'] ?? 0));
 
     if ($tenantID <= 0) {
         errorResponse('Invalid tenantID.');
@@ -228,20 +228,20 @@ function handleListAppointments($conn, $data)
 
     while ($row = $result->fetch_assoc()) {
         $appointments[] = [
-            'appointment_id' => (int)$row['appointment_id'],
-            'tenantID' => (int)$row['tenantID'],
-            'user_id' => (int)$row['user_id'],
-            'vehicle_id' => (int)$row['vehicle_id'],
-            'appointment_date' => (string)$row['appointment_date'],
-            'appointment_time' => (string)$row['appointment_time'],
-            'status' => (string)$row['status'],
-            'notes' => $row['notes'] !== null ? (string)$row['notes'] : '',
-            'total_amount' => (float)$row['total_amount'],
-            'referenceNumber' => $row['referenceNumberr'] !== null ? (string)$row['referenceNumber'] : null,
-            'job_order_no' => $row['job_order_no'] !== null ? (string)$row['job_order_no'] : null,
-            'job_status' => $row['job_status'] !== null ? (string)$row['job_status'] : null,
-            'created_at' => (string)$row['created_at'],
-            'updated_at' => (string)$row['updated_at'],
+            'appointment_id' => (int) $row['appointment_id'],
+            'tenantID' => (int) $row['tenantID'],
+            'user_id' => (int) $row['user_id'],
+            'vehicle_id' => (int) $row['vehicle_id'],
+            'appointment_date' => (string) $row['appointment_date'],
+            'appointment_time' => (string) $row['appointment_time'],
+            'status' => (string) $row['status'],
+            'notes' => $row['notes'] !== null ? (string) $row['notes'] : '',
+            'total_amount' => (float) $row['total_amount'],
+            'referenceNumber' => $row['referenceNumberr'] !== null ? (string) $row['referenceNumber'] : null,
+            'job_order_no' => $row['job_order_no'] !== null ? (string) $row['job_order_no'] : null,
+            'job_status' => $row['job_status'] !== null ? (string) $row['job_status'] : null,
+            'created_at' => (string) $row['created_at'],
+            'updated_at' => (string) $row['updated_at'],
         ];
     }
 
@@ -259,13 +259,13 @@ function handleCreateAppointment($conn, $data)
         errorResponse('Missing required fields: ' . implode(', ', $missing));
     }
 
-    $tenantID = (int)$data['tenantID'];
-    $user_id = (int)$data['user_id'];
-    $vehicle_id = (int)$data['vehicle_id'];
+    $tenantID = (int) $data['tenantID'];
+    $user_id = (int) $data['user_id'];
+    $vehicle_id = (int) $data['vehicle_id'];
     $appointment_date = sanitize($data['appointment_date']);
     $appointment_time = sanitize($data['appointment_time']);
     $notes = isset($data['notes']) ? sanitize($data['notes']) : null;
-    $total_amount = (float)$data['total_amount'];
+    $total_amount = (float) $data['total_amount'];
     $service_ids = normalizeServiceIds($data['service_ids']);
 
     if ($tenantID <= 0 || $user_id <= 0 || $vehicle_id <= 0) {
@@ -332,7 +332,7 @@ function handleCreateAppointment($conn, $data)
     $services = [];
 
     while ($row = $serviceResult->fetch_assoc()) {
-        $services[(int)$row['service_id']] = (float)$row['price'];
+        $services[(int) $row['service_id']] = (float) $row['price'];
     }
     $serviceStmt->close();
 
@@ -408,27 +408,37 @@ function handleCreateAppointment($conn, $data)
         }
         $serviceInsertStmt->close();
 
-        $referenceNumber = 'AP-' . str_pad((string)$appointment_id, 5, '0', STR_PAD_LEFT);
-        $paymentMethod = 'Pending';
+        $referenceNumber = 'AP-' . str_pad((string) $appointment_id, 5, '0', STR_PAD_LEFT);
+        $paymentMethod = 'Cash';
         $paymentStatus = 'Pending';
         $amountPaid = 0.00;
         $balance = $total_amount;
+        $remarks = '';
 
         $paymentInsertStmt = $conn->prepare("
-            INSERT INTO payments (
-                appointment_id, tenantID, user_id, payment_method, amount,
-                amount_paid, balance, payment_status, referenceNumber,
-                created_at, updated_at
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
-        ");
+    INSERT INTO payments (
+        appointment_id,
+        tenantID,
+        user_id,
+        paymentMethod,
+        paymentAmount,
+        amountPaid,
+        balance,
+        paymentStatus,
+        referenceNumber,
+        remarks,
+        created_at,
+        updated_at
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+");
 
         if (!$paymentInsertStmt) {
             throw new Exception('Query error: ' . $conn->error);
         }
 
         $paymentInsertStmt->bind_param(
-            'iiiisddss',
+            'iiiisddsss',
             $appointment_id,
             $tenantID,
             $user_id,
@@ -437,7 +447,8 @@ function handleCreateAppointment($conn, $data)
             $amountPaid,
             $balance,
             $paymentStatus,
-            $referenceNumber
+            $referenceNumber,
+            $remarks
         );
 
         if (!$paymentInsertStmt->execute()) {
@@ -445,7 +456,7 @@ function handleCreateAppointment($conn, $data)
         }
         $paymentInsertStmt->close();
 
-        $jobOrderNo = 'RR-' . str_pad((string)$appointment_id, 5, '0', STR_PAD_LEFT);
+        $jobOrderNo = 'RR-' . str_pad((string) $appointment_id, 5, '0', STR_PAD_LEFT);
         $jobStatus = 'Queued';
         $priority = 'Normal';
 
@@ -503,8 +514,8 @@ function handleUpdateAppointment($conn, $data)
         errorResponse('Missing appointment_id or tenantID.');
     }
 
-    $appointment_id = (int)$data['appointment_id'];
-    $tenantID = (int)$data['tenantID'];
+    $appointment_id = (int) $data['appointment_id'];
+    $tenantID = (int) $data['tenantID'];
 
     if ($appointment_id <= 0 || $tenantID <= 0) {
         errorResponse('Invalid appointment_id or tenantID.');
@@ -538,7 +549,7 @@ function handleUpdateAppointment($conn, $data)
 
     foreach ($fieldTypes as $field => $type) {
         if (array_key_exists($field, $data) && $data[$field] !== '') {
-            $value = $type === 'd' ? (float)$data[$field] : sanitize($data[$field]);
+            $value = $type === 'd' ? (float) $data[$field] : sanitize($data[$field]);
 
             if ($field === 'status') {
                 $allowedStatuses = ['Pending', 'Confirmed', 'In Progress', 'Completed', 'Cancelled'];
@@ -597,8 +608,8 @@ function handleDeleteAppointment($conn, $data)
         errorResponse('Missing appointment_id or tenantID.');
     }
 
-    $appointment_id = (int)$data['appointment_id'];
-    $tenantID = (int)$data['tenantID'];
+    $appointment_id = (int) $data['appointment_id'];
+    $tenantID = (int) $data['tenantID'];
 
     if ($appointment_id <= 0 || $tenantID <= 0) {
         errorResponse('Invalid appointment_id or tenantID.');
