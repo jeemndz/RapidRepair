@@ -115,7 +115,14 @@ function normalizeServiceIds($value)
     if (is_array($value)) {
         $ids = $value;
     } elseif (is_string($value) && trim($value) !== '') {
-        $ids = explode(',', $value);
+        $trimmed = trim($value);
+
+        if ($trimmed[0] === '[') {
+            $decoded = json_decode($trimmed, true);
+            $ids = is_array($decoded) ? $decoded : [];
+        } else {
+            $ids = explode(',', $trimmed);
+        }
     } else {
         $ids = [];
     }

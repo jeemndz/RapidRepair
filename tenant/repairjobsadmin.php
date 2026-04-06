@@ -927,7 +927,7 @@ if ($upcomingStmt) {
                                                 class="inline-flex px-2 py-1 rounded-full text-xs font-bold <?php echo h(statusBadgeClass((string) $appointment['status'])); ?>"><?php echo h($appointment['status']); ?></span>
                                         </td>
                                         <td class="px-6 py-4 text-sm font-semibold text-slate-900">
-                                            <?php echo '$' . number_format((float) ($appointment['total_amount'] ?? 0), 2); ?>
+                                            <?php echo '₱' . number_format((float) ($appointment['total_amount'] ?? 0), 2); ?>
                                         </td>
                                     </tr>
                                 <?php endforeach; ?>
@@ -1061,7 +1061,7 @@ if ($upcomingStmt) {
                                         <td class="px-6 py-4 text-sm text-slate-700 max-w-md"><?php echo h($job['services']); ?>
                                         </td>
                                         <td class="px-6 py-4 text-sm font-bold text-slate-900">
-                                            <?php echo '$' . number_format((float) ($job['grand_total'] ?? 0), 2); ?></td>
+                                            <?php echo '₱' . number_format((float) ($job['grand_total'] ?? 0), 2); ?></td>
                                         <td class="px-6 py-4 text-sm font-medium text-slate-600">
                                             <?php echo number_format($actualHours, 1); ?> /
                                             <?php echo number_format($estimatedHours, 1); ?></td>

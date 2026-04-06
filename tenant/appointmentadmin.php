@@ -1317,7 +1317,7 @@ if ($historyStmt) {
                                     <div>
                                         <p class="text-xs text-slate-500 font-semibold">Appointment Status</p>
                                         <p class="text-slate-900 font-medium"><?php echo h($reviewDetails['appt_status']); ?></p>
-                                        <p class="text-xs text-slate-600">Total: $<?php echo number_format((float) ($reviewDetails['total_amount'] ?? 0), 2); ?></p>
+                                        <p class="text-xs text-slate-600">Total: ₱<?php echo number_format((float) ($reviewDetails['total_amount'] ?? 0), 2); ?></p>
                                     </div>
                                 </div>
                                 <?php if (!empty($reviewDetails['services_list'])): ?>
@@ -1382,15 +1382,15 @@ if ($historyStmt) {
                                         <div class="mt-3 pt-3 border-t border-slate-200 grid grid-cols-3 gap-2 text-sm">
                                             <div>
                                                 <p class="text-xs text-slate-500">Labor</p>
-                                                <p class="font-semibold text-slate-900">$<?php echo number_format((float) ($reviewDetails['labor_total'] ?? 0), 2); ?></p>
+                                                <p class="font-semibold text-slate-900">₱<?php echo number_format((float) ($reviewDetails['labor_total'] ?? 0), 2); ?></p>
                                             </div>
                                             <div>
                                                 <p class="text-xs text-slate-500">Parts</p>
-                                                <p class="font-semibold text-slate-900">$<?php echo number_format((float) ($reviewDetails['parts_total'] ?? 0), 2); ?></p>
+                                                <p class="font-semibold text-slate-900">₱<?php echo number_format((float) ($reviewDetails['parts_total'] ?? 0), 2); ?></p>
                                             </div>
                                             <div>
                                                 <p class="text-xs text-slate-500">Total</p>
-                                                <p class="font-bold text-blue-700">$<?php echo number_format((float) ($reviewDetails['grand_total'] ?? 0), 2); ?></p>
+                                                <p class="font-bold text-blue-700">₱<?php echo number_format((float) ($reviewDetails['grand_total'] ?? 0), 2); ?></p>
                                             </div>
                                         </div>
                                     <?php endif; ?>
@@ -1581,7 +1581,7 @@ if ($historyStmt) {
                                         <td class="px-5 py-4 font-semibold">
                                             <?php
                                                 $amount = $row['total_amount'];
-                                                echo $amount !== null ? '$' . number_format((float) $amount, 2) : 'N/A';
+                                                echo $amount !== null ? '₱' . number_format((float) $amount, 2) : 'N/A';
                                             ?>
                                         </td>
                                         <td class="px-5 py-4">
