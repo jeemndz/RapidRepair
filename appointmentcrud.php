@@ -18,7 +18,7 @@
 
 header('Content-Type: application/json; charset=utf-8');
 header('Access-Control-Allow-Origin: *');
-header('Access-Control-Allow-Methods: POST, OPTIONS');
+header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
 header('Access-Control-Allow-Headers: Content-Type, Authorization');
 
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
@@ -26,8 +26,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
   exit;
 }
 
-// Require POST method
-if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+// Allow GET and POST methods
+if (!in_array($_SERVER['REQUEST_METHOD'], ['GET', 'POST'])) {
   http_response_code(405);
   echo json_encode(['status' => 'error', 'message' => 'Method not allowed']);
   exit;
@@ -216,5 +216,104 @@ try {
     'status' => 'error',
     'message' => 'Failed to create appointment: ' . $e->getMessage()
   ]);
+}
+
+// Handle GET requests (list and delete)
+if ($_SERVER['REQUEST_METHOD'] === 'GET') {
+  $action = isset($_GET['action']) ? trim($_GET['action']) : 'list';
+
+  if ($action === 'list') {
+    // Default tenantID to 1 if missing or invalid
+    $tenantID = isset($_GET['tenantID']) ? (int)$_GET['tenantID'] : 0;
+    if ($tenantID <= 0) {
+      $tenantID = 1;
+    }
+    
+    $user_id = isset($_GET['user_id']) ? (int)$_GET['user_id'] : 0;
+    $limit = isset($_GET['limit']) ? (int)$_GET['limit'] : 50;
+    $offset = isset($_GET['offset']) ? (int)$_GET['offset'] : 0;
+
+    $limit = max(1, min($limit, 100));
+    $offset = max(0, $offset);
+
+    if ($user_id > 0) {
+      $query = "SELECT * FROM appointments WHERE tenantID = ? AND user_id = ? ORDER BY appointment_date DESC, appointment_time DESC LIMIT ? OFFSET ?";
+      $stmt = $conn->prepare($query);
+      if (!$stmt) {
+        http_response_code(500);
+        echo json_encode(['status' => 'error', 'message' => 'Prepare failed: ' . $conn->error]);
+        exit;
+      }
+      $stmt->bind_param('iiii', $tenantID, $user_id, $limit, $offset);
+    } else {
+      $query = "SELECT * FROM appointments WHERE tenantID = ? ORDER BY appointment_date DESC, appointment_time DESC LIMIT ? OFFSET ?";
+      $stmt = $conn->prepare($query);
+      if (!$stmt) {
+        http_response_code(500);
+        echo json_encode(['status' => 'error', 'message' => 'Prepare failed: ' . $conn->error]);
+        exit;
+      }
+      $stmt->bind_param('iii', $tenantID, $limit, $offset);
+    }
+
+    if (!$stmt->execute()) {
+      $stmt->close();
+      http_response_code(500);
+      echo json_encode(['status' => 'error', 'message' => 'Query failed: ' . $stmt->error]);
+      exit;
+    }
+
+    $result = $stmt->get_result();
+    $rows = [];
+    while ($row = $result->fetch_assoc()) {
+      $rows[] = $row;
+    }
+    $stmt->close();
+
+    http_response_code(200);
+    echo json_encode(['status' => 'success', 'data' => $rows]);
+    exit;
+  }
+
+  if ($action === 'delete') {
+    $appointment_id = isset($_GET['appointment_id']) ? (int)$_GET['appointment_id'] : 0;
+    $tenantID = isset($_GET['tenantID']) ? (int)$_GET['tenantID'] : 0;
+    
+    // Default tenantID to 1 if missing or invalid
+    if ($tenantID <= 0) {
+      $tenantID = 1;
+    }
+
+    if ($appointment_id <= 0) {
+      http_response_code(400);
+      echo json_encode(['status' => 'error', 'message' => 'Missing appointment_id']);
+      exit;
+    }
+
+    $query = "DELETE FROM appointments WHERE appointment_id = ? AND tenantID = ?";
+    $stmt = $conn->prepare($query);
+    if (!$stmt) {
+      http_response_code(500);
+      echo json_encode(['status' => 'error', 'message' => 'Prepare failed: ' . $conn->error]);
+      exit;
+    }
+
+    $stmt->bind_param('ii', $appointment_id, $tenantID);
+    if (!$stmt->execute()) {
+      $stmt->close();
+      http_response_code(500);
+      echo json_encode(['status' => 'error', 'message' => 'Delete failed: ' . $stmt->error]);
+      exit;
+    }
+    $stmt->close();
+
+    http_response_code(200);
+    echo json_encode(['status' => 'success', 'message' => 'Appointment deleted successfully', 'data' => ['appointment_id' => $appointment_id]]);
+    exit;
+  }
+
+  http_response_code(400);
+  echo json_encode(['status' => 'error', 'message' => 'Invalid action']);
+  exit;
 }
 ?>
