@@ -1,4 +1,10 @@
 <?php
+/**
+ * Appointment CRUD API
+ * Handles list, create, update, and delete operations for appointments
+ * Database Tables: appointments, appointment_services, payments
+ */
+
 header('Content-Type: application/json; charset=utf-8');
 header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
@@ -9,40 +15,103 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     exit;
 }
 
-require_once 'https://raw.githubusercontent.com/jeemnndz/RapidRepair/main/db.php';
+require_once __DIR__ . '/db.php';
 
-if (!isset($conn) || !$conn || $conn->connect_error) {
-    http_response_code(500);
-    echo json_encode([
-        'status' => 'error',
-        'message' => 'Database connection failed'
-    ]);
-    exit;
-}
+function responseJson($status, $message = '', $data = null, $httpCode = 200)
+{
+    http_response_code($httpCode);
 
-$conn->set_charset('utf8mb4');
+    $response = [
+        'status' => $status,
+        'message' => $message,
+    ];
 
-function respond($statusCode, $payload) {
-    http_response_code($statusCode);
-    echo json_encode($payload);
-    exit;
-}
+    if ($data !== null) {
+        if (is_array($data)) {
+            $isList = array_keys($data) === range(0, count($data) - 1);
 
-function getInput() {
-    $raw = file_get_contents('php://input');
-    $json = json_decode($raw, true);
-    if (is_array($json)) {
-        return $json;
+            if ($isList) {
+                $response['appointments'] = $data;
+            } elseif (isset($data['appointment_id'])) {
+                $response['appointment'] = $data;
+            } else {
+                $response['data'] = $data;
+            }
+        } else {
+            $response['data'] = $data;
+        }
     }
-    return $_POST ?? [];
+
+    echo json_encode($response);
+    exit;
 }
 
-function normalizeTenantID($value) {
-    $tenantID = (int)($value ?? 0);
-    return $tenantID > 0 ? $tenantID : 1;
+function successResponse($message = '', $data = null, $httpCode = 200)
+{
+    responseJson('success', $message, $data, $httpCode);
 }
 
-function normalizeServiceIds($value) {
+function errorResponse($message, $httpCode = 400)
+{
+    responseJson('error', $message, null, $httpCode);
+}
+
+function getConnection()
+{
+    global $conn;
+
+    if (!isset($conn) || !$conn) {
+        errorResponse('Database connection is not available.', 500);
+    }
+
+    if (!$conn->ping()) {
+        errorResponse('Database connection lost.', 500);
+    }
+
+    return $conn;
+}
+
+function sanitize($value)
+{
+    return trim((string)$value);
+}
+
+function getRequestData()
+{
+    $data = [];
+
+    if ($_SERVER['REQUEST_METHOD'] === 'GET') {
+        $data = $_GET;
+    } elseif ($_SERVER['REQUEST_METHOD'] === 'POST') {
+        $data = $_POST;
+
+        if (empty($data)) {
+            $raw = file_get_contents('php://input');
+            $json = json_decode($raw, true);
+            if (json_last_error() === JSON_ERROR_NONE && is_array($json)) {
+                $data = $json;
+            }
+        }
+    }
+
+    return is_array($data) ? $data : [];
+}
+
+function validateRequired($requiredFields, $data)
+{
+    $missing = [];
+
+    foreach ($requiredFields as $field) {
+        if (!isset($data[$field]) || trim((string)$data[$field]) === '') {
+            $missing[] = $field;
+        }
+    }
+
+    return $missing;
+}
+
+function normalizeServiceIds($value)
+{
     if (is_array($value)) {
         $ids = $value;
     } elseif (is_string($value) && trim($value) !== '') {
@@ -57,665 +126,479 @@ function normalizeServiceIds($value) {
     return $ids;
 }
 
-function validateDateValue($date) {
-    return is_string($date) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $date);
+function normalizeAppointment($row)
+{
+    return [
+        'appointment_id' => (int)$row['appointment_id'],
+        'tenantID' => (int)$row['tenantID'],
+        'user_id' => (int)$row['user_id'],
+        'vehicle_id' => (int)$row['vehicle_id'],
+        'appointment_date' => (string)$row['appointment_date'],
+        'appointment_time' => (string)$row['appointment_time'],
+        'status' => (string)$row['status'],
+        'notes' => $row['notes'] !== null ? (string)$row['notes'] : '',
+        'total_amount' => (float)$row['total_amount'],
+        'created_at' => (string)$row['created_at'],
+        'updated_at' => (string)$row['updated_at'],
+    ];
 }
 
-function validateTimeValue($time) {
-    return is_string($time) && preg_match('/^\d{2}:\d{2}(:\d{2})?$/', $time);
-}
+function fetchAppointmentById($conn, $appointment_id, $tenantID)
+{
+    $query = "SELECT * FROM appointments WHERE appointment_id = ? AND tenantID = ? LIMIT 1";
+    $stmt = $conn->prepare($query);
 
-function rowExists(mysqli $conn, string $sql, string $types, ...$params): bool {
-    $stmt = $conn->prepare($sql);
     if (!$stmt) {
-        throw new Exception('Prepare failed: ' . $conn->error);
+        errorResponse('Query error: ' . $conn->error, 500);
     }
 
-    $stmt->bind_param($types, ...$params);
-
-    if (!$stmt->execute()) {
-        $err = $stmt->error;
-        $stmt->close();
-        throw new Exception('Execute failed: ' . $err);
-    }
+    $stmt->bind_param('ii', $appointment_id, $tenantID);
+    $stmt->execute();
 
     $result = $stmt->get_result();
-    $exists = $result && $result->num_rows > 0;
+    $appointment = $result->fetch_assoc();
+
     $stmt->close();
 
-    return $exists;
-}
-
-$method = $_SERVER['REQUEST_METHOD'];
-
-try {
-    if ($method === 'GET') {
-        $action = trim((string)($_GET['action'] ?? 'list'));
-        $tenantID = normalizeTenantID($_GET['tenantID'] ?? null);
-
-        if ($action === 'list') {
-            $user_id = isset($_GET['user_id']) ? (int)$_GET['user_id'] : 0;
-            $limit = max(1, min((int)($_GET['limit'] ?? 50), 100));
-            $offset = max(0, (int)($_GET['offset'] ?? 0));
-
-            if ($user_id > 0) {
-                $stmt = $conn->prepare("
-                    SELECT *
-                    FROM appointments
-                    WHERE tenantID = ? AND user_id = ?
-                    ORDER BY appointment_date DESC, appointment_time DESC
-                    LIMIT ? OFFSET ?
-                ");
-                if (!$stmt) {
-                    throw new Exception('Prepare failed: ' . $conn->error);
-                }
-                $stmt->bind_param('iiii', $tenantID, $user_id, $limit, $offset);
-            } else {
-                $stmt = $conn->prepare("
-                    SELECT *
-                    FROM appointments
-                    WHERE tenantID = ?
-                    ORDER BY appointment_date DESC, appointment_time DESC
-                    LIMIT ? OFFSET ?
-                ");
-                if (!$stmt) {
-                    throw new Exception('Prepare failed: ' . $conn->error);
-                }
-                $stmt->bind_param('iii', $tenantID, $limit, $offset);
-            }
-
-            if (!$stmt->execute()) {
-                $err = $stmt->error;
-                $stmt->close();
-                throw new Exception('Query failed: ' . $err);
-            }
-
-            $result = $stmt->get_result();
-            $rows = [];
-
-            while ($row = $result->fetch_assoc()) {
-                $rows[] = $row;
-            }
-
-            $stmt->close();
-
-            respond(200, ['status' => 'success', 'data' => $rows]);
-        }
-
-        if ($action === 'delete') {
-            $appointment_id = (int)($_GET['appointment_id'] ?? 0);
-
-            if ($appointment_id <= 0) {
-                respond(400, ['status' => 'error', 'message' => 'Missing appointment_id']);
-            }
-
-            $conn->begin_transaction();
-
-            $stmt = $conn->prepare("DELETE FROM appointment_services WHERE appointment_id = ? AND tenantID = ?");
-            if (!$stmt) {
-                throw new Exception('Prepare failed: ' . $conn->error);
-            }
-            $stmt->bind_param('ii', $appointment_id, $tenantID);
-            if (!$stmt->execute()) {
-                $err = $stmt->error;
-                $stmt->close();
-                throw new Exception('Delete appointment services failed: ' . $err);
-            }
-            $stmt->close();
-
-            $stmt = $conn->prepare("DELETE FROM payments WHERE appointment_id = ? AND tenantID = ?");
-            if (!$stmt) {
-                throw new Exception('Prepare failed: ' . $conn->error);
-            }
-            $stmt->bind_param('ii', $appointment_id, $tenantID);
-            if (!$stmt->execute()) {
-                $err = $stmt->error;
-                $stmt->close();
-                throw new Exception('Delete payments failed: ' . $err);
-            }
-            $stmt->close();
-
-            $stmt = $conn->prepare("DELETE FROM appointments WHERE appointment_id = ? AND tenantID = ?");
-            if (!$stmt) {
-                throw new Exception('Prepare failed: ' . $conn->error);
-            }
-            $stmt->bind_param('ii', $appointment_id, $tenantID);
-            if (!$stmt->execute()) {
-                $err = $stmt->error;
-                $stmt->close();
-                throw new Exception('Delete appointment failed: ' . $err);
-            }
-
-            if ($stmt->affected_rows < 1) {
-                $stmt->close();
-                $conn->rollback();
-                respond(404, ['status' => 'error', 'message' => 'Appointment not found for this tenant']);
-            }
-
-            $stmt->close();
-            $conn->commit();
-
-            respond(200, [
-                'status' => 'success',
-                'message' => 'Appointment deleted successfully',
-                'data' => ['appointment_id' => $appointment_id]
-            ]);
-        }
-
-        if ($action === 'create') {
-            // Handle GET-based appointment creation (Azure POST blocking workaround)
-            $input = $_GET;
-
-            $tenantID = normalizeTenantID($input['tenantID'] ?? null);
-            $user_id = (int)($input['user_id'] ?? 0);
-            $vehicle_id = (int)($input['vehicle_id'] ?? 0);
-            $appointment_date = trim((string)($input['appointment_date'] ?? ''));
-            $appointment_time = trim((string)($input['appointment_time'] ?? ''));
-            $notes = trim((string)($input['notes'] ?? ''));
-
-            // Parse service_ids from GET (might be JSON string)
-            $service_ids_raw = $input['service_ids'] ?? '[]';
-            if (is_string($service_ids_raw)) {
-                $parsed = json_decode($service_ids_raw, true);
-                $service_ids = is_array($parsed) ? $parsed : [];
-            } else {
-                $service_ids = is_array($service_ids_raw) ? $service_ids_raw : [];
-            }
-            $service_ids = normalizeServiceIds($service_ids);
-
-            $total_amount = (float)($input['total_amount'] ?? 0);
-
-            if ($user_id <= 0) {
-                respond(400, ['status' => 'error', 'message' => 'Invalid or missing user_id']);
-            }
-
-            if ($vehicle_id <= 0) {
-                respond(400, ['status' => 'error', 'message' => 'Invalid or missing vehicle_id']);
-            }
-
-            if (!validateDateValue($appointment_date)) {
-                respond(400, ['status' => 'error', 'message' => 'Invalid appointment_date format. Use YYYY-MM-DD']);
-            }
-
-            if (!validateTimeValue($appointment_time)) {
-                respond(400, ['status' => 'error', 'message' => 'Invalid appointment_time format. Use HH:MM or HH:MM:SS']);
-            }
-
-            if (empty($service_ids)) {
-                respond(400, ['status' => 'error', 'message' => 'At least one service must be selected']);
-            }
-
-            if ($total_amount <= 0) {
-                respond(400, ['status' => 'error', 'message' => 'Invalid total_amount']);
-            }
-
-            // Multi-tenant validation
-            $userExists = rowExists(
-                $conn,
-                "SELECT id FROM users WHERE id = ? AND tenantID = ? LIMIT 1",
-                'ii',
-                $user_id,
-                $tenantID
-            );
-
-            if (!$userExists) {
-                respond(400, ['status' => 'error', 'message' => 'User does not belong to this tenant']);
-            }
-
-            $vehicleExists = rowExists(
-                $conn,
-                "SELECT vehicle_id FROM vehicles WHERE vehicle_id = ? AND tenantID = ? AND user_id = ? LIMIT 1",
-                'iii',
-                $vehicle_id,
-                $tenantID,
-                $user_id
-            );
-
-            if (!$vehicleExists) {
-                respond(400, ['status' => 'error', 'message' => 'Vehicle does not belong to this tenant/user']);
-            }
-
-            $conn->begin_transaction();
-
-            // Load services for this tenant
-            $placeholders = implode(',', array_fill(0, count($service_ids), '?'));
-            $types = str_repeat('i', count($service_ids)) . 'i';
-
-            $sql = "SELECT id, price
-                    FROM services
-                    WHERE id IN ($placeholders) AND tenantID = ?";
-
-            $stmt = $conn->prepare($sql);
-            if (!$stmt) {
-                throw new Exception('Service prepare failed: ' . $conn->error);
-            }
-
-            $params = array_merge($service_ids, [$tenantID]);
-            $stmt->bind_param($types, ...$params);
-
-            if (!$stmt->execute()) {
-                $err = $stmt->error;
-                $stmt->close();
-                throw new Exception('Service query failed: ' . $err);
-            }
-
-            $result = $stmt->get_result();
-            $services = [];
-            $computedTotal = 0;
-
-            while ($row = $result->fetch_assoc()) {
-                $serviceId = (int)$row['id'];
-                $price = (float)$row['price'];
-                $services[$serviceId] = $price;
-                $computedTotal += $price;
-            }
-            $stmt->close();
-
-            if (count($services) !== count($service_ids)) {
-                throw new Exception('One or more selected services are invalid for this tenant');
-            }
-
-            $finalTotal = $computedTotal;
-            $status = 'Pending';
-
-            $stmt = $conn->prepare("
-                INSERT INTO appointments
-                (tenantID, user_id, vehicle_id, appointment_date, appointment_time, status, notes, total_amount, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
-            ");
-            if (!$stmt) {
-                throw new Exception('Appointment prepare failed: ' . $conn->error);
-            }
-
-            $stmt->bind_param(
-                'iiissssd',
-                $tenantID,
-                $user_id,
-                $vehicle_id,
-                $appointment_date,
-                $appointment_time,
-                $status,
-                $notes,
-                $finalTotal
-            );
-
-            if (!$stmt->execute()) {
-                $err = $stmt->error;
-                $stmt->close();
-                throw new Exception('Appointment insert failed: ' . $err);
-            }
-
-            $appointment_id = $conn->insert_id;
-            $stmt->close();
-
-            $stmt = $conn->prepare("
-                INSERT INTO appointment_services
-                (appointment_id, tenantID, service_id, service_price, duration_minutes, notes, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, NOW())
-            ");
-            if (!$stmt) {
-                throw new Exception('Appointment services prepare failed: ' . $conn->error);
-            }
-
-            $duration_minutes = 0;
-            $service_notes = '';
-
-            foreach ($service_ids as $service_id) {
-                $service_price = (float)$services[$service_id];
-                $stmt->bind_param(
-                    'iiidis',
-                    $appointment_id,
-                    $tenantID,
-                    $service_id,
-                    $service_price,
-                    $duration_minutes,
-                    $service_notes
-                );
-
-                if (!$stmt->execute()) {
-                    $err = $stmt->error;
-                    $stmt->close();
-                    throw new Exception('Appointment service insert failed: ' . $err);
-                }
-            }
-            $stmt->close();
-
-            $paymentMethod = 'Pending';
-            $paymentStatus = 'Pending';
-            $referenceNumber = 'RR-' . str_pad((string)$appointment_id, 5, '0', STR_PAD_LEFT);
-            $amountPaid = 0.00;
-            $balance = $finalTotal;
-
-            $stmt = $conn->prepare("
-                INSERT INTO payments
-                (tenantID, user_id, appointment_id, paymentAmount, amountPaid, balance, paymentMethod, paymentStatus, referenceNumber, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
-            ");
-            if (!$stmt) {
-                throw new Exception('Payment prepare failed: ' . $conn->error);
-            }
-
-            $stmt->bind_param(
-                'iiidddsss',
-                $tenantID,
-                $user_id,
-                $appointment_id,
-                $finalTotal,
-                $amountPaid,
-                $balance,
-                $paymentMethod,
-                $paymentStatus,
-                $referenceNumber
-            );
-
-            if (!$stmt->execute()) {
-                $err = $stmt->error;
-                $stmt->close();
-                throw new Exception('Payment insert failed: ' . $err);
-            }
-            $stmt->close();
-
-            $conn->commit();
-
-            respond(201, [
-                'status' => 'success',
-                'message' => 'Appointment created successfully',
-                'data' => [
-                    'appointment_id' => $appointment_id,
-                    'reference_number' => $referenceNumber,
-                    'status' => $status,
-                    'total_amount' => $finalTotal
-                ]
-            ]);
-        }
-
-        respond(400, ['status' => 'error', 'message' => 'Invalid action']);
+    if (!$appointment) {
+        errorResponse('Appointment not found.', 404);
     }
 
-    if ($method === 'POST') {
-        $input = getInput();
-        $action = trim((string)($input['action'] ?? 'create'));
+    return normalizeAppointment($appointment);
+}
 
-        if ($action === 'update') {
-            $tenantID = normalizeTenantID($input['tenantID'] ?? null);
-            $appointment_id = (int)($input['appointment_id'] ?? 0);
-            $status = trim((string)($input['status'] ?? ''));
+function handleListAppointments($conn, $data)
+{
+    $tenantID = isset($data['tenantID']) ? (int)$data['tenantID'] : 0;
+    $user_id = isset($data['user_id']) ? (int)$data['user_id'] : 0;
+    $limit = max(1, min((int)($data['limit'] ?? 50), 100));
+    $offset = max(0, (int)($data['offset'] ?? 0));
 
-            $allowedStatuses = ['Pending', 'Confirmed', 'In Progress', 'Completed', 'Cancelled'];
+    if ($tenantID <= 0) {
+        errorResponse('Invalid tenantID.');
+    }
 
-            if ($appointment_id <= 0) {
-                respond(400, ['status' => 'error', 'message' => 'Invalid appointment_id']);
-            }
+    if ($user_id > 0) {
+        $query = "
+            SELECT *
+            FROM appointments
+            WHERE tenantID = ? AND user_id = ?
+            ORDER BY appointment_date DESC, appointment_time DESC
+            LIMIT ? OFFSET ?
+        ";
+        $stmt = $conn->prepare($query);
 
-            if (!in_array($status, $allowedStatuses, true)) {
-                respond(400, ['status' => 'error', 'message' => 'Invalid status']);
-            }
-
-            $stmt = $conn->prepare("
-                UPDATE appointments
-                SET status = ?, updated_at = NOW()
-                WHERE appointment_id = ? AND tenantID = ?
-            ");
-            if (!$stmt) {
-                throw new Exception('Prepare failed: ' . $conn->error);
-            }
-
-            $stmt->bind_param('sii', $status, $appointment_id, $tenantID);
-
-            if (!$stmt->execute()) {
-                $err = $stmt->error;
-                $stmt->close();
-                throw new Exception('Update failed: ' . $err);
-            }
-
-            if ($stmt->affected_rows < 1) {
-                $stmt->close();
-                respond(404, ['status' => 'error', 'message' => 'Appointment not found for this tenant']);
-            }
-
-            $stmt->close();
-
-            respond(200, [
-                'status' => 'success',
-                'message' => 'Appointment updated successfully',
-                'data' => [
-                    'appointment_id' => $appointment_id,
-                    'tenantID' => $tenantID,
-                    'status' => $status
-                ]
-            ]);
-        }
-
-        // Default POST action = create
-        $tenantID = normalizeTenantID($input['tenantID'] ?? null);
-        $user_id = (int)($input['user_id'] ?? 0);
-        $vehicle_id = (int)($input['vehicle_id'] ?? 0);
-        $appointment_date = trim((string)($input['appointment_date'] ?? ''));
-        $appointment_time = trim((string)($input['appointment_time'] ?? ''));
-        $notes = trim((string)($input['notes'] ?? ''));
-        $service_ids = normalizeServiceIds($input['service_ids'] ?? []);
-        $total_amount = (float)($input['total_amount'] ?? 0);
-
-        if ($user_id <= 0) {
-            respond(400, ['status' => 'error', 'message' => 'Invalid or missing user_id']);
-        }
-
-        if ($vehicle_id <= 0) {
-            respond(400, ['status' => 'error', 'message' => 'Invalid or missing vehicle_id']);
-        }
-
-        if (!validateDateValue($appointment_date)) {
-            respond(400, ['status' => 'error', 'message' => 'Invalid appointment_date format. Use YYYY-MM-DD']);
-        }
-
-        if (!validateTimeValue($appointment_time)) {
-            respond(400, ['status' => 'error', 'message' => 'Invalid appointment_time format. Use HH:MM or HH:MM:SS']);
-        }
-
-        if (empty($service_ids)) {
-            respond(400, ['status' => 'error', 'message' => 'At least one service must be selected']);
-        }
-
-        if ($total_amount <= 0) {
-            respond(400, ['status' => 'error', 'message' => 'Invalid total_amount']);
-        }
-
-        // Multi-tenant validation
-        $userExists = rowExists(
-            $conn,
-            "SELECT id FROM users WHERE id = ? AND tenantID = ? LIMIT 1",
-            'ii',
-            $user_id,
-            $tenantID
-        );
-
-        if (!$userExists) {
-            respond(400, ['status' => 'error', 'message' => 'User does not belong to this tenant']);
-        }
-
-        $vehicleExists = rowExists(
-            $conn,
-            "SELECT vehicle_id FROM vehicles WHERE vehicle_id = ? AND tenantID = ? AND user_id = ? LIMIT 1",
-            'iii',
-            $vehicle_id,
-            $tenantID,
-            $user_id
-        );
-
-        if (!$vehicleExists) {
-            respond(400, ['status' => 'error', 'message' => 'Vehicle does not belong to this tenant/user']);
-        }
-
-        $conn->begin_transaction();
-
-        // Load services for this tenant
-        $placeholders = implode(',', array_fill(0, count($service_ids), '?'));
-        $types = str_repeat('i', count($service_ids)) . 'i';
-
-        $sql = "SELECT id, price
-                FROM services
-                WHERE id IN ($placeholders) AND tenantID = ?";
-
-        $stmt = $conn->prepare($sql);
         if (!$stmt) {
-            throw new Exception('Service prepare failed: ' . $conn->error);
+            errorResponse('Query error: ' . $conn->error, 500);
         }
 
-        $params = array_merge($service_ids, [$tenantID]);
-        $stmt->bind_param($types, ...$params);
+        $stmt->bind_param('iiii', $tenantID, $user_id, $limit, $offset);
+    } else {
+        $query = "
+            SELECT *
+            FROM appointments
+            WHERE tenantID = ?
+            ORDER BY appointment_date DESC, appointment_time DESC
+            LIMIT ? OFFSET ?
+        ";
+        $stmt = $conn->prepare($query);
 
-        if (!$stmt->execute()) {
-            $err = $stmt->error;
-            $stmt->close();
-            throw new Exception('Service query failed: ' . $err);
+        if (!$stmt) {
+            errorResponse('Query error: ' . $conn->error, 500);
         }
 
-        $result = $stmt->get_result();
-        $services = [];
-        $computedTotal = 0;
+        $stmt->bind_param('iii', $tenantID, $limit, $offset);
+    }
 
-        while ($row = $result->fetch_assoc()) {
-            $serviceId = (int)$row['id'];
-            $price = (float)$row['price'];
-            $services[$serviceId] = $price;
-            $computedTotal += $price;
-        }
-        $stmt->close();
+    $stmt->execute();
 
-        if (count($services) !== count($service_ids)) {
-            throw new Exception('One or more selected services are invalid for this tenant');
-        }
+    $result = $stmt->get_result();
+    $appointments = [];
 
-        // Optional: trust backend total instead of frontend total
-        $finalTotal = $computedTotal;
+    while ($row = $result->fetch_assoc()) {
+        $appointments[] = normalizeAppointment($row);
+    }
 
-        $status = 'Pending';
+    $stmt->close();
 
-        $stmt = $conn->prepare("
-            INSERT INTO appointments
-            (tenantID, user_id, vehicle_id, appointment_date, appointment_time, status, notes, total_amount, created_at, updated_at)
+    successResponse('Appointments fetched successfully.', $appointments);
+}
+
+function handleCreateAppointment($conn, $data)
+{
+    $required = ['tenantID', 'user_id', 'vehicle_id', 'appointment_date', 'appointment_time', 'service_ids', 'total_amount'];
+    $missing = validateRequired($required, $data);
+
+    if (!empty($missing)) {
+        errorResponse('Missing required fields: ' . implode(', ', $missing));
+    }
+
+    $tenantID = (int)$data['tenantID'];
+    $user_id = (int)$data['user_id'];
+    $vehicle_id = (int)$data['vehicle_id'];
+    $appointment_date = sanitize($data['appointment_date']);
+    $appointment_time = sanitize($data['appointment_time']);
+    $notes = isset($data['notes']) ? sanitize($data['notes']) : null;
+    $total_amount = (float)$data['total_amount'];
+    $service_ids = normalizeServiceIds($data['service_ids']);
+
+    if ($tenantID <= 0 || $user_id <= 0 || $vehicle_id <= 0) {
+        errorResponse('Invalid tenantID, user_id, or vehicle_id.');
+    }
+
+    if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $appointment_date)) {
+        errorResponse('Appointment date must be in YYYY-MM-DD format.');
+    }
+
+    if (!preg_match('/^\d{2}:\d{2}(:\d{2})?$/', $appointment_time)) {
+        errorResponse('Appointment time must be in HH:MM or HH:MM:SS format.');
+    }
+
+    if (empty($service_ids)) {
+        errorResponse('At least one service must be selected.');
+    }
+
+    if ($total_amount <= 0) {
+        errorResponse('Total amount must be greater than 0.');
+    }
+
+    // Verify user belongs to tenant
+    $userStmt = $conn->prepare("SELECT user_id FROM users WHERE user_id = ? AND tenantID = ? LIMIT 1");
+    if (!$userStmt) {
+        errorResponse('Query error: ' . $conn->error, 500);
+    }
+
+    $userStmt->bind_param('ii', $user_id, $tenantID);
+    $userStmt->execute();
+    $userResult = $userStmt->get_result();
+    if ($userResult->num_rows === 0) {
+        $userStmt->close();
+        errorResponse('User does not belong to this tenant.', 403);
+    }
+    $userStmt->close();
+
+    // Verify vehicle belongs to tenant and user
+    $vehicleStmt = $conn->prepare("SELECT vehicle_id FROM vehicleinformation WHERE vehicle_id = ? AND tenantID = ? AND user_id = ? LIMIT 1");
+    if (!$vehicleStmt) {
+        errorResponse('Query error: ' . $conn->error, 500);
+    }
+
+    $vehicleStmt->bind_param('iii', $vehicle_id, $tenantID, $user_id);
+    $vehicleStmt->execute();
+    $vehicleResult = $vehicleStmt->get_result();
+    if ($vehicleResult->num_rows === 0) {
+        $vehicleStmt->close();
+        errorResponse('Vehicle does not belong to this tenant/user.', 403);
+    }
+    $vehicleStmt->close();
+
+    // Verify services belong to tenant
+    $placeholders = implode(',', array_fill(0, count($service_ids), '?'));
+    $types = str_repeat('i', count($service_ids)) . 'i';
+
+    $serviceQuery = "SELECT service_id, price FROM services WHERE service_id IN ($placeholders) AND tenantID = ?";
+    $serviceStmt = $conn->prepare($serviceQuery);
+    if (!$serviceStmt) {
+        errorResponse('Query error: ' . $conn->error, 500);
+    }
+
+    $params = array_merge($service_ids, [$tenantID]);
+    $serviceStmt->bind_param($types, ...$params);
+    $serviceStmt->execute();
+    $serviceResult = $serviceStmt->get_result();
+    $services = [];
+
+    while ($row = $serviceResult->fetch_assoc()) {
+        $services[(int)$row['service_id']] = (float)$row['price'];
+    }
+    $serviceStmt->close();
+
+    if (count($services) !== count($service_ids)) {
+        errorResponse('One or more selected services are invalid for this tenant.');
+    }
+
+    // Start transaction
+    $conn->begin_transaction();
+
+    try {
+        // Insert appointment
+        $insertStmt = $conn->prepare("
+            INSERT INTO appointments (tenantID, user_id, vehicle_id, appointment_date, appointment_time, status, notes, total_amount, created_at, updated_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
         ");
-        if (!$stmt) {
-            throw new Exception('Appointment prepare failed: ' . $conn->error);
+
+        if (!$insertStmt) {
+            throw new Exception('Query error: ' . $conn->error);
         }
 
-        // 8 params = 8 type letters
-        $stmt->bind_param(
-            'iiissssd',
-            $tenantID,
-            $user_id,
-            $vehicle_id,
-            $appointment_date,
-            $appointment_time,
-            $status,
-            $notes,
-            $finalTotal
-        );
+        $status = 'Pending';
+        $insertStmt->bind_param('iiissssd', $tenantID, $user_id, $vehicle_id, $appointment_date, $appointment_time, $status, $notes, $total_amount);
 
-        if (!$stmt->execute()) {
-            $err = $stmt->error;
-            $stmt->close();
-            throw new Exception('Appointment insert failed: ' . $err);
+        if (!$insertStmt->execute()) {
+            throw new Exception('Failed to create appointment: ' . $insertStmt->error);
         }
 
         $appointment_id = $conn->insert_id;
-        $stmt->close();
+        $insertStmt->close();
 
-        $stmt = $conn->prepare("
-            INSERT INTO appointment_services
-            (appointment_id, tenantID, service_id, service_price, duration_minutes, notes, created_at)
+        // Insert appointment services
+        $serviceInsertStmt = $conn->prepare("
+            INSERT INTO appointment_services (appointment_id, tenantID, service_id, service_price, duration_minutes, notes, created_at)
             VALUES (?, ?, ?, ?, ?, ?, NOW())
         ");
-        if (!$stmt) {
-            throw new Exception('Appointment services prepare failed: ' . $conn->error);
-        }
 
-        $duration_minutes = 0;
-        $service_notes = '';
+        if (!$serviceInsertStmt) {
+            throw new Exception('Query error: ' . $conn->error);
+        }
 
         foreach ($service_ids as $service_id) {
-            $service_price = (float)$services[$service_id];
+            $price = $services[$service_id] ?? 0;
+            $duration = 60; // Default duration
+            $serviceNotes = '';
 
-            $stmt->bind_param(
-                'iiidis',
-                $appointment_id,
-                $tenantID,
-                $service_id,
-                $service_price,
-                $duration_minutes,
-                $service_notes
-            );
+            $serviceInsertStmt->bind_param('iiiidis', $appointment_id, $tenantID, $service_id, $price, $duration, $serviceNotes);
 
-            if (!$stmt->execute()) {
-                $err = $stmt->error;
-                $stmt->close();
-                throw new Exception('Appointment service insert failed: ' . $err);
+            if (!$serviceInsertStmt->execute()) {
+                throw new Exception('Failed to link service: ' . $serviceInsertStmt->error);
             }
         }
-        $stmt->close();
+        $serviceInsertStmt->close();
 
+        // Insert payment record
+        $referenceNumber = 'AP-' . str_pad((string)$appointment_id, 5, '0', STR_PAD_LEFT);
         $paymentMethod = 'Pending';
         $paymentStatus = 'Pending';
-        $referenceNumber = 'RR-' . str_pad((string)$appointment_id, 5, '0', STR_PAD_LEFT);
         $amountPaid = 0.00;
-        $balance = $finalTotal;
+        $balance = $total_amount;
 
-        $stmt = $conn->prepare("
-            INSERT INTO payments
-            (tenantID, user_id, appointment_id, paymentAmount, amountPaid, balance, paymentMethod, paymentStatus, referenceNumber, created_at, updated_at)
+        $paymentInsertStmt = $conn->prepare("
+            INSERT INTO payments (appointment_id, tenantID, user_id, payment_method, amount, amount_paid, balance, payment_status, reference_number, created_at, updated_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
         ");
-        if (!$stmt) {
-            throw new Exception('Payment prepare failed: ' . $conn->error);
+
+        if (!$paymentInsertStmt) {
+            throw new Exception('Query error: ' . $conn->error);
         }
 
-        // 9 params = 9 type letters
-        $stmt->bind_param(
-            'iiidddsss',
-            $tenantID,
-            $user_id,
-            $appointment_id,
-            $finalTotal,
-            $amountPaid,
-            $balance,
-            $paymentMethod,
-            $paymentStatus,
-            $referenceNumber
-        );
+        $paymentInsertStmt->bind_param('iiiisddss', $appointment_id, $tenantID, $user_id, $paymentMethod, $total_amount, $amountPaid, $balance, $paymentStatus, $referenceNumber);
 
-        if (!$stmt->execute()) {
-            $err = $stmt->error;
-            $stmt->close();
-            throw new Exception('Payment insert failed: ' . $err);
+        if (!$paymentInsertStmt->execute()) {
+            throw new Exception('Failed to create payment record: ' . $paymentInsertStmt->error);
         }
-        $stmt->close();
+        $paymentInsertStmt->close();
 
         $conn->commit();
 
-        respond(201, [
-            'status' => 'success',
-            'message' => 'Appointment created successfully',
-            'data' => [
-                'appointment_id' => $appointment_id,
-                'reference_number' => $referenceNumber,
-                'status' => $status,
-                'total_amount' => $finalTotal
-            ]
-        ]);
+        $appointment = fetchAppointmentById($conn, $appointment_id, $tenantID);
+        successResponse('Appointment created successfully.', $appointment, 201);
+    } catch (Exception $e) {
+        $conn->rollback();
+        errorResponse('Transaction failed: ' . $e->getMessage(), 500);
     }
-
-    respond(405, ['status' => 'error', 'message' => 'Method not allowed']);
-
-} catch (Throwable $e) {
-    if ($conn && $conn->errno === 0) {
-        try {
-            $conn->rollback();
-        } catch (Throwable $ignored) {}
-    }
-
-    respond(500, [
-        'status' => 'error',
-        'message' => 'Server error: ' . $e->getMessage()
-    ]);
 }
+
+function handleUpdateAppointment($conn, $data)
+{
+    if (!isset($data['appointment_id']) || !isset($data['tenantID'])) {
+        errorResponse('Missing appointment_id or tenantID.');
+    }
+
+    $appointment_id = (int)$data['appointment_id'];
+    $tenantID = (int)$data['tenantID'];
+
+    if ($appointment_id <= 0 || $tenantID <= 0) {
+        errorResponse('Invalid appointment_id or tenantID.');
+    }
+
+    // Verify appointment exists and belongs to tenant
+    $verifyStmt = $conn->prepare("SELECT appointment_id FROM appointments WHERE appointment_id = ? AND tenantID = ? LIMIT 1");
+    if (!$verifyStmt) {
+        errorResponse('Query error: ' . $conn->error, 500);
+    }
+
+    $verifyStmt->bind_param('ii', $appointment_id, $tenantID);
+    $verifyStmt->execute();
+    $verifyResult = $verifyStmt->get_result();
+    if ($verifyResult->num_rows === 0) {
+        $verifyStmt->close();
+        errorResponse('Appointment not found or you do not have permission to update it.', 403);
+    }
+    $verifyStmt->close();
+
+    $fieldTypes = [
+        'status' => 's',
+        'appointment_date' => 's',
+        'appointment_time' => 's',
+        'notes' => 's',
+        'total_amount' => 'd',
+    ];
+
+    $updateFields = [];
+    $updateValues = [];
+    $types = '';
+
+    foreach ($fieldTypes as $field => $type) {
+        if (array_key_exists($field, $data) && $data[$field] !== '') {
+            $value = $type === 'd' ? (float)$data[$field] : sanitize($data[$field]);
+
+            if ($field === 'status') {
+                $allowedStatuses = ['Pending', 'Confirmed', 'In Progress', 'Completed', 'Cancelled'];
+                if (!in_array($value, $allowedStatuses, true)) {
+                    errorResponse('Invalid status value.');
+                }
+            }
+
+            if ($field === 'appointment_date' && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $value)) {
+                errorResponse('Appointment date must be in YYYY-MM-DD format.');
+            }
+
+            if ($field === 'appointment_time' && !preg_match('/^\d{2}:\d{2}(:\d{2})?$/', $value)) {
+                errorResponse('Appointment time must be in HH:MM or HH:MM:SS format.');
+            }
+
+            $updateFields[] = "{$field} = ?";
+            $updateValues[] = $value;
+            $types .= $type;
+        }
+    }
+
+    if (empty($updateFields)) {
+        errorResponse('No updateable fields provided.');
+    }
+
+    $updateValues[] = $appointment_id;
+    $updateValues[] = $tenantID;
+    $types .= 'ii';
+
+    $query = "UPDATE appointments SET " . implode(', ', $updateFields) . ", updated_at = NOW() WHERE appointment_id = ? AND tenantID = ?";
+
+    $stmt = $conn->prepare($query);
+
+    if (!$stmt) {
+        errorResponse('Query error: ' . $conn->error, 500);
+    }
+
+    $stmt->bind_param($types, ...$updateValues);
+
+    if (!$stmt->execute()) {
+        $error = $stmt->error;
+        $stmt->close();
+        errorResponse('Failed to update appointment: ' . $error, 500);
+    }
+
+    $stmt->close();
+
+    $appointment = fetchAppointmentById($conn, $appointment_id, $tenantID);
+    successResponse('Appointment updated successfully.', $appointment);
+}
+
+function handleDeleteAppointment($conn, $data)
+{
+    if (!isset($data['appointment_id']) || !isset($data['tenantID'])) {
+        errorResponse('Missing appointment_id or tenantID.');
+    }
+
+    $appointment_id = (int)$data['appointment_id'];
+    $tenantID = (int)$data['tenantID'];
+
+    if ($appointment_id <= 0 || $tenantID <= 0) {
+        errorResponse('Invalid appointment_id or tenantID.');
+    }
+
+    // Verify appointment exists
+    $verifyStmt = $conn->prepare("SELECT appointment_id FROM appointments WHERE appointment_id = ? AND tenantID = ? LIMIT 1");
+    if (!$verifyStmt) {
+        errorResponse('Query error: ' . $conn->error, 500);
+    }
+
+    $verifyStmt->bind_param('ii', $appointment_id, $tenantID);
+    $verifyStmt->execute();
+    $verifyResult = $verifyStmt->get_result();
+    if ($verifyResult->num_rows === 0) {
+        $verifyStmt->close();
+        errorResponse('Appointment not found or you do not have permission to delete it.', 403);
+    }
+    $verifyStmt->close();
+
+    // Start transaction
+    $conn->begin_transaction();
+
+    try {
+        // Delete appointment services
+        $deleteServicesStmt = $conn->prepare("DELETE FROM appointment_services WHERE appointment_id = ? AND tenantID = ?");
+        if (!$deleteServicesStmt) {
+            throw new Exception('Query error: ' . $conn->error);
+        }
+        $deleteServicesStmt->bind_param('ii', $appointment_id, $tenantID);
+        if (!$deleteServicesStmt->execute()) {
+            throw new Exception('Failed to delete appointment services: ' . $deleteServicesStmt->error);
+        }
+        $deleteServicesStmt->close();
+
+        // Delete payments
+        $deletePaymentsStmt = $conn->prepare("DELETE FROM payments WHERE appointment_id = ? AND tenantID = ?");
+        if (!$deletePaymentsStmt) {
+            throw new Exception('Query error: ' . $conn->error);
+        }
+        $deletePaymentsStmt->bind_param('ii', $appointment_id, $tenantID);
+        if (!$deletePaymentsStmt->execute()) {
+            throw new Exception('Failed to delete payments: ' . $deletePaymentsStmt->error);
+        }
+        $deletePaymentsStmt->close();
+
+        // Delete appointment
+        $deleteStmt = $conn->prepare("DELETE FROM appointments WHERE appointment_id = ? AND tenantID = ?");
+        if (!$deleteStmt) {
+            throw new Exception('Query error: ' . $conn->error);
+        }
+        $deleteStmt->bind_param('ii', $appointment_id, $tenantID);
+        if (!$deleteStmt->execute()) {
+            throw new Exception('Failed to delete appointment: ' . $deleteStmt->error);
+        }
+        $deleteStmt->close();
+
+        $conn->commit();
+
+        successResponse('Appointment deleted successfully.');
+    } catch (Exception $e) {
+        $conn->rollback();
+        errorResponse('Transaction failed: ' . $e->getMessage(), 500);
+    }
+}
+
+try {
+    $conn = getConnection();
+    $data = getRequestData();
+
+    $action = isset($data['action']) ? sanitize($data['action']) : '';
+
+    if ($action === '') {
+        errorResponse('Missing action parameter.');
+    }
+
+    switch ($action) {
+        case 'list':
+            handleListAppointments($conn, $data);
+            break;
+
+        case 'create':
+            handleCreateAppointment($conn, $data);
+            break;
+
+        case 'update':
+            handleUpdateAppointment($conn, $data);
+            break;
+
+        case 'delete':
+            handleDeleteAppointment($conn, $data);
+            break;
+
+        default:
+            errorResponse('Unknown action: ' . $action);
+    }
+
+    $conn->close();
+} catch (Throwable $e) {
+    errorResponse('Server error: ' . $e->getMessage(), 500);
+}
+?>
