@@ -79,6 +79,7 @@ try {
     $status = trim((string)($input['status'] ?? 'Pending'));
     $notes = trim((string)($input['notes'] ?? ''));
     $total_amount = (float)($input['total_amount'] ?? 0);
+    $service_ids = isset($input['service_ids']) && is_array($input['service_ids']) ? array_map('intval', $input['service_ids']) : [];
     
     // Validate required fields
     if (!$user_id || $user_id <= 0) {
@@ -156,6 +157,61 @@ try {
     
     $appointment_id = $conn->insert_id;
     $stmt->close();
+    
+    // Insert appointment services if provided
+    if (!empty($service_ids)) {
+        $service_stmt = $conn->prepare("
+            SELECT service_id, service_name, service_price, estimated_duration 
+            FROM services 
+            WHERE service_id = ? AND tenantID = ? LIMIT 1
+        ");
+        
+        $insert_service_stmt = $conn->prepare("
+            INSERT INTO appointment_services 
+            (appointment_id, tenantID, service_id, service_price, duration_minutes, notes, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, NOW())
+        ");
+        
+        if (!$service_stmt || !$insert_service_stmt) {
+            respond(500, 'error', 'Failed to prepare service statements');
+        }
+        
+        $service_notes = '';
+        foreach ($service_ids as $service_id) {
+            $service_id = (int)$service_id;
+            if ($service_id <= 0) continue;
+            
+            // Get service details
+            $service_stmt->bind_param('ii', $service_id, $tenantID);
+            $service_stmt->execute();
+            $service_result = $service_stmt->get_result();
+            
+            if ($service_result->num_rows > 0) {
+                $service = $service_result->fetch_assoc();
+                $service_price = (float)$service['service_price'];
+                $duration_minutes = (int)$service['estimated_duration'];
+                
+                // Insert appointment service
+                $insert_service_stmt->bind_param(
+                    'iiidis',
+                    $appointment_id,
+                    $tenantID,
+                    $service_id,
+                    $service_price,
+                    $duration_minutes,
+                    $service_notes
+                );
+                
+                if (!$insert_service_stmt->execute()) {
+                    // Log error but don't fail - appointment was created
+                    error_log('Failed to insert service ' . $service_id . ': ' . $insert_service_stmt->error);
+                }
+            }
+        }
+        
+        $service_stmt->close();
+        $insert_service_stmt->close();
+    }
     
     respond(201, 'success', 'Appointment created successfully', [
         'appointment_id' => $appointment_id,
