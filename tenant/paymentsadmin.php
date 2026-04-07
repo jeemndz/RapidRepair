@@ -62,7 +62,7 @@ function isValidGcashReference(string $value): bool
 
 function formatPaymentReference(int $paymentId): string
 {
-    return 'RR-' . str_pad((string) $paymentId, 6, '0', STR_PAD_LEFT);
+    return 'AP-' . str_pad((string) $paymentId, 5, '0', STR_PAD_LEFT);
 }
 
 $allowedStatuses = ['All', 'Pending', 'Partial', 'Paid', 'Failed', 'Refunded'];
@@ -112,7 +112,7 @@ if ($amountSpecResult && $amountSpec = mysqli_fetch_assoc($amountSpecResult)) {
     }
 }
 
-$nextReferencePreview = 'RR-000000';
+$nextReferencePreview = 'AP-00000';
 $nextAutoIncrementSql = "
     SELECT AUTO_INCREMENT
     FROM information_schema.TABLES
