@@ -211,7 +211,7 @@ function handleList($conn, $jsonInput = [])
     a.appointment_date,
     a.appointment_time,
     a.status AS appointment_status,
-    (SELECT job_status FROM repair_jobs WHERE appointment_id = p.appointment_id ORDER BY created_at DESC LIMIT 1) as job_status
+    COALESCE((SELECT job_status FROM repair_jobs WHERE appointment_id = p.appointment_id ORDER BY created_at DESC LIMIT 1), 'Pending') as job_status
 FROM payments p
 LEFT JOIN appointments a ON p.appointment_id = a.appointment_id
 WHERE p.tenantID = ?";
