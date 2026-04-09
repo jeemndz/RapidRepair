@@ -1567,16 +1567,7 @@ if ($historyStmt) {
                                             <div class="text-xs text-slate-500"><?php echo h(date('h:i A', strtotime((string) $row['appointment_time']))); ?></div>
                                         </td>
                                         <td class="px-5 py-4">
-                                            <form method="post" class="inline-flex gap-2">
-                                                <input type="hidden" name="csrf_token" value="<?php echo h($csrfToken); ?>" />
-                                                <input type="hidden" name="appointment_id" value="<?php echo h($row['appointment_id']); ?>" />
-                                                <select name="status" class="px-2 py-1 rounded text-xs font-bold border border-slate-300 focus:outline-none focus:ring-2 focus:ring-primary" onchange="this.form.submit()">
-                                                    <?php foreach ($allowedStatuses as $statusOption): ?>
-                                                        <option value="<?php echo h($statusOption); ?>" <?php echo $status === $statusOption ? 'selected' : ''; ?>><?php echo h($statusOption); ?></option>
-                                                    <?php endforeach; ?>
-                                                </select>
-                                                <input type="hidden" name="update_status" value="1" />
-                                            </form>
+                                            <span class="px-2.5 py-1.5 rounded-full text-xs font-bold <?php echo h($badge); ?>"><?php echo h($status); ?></span>
                                         </td>
                                         <td class="px-5 py-4 font-semibold">
                                             <?php
@@ -1732,7 +1723,7 @@ if ($historyStmt) {
                                             <div class="font-semibold"><?php echo h(date('M d, Y', strtotime((string) $historyItem['appointment_date']))); ?></div>
                                             <div class="text-xs text-slate-500"><?php echo h(date('h:i A', strtotime((string) $historyItem['appointment_time']))); ?></div>
                                         </td>
-                                        <td class="px-5 py-4 font-semibold text-slate-900"><?php echo '$' . number_format((float) ($historyItem['total_amount'] ?? 0), 2); ?></td>
+                                        <td class="px-5 py-4 font-semibold text-slate-900"><?php echo '₱' . number_format((float) ($historyItem['total_amount'] ?? 0), 2); ?></td>
                                     </tr>
                                 <?php endforeach; ?>
                             <?php endif; ?>

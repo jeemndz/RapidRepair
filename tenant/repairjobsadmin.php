@@ -107,7 +107,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_job_status']))
         exit;
     }
 
-    // Check if job is already completed - prevent status changes
+    // Check if job is already completed or cancelled - prevent status changes
     $checkCompletedStmt = mysqli_prepare(
         $conn,
         'SELECT job_status FROM repair_jobs WHERE repair_job_id = ? AND tenantID = ? LIMIT 1'
@@ -117,7 +117,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_job_status']))
         mysqli_stmt_execute($checkCompletedStmt);
         $checkCompletedResult = mysqli_stmt_get_result($checkCompletedStmt);
         if ($checkCompletedResult && $checkCompletedRow = mysqli_fetch_assoc($checkCompletedResult)) {
-            if ($checkCompletedRow['job_status'] === 'Completed') {
+            if ($checkCompletedRow['job_status'] === 'Completed' || $checkCompletedRow['job_status'] === 'Cancelled') {
                 $redirectParams['msg'] = 'error';
                 header('Location: repairjobsadmin.php?' . http_build_query(array_filter($redirectParams, static fn($v) => $v !== '')));
                 mysqli_stmt_close($checkCompletedStmt);
@@ -188,6 +188,213 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_service_status
         mysqli_stmt_close($updateServiceStmt);
         $redirectParams['msg'] = 'service_updated';
     } else {
+        $redirectParams['msg'] = 'error';
+    }
+
+    header('Location: repairjobsadmin.php?' . http_build_query(array_filter($redirectParams, static fn($v) => $v !== '')));
+    exit;
+}
+
+// Handle completing job with parts
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['complete_with_parts'])) {
+    $postedToken = isset($_POST['csrf_token']) ? (string) $_POST['csrf_token'] : '';
+    $repairJobId = isset($_POST['repair_job_id']) ? (int) $_POST['repair_job_id'] : 0;
+    $noPartsUsed = isset($_POST['no_parts_used']) && $_POST['no_parts_used'] === '1';
+    $selectedParts = isset($_POST['selected_parts']) && is_array($_POST['selected_parts']) ? $_POST['selected_parts'] : [];
+
+    $redirectParams = [
+        'shop' => $loginSlug,
+        'q' => $search,
+        'job_status' => $jobStatusFilter,
+        'service_status' => $serviceStatusFilter,
+        'priority' => $priorityFilter,
+    ];
+
+    if (!hash_equals($csrfToken, $postedToken) || $repairJobId <= 0) {
+        $redirectParams['msg'] = 'error';
+        header('Location: repairjobsadmin.php?' . http_build_query(array_filter($redirectParams, static fn($v) => $v !== '')));
+        exit;
+    }
+
+    // If "No parts used" is selected, skip parts processing
+    if ($noPartsUsed) {
+        mysqli_begin_transaction($conn);
+        $completeOk = true;
+        $totalPartsCost = 0.00;
+
+        // Get current labor total from repair job
+        $laborTotal = 0.00;
+        $jobLaborStmt = mysqli_prepare(
+            $conn,
+            'SELECT labor_total FROM repair_jobs WHERE repair_job_id = ? AND tenantID = ? LIMIT 1'
+        );
+        if ($jobLaborStmt) {
+            mysqli_stmt_bind_param($jobLaborStmt, 'ii', $repairJobId, $tenantID);
+            mysqli_stmt_execute($jobLaborStmt);
+            $jobLaborResult = mysqli_stmt_get_result($jobLaborStmt);
+            if ($jobLaborResult && $jobLaborRow = mysqli_fetch_assoc($jobLaborResult)) {
+                $laborTotal = (float) ($jobLaborRow['labor_total'] ?? 0);
+            }
+            mysqli_stmt_close($jobLaborStmt);
+        }
+
+        // Calculate new grand total (labor only, no parts)
+        $newGrandTotal = $laborTotal + $totalPartsCost;
+
+        // Update job status to Completed with 0 parts_total
+        $updateJobStmt = mysqli_prepare(
+            $conn,
+            'UPDATE repair_jobs
+             SET job_status = "Completed", parts_total = ?, grand_total = ?, updated_at = CURRENT_TIMESTAMP, completed_at = NOW()
+             WHERE repair_job_id = ? AND tenantID = ?
+             LIMIT 1'
+        );
+
+        if ($updateJobStmt) {
+            mysqli_stmt_bind_param($updateJobStmt, 'ddii', $totalPartsCost, $newGrandTotal, $repairJobId, $tenantID);
+            if (!mysqli_stmt_execute($updateJobStmt)) {
+                $completeOk = false;
+            }
+            mysqli_stmt_close($updateJobStmt);
+        } else {
+            $completeOk = false;
+        }
+
+        if ($completeOk) {
+            mysqli_commit($conn);
+            $redirectParams['msg'] = 'job_updated';
+        } else {
+            mysqli_rollback($conn);
+            $redirectParams['msg'] = 'error';
+        }
+
+        header('Location: repairjobsadmin.php?' . http_build_query(array_filter($redirectParams, static fn($v) => $v !== '')));
+        exit;
+    }
+
+    // Process each selected part
+    $partsDataForDelete = [];
+    foreach ($selectedParts as $partData) {
+        $partData = is_array($partData) ? $partData : json_decode($partData, true);
+        if (is_array($partData) && isset($partData['item_id'], $partData['quantity'])) {
+            $itemId = (int) $partData['item_id'];
+            $quantity = (int) $partData['quantity'];
+            if ($itemId > 0 && $quantity > 0) {
+                $partsDataForDelete[] = ['item_id' => $itemId, 'quantity' => $quantity];
+            }
+        }
+    }
+
+    mysqli_begin_transaction($conn);
+    $completeOk = true;
+    $totalPartsCost = 0.00;
+
+    // Reduce inventory for each part used and calculate total parts cost
+    foreach ($partsDataForDelete as $partUsed) {
+        // Get unit price for this item
+        $priceStmt = mysqli_prepare(
+            $conn,
+            'SELECT unit_price FROM inventory_items WHERE item_id = ? AND tenantID = ? LIMIT 1'
+        );
+        
+        $itemPrice = 0.00;
+        if ($priceStmt) {
+            mysqli_stmt_bind_param($priceStmt, 'ii', $partUsed['item_id'], $tenantID);
+            mysqli_stmt_execute($priceStmt);
+            $priceResult = mysqli_stmt_get_result($priceStmt);
+            if ($priceResult && $priceRow = mysqli_fetch_assoc($priceResult)) {
+                $itemPrice = (float) ($priceRow['unit_price'] ?? 0);
+            }
+            mysqli_stmt_close($priceStmt);
+        }
+        
+        // Add to total parts cost
+        $totalPartsCost += $itemPrice * (float) $partUsed['quantity'];
+
+        // Update inventory
+        $updateInventoryStmt = mysqli_prepare(
+            $conn,
+            'UPDATE inventory_items 
+             SET stock_quantity = stock_quantity - ?, updated_at = NOW()
+             WHERE item_id = ? AND tenantID = ?
+             LIMIT 1'
+        );
+
+        if (!$updateInventoryStmt) {
+            $completeOk = false;
+            break;
+        }
+
+        mysqli_stmt_bind_param($updateInventoryStmt, 'iii', $partUsed['quantity'], $partUsed['item_id'], $tenantID);
+        if (!mysqli_stmt_execute($updateInventoryStmt)) {
+            $completeOk = false;
+            mysqli_stmt_close($updateInventoryStmt);
+            break;
+        }
+        mysqli_stmt_close($updateInventoryStmt);
+
+        // Log the stock movement as OUT
+        $movementStmt = mysqli_prepare(
+            $conn,
+            'INSERT INTO stock_movements (tenantID, item_id, movement_type, quantity, reference_type, reference_id, notes)
+             VALUES (?, ?, "OUT", ?, "RepairJob", ?, ?)'
+        );
+
+        if ($movementStmt) {
+            $notes = 'Used in repair job #' . $repairJobId;
+            mysqli_stmt_bind_param($movementStmt, 'iiis', $tenantID, $partUsed['item_id'], $partUsed['quantity'], $repairJobId, $notes);
+            mysqli_stmt_execute($movementStmt);
+            mysqli_stmt_close($movementStmt);
+        }
+    }
+
+    // Get current labor total from repair job
+    $laborTotal = 0.00;
+    if ($completeOk) {
+        $jobLaborStmt = mysqli_prepare(
+            $conn,
+            'SELECT labor_total FROM repair_jobs WHERE repair_job_id = ? AND tenantID = ? LIMIT 1'
+        );
+        if ($jobLaborStmt) {
+            mysqli_stmt_bind_param($jobLaborStmt, 'ii', $repairJobId, $tenantID);
+            mysqli_stmt_execute($jobLaborStmt);
+            $jobLaborResult = mysqli_stmt_get_result($jobLaborStmt);
+            if ($jobLaborResult && $jobLaborRow = mysqli_fetch_assoc($jobLaborResult)) {
+                $laborTotal = (float) ($jobLaborRow['labor_total'] ?? 0);
+            }
+            mysqli_stmt_close($jobLaborStmt);
+        }
+    }
+
+    // Calculate new grand total
+    $newGrandTotal = $laborTotal + $totalPartsCost;
+
+    // Update job status to Completed with parts_total and grand_total
+    if ($completeOk) {
+        $updateJobStmt = mysqli_prepare(
+            $conn,
+            'UPDATE repair_jobs
+             SET job_status = "Completed", parts_total = ?, grand_total = ?, updated_at = CURRENT_TIMESTAMP, completed_at = NOW()
+             WHERE repair_job_id = ? AND tenantID = ?
+             LIMIT 1'
+        );
+
+        if ($updateJobStmt) {
+            mysqli_stmt_bind_param($updateJobStmt, 'ddii', $totalPartsCost, $newGrandTotal, $repairJobId, $tenantID);
+            if (!mysqli_stmt_execute($updateJobStmt)) {
+                $completeOk = false;
+            }
+            mysqli_stmt_close($updateJobStmt);
+        } else {
+            $completeOk = false;
+        }
+    }
+
+    if ($completeOk) {
+        mysqli_commit($conn);
+        $redirectParams['msg'] = 'job_updated';
+    } else {
+        mysqli_rollback($conn);
         $redirectParams['msg'] = 'error';
     }
 
@@ -427,6 +634,62 @@ if ($statsStmt) {
         $stats['avg_cycle_minutes'] = (float) ($statsRow['avg_cycle_minutes'] ?? 0);
     }
     mysqli_stmt_close($statsStmt);
+}
+
+// Parts modal handling
+$showPartsModal = false;
+$partsModalJobId = 0;
+$partsModalJobDetails = null;
+$inventoryItems = [];
+
+if (isset($_GET['show_parts_modal'])) {
+    $partsModalJobId = max(0, (int) $_GET['show_parts_modal']);
+    if ($partsModalJobId > 0) {
+        // Get job details
+        $jobDetailsStmt = mysqli_prepare(
+            $conn,
+            'SELECT rj.repair_job_id, rj.job_order_no, rj.job_status,
+                    COALESCE(u.fullName, CONCAT("User #", rj.user_id)) AS customer_name,
+                    CONCAT(IFNULL(v.year_model, ""), " ", IFNULL(v.brand, ""), " ", IFNULL(v.model, "")) AS vehicle_name
+             FROM repair_jobs rj
+             LEFT JOIN users u ON u.user_id = rj.user_id
+             LEFT JOIN vehicleinformation v ON v.vehicle_id = rj.vehicle_id AND v.tenantID = rj.tenantID
+             WHERE rj.repair_job_id = ? AND rj.tenantID = ? LIMIT 1'
+        );
+        
+        if ($jobDetailsStmt) {
+            mysqli_stmt_bind_param($jobDetailsStmt, 'ii', $partsModalJobId, $tenantID);
+            mysqli_stmt_execute($jobDetailsStmt);
+            $jobDetailsResult = mysqli_stmt_get_result($jobDetailsStmt);
+            $partsModalJobDetails = $jobDetailsResult ? mysqli_fetch_assoc($jobDetailsResult) : null;
+            mysqli_stmt_close($jobDetailsStmt);
+            
+            if ($partsModalJobDetails) {
+                $showPartsModal = true;
+            }
+        }
+    }
+}
+
+// Get active inventory items for the modal
+if ($showPartsModal) {
+    $inventoryStmt = mysqli_prepare(
+        $conn,
+        'SELECT item_id, part_name, part_code, category, stock_quantity, unit_price, status
+         FROM inventory_items
+         WHERE tenantID = ? AND status = "Active"
+         ORDER BY category ASC, part_name ASC'
+    );
+    
+    if ($inventoryStmt) {
+        mysqli_stmt_bind_param($inventoryStmt, 'i', $tenantID);
+        mysqli_stmt_execute($inventoryStmt);
+        $inventoryResult = mysqli_stmt_get_result($inventoryStmt);
+        while ($inventoryResult && $row = mysqli_fetch_assoc($inventoryResult)) {
+            $inventoryItems[] = $row;
+        }
+        mysqli_stmt_close($inventoryStmt);
+    }
 }
 
 $searchLike = '%' . $search . '%';
@@ -750,7 +1013,8 @@ if ($upcomingStmt) {
 </head>
 
 <body class="bg-slate-50 text-slate-900 antialiased">
-    <aside class="fixed left-0 top-0 bottom-0 w-64 border-r border-slate-200 bg-white z-50 flex flex-col h-full">
+    <div class="flex h-screen overflow-hidden">
+        <aside class="w-64 flex-shrink-0 border-r border-slate-200 bg-white h-screen sticky top-0 flex flex-col overflow-y-auto">
         <div class="p-6">
             <div class="flex items-center gap-3 mb-8">
                 <div class="bg-blue-700 rounded-lg p-2 text-white">
@@ -814,7 +1078,7 @@ if ($upcomingStmt) {
         </div>
     </aside>
 
-    <main class="ml-64 min-h-screen bg-slate-50">
+    <main class="flex-1 overflow-y-auto flex flex-col bg-slate-50">
         <header
             class="sticky top-0 z-40 w-full border-b border-slate-200 bg-white/90 backdrop-blur-md flex items-center justify-between px-8 h-16">
             <div class="flex items-center gap-6">
@@ -1070,22 +1334,23 @@ if ($upcomingStmt) {
                                                 class="inline-flex px-2 py-1 rounded-full text-xs font-bold <?php echo h(statusBadgeClass((string) $job['job_status'])); ?>"><?php echo h($job['job_status']); ?></span>
                                         </td>
                                         <td class="px-6 py-4">
-                                            <?php if ($job['job_status'] === 'Completed'): ?>
-                                                <span class="text-xs text-slate-500 font-semibold">Locked</span>
+                                            <?php if ($job['job_status'] === 'Completed' || $job['job_status'] === 'Cancelled'): ?>
+                                                <span class="text-xs text-slate-500 font-semibold">Done</span>
                                             <?php else: ?>
-                                                <form method="post" class="flex items-center gap-2">
-                                                    <input type="hidden" name="csrf_token" value="<?php echo h($csrfToken); ?>">
-                                                    <input type="hidden" name="repair_job_id"
-                                                        value="<?php echo (int) $job['repair_job_id']; ?>">
-                                                    <input type="hidden" name="update_job_status" value="1">
-                                                    <select name="job_status" class="rounded-lg border-slate-300 text-xs">
+                                                <form method="get" class="flex items-center gap-2">
+                                                    <input type="hidden" name="shop" value="<?php echo h($loginSlug); ?>">
+                                                    <input type="hidden" name="q" value="<?php echo h($search); ?>">
+                                                    <input type="hidden" name="job_status" value="<?php echo h($jobStatusFilter); ?>">
+                                                    <input type="hidden" name="service_status" value="<?php echo h($serviceStatusFilter); ?>">
+                                                    <input type="hidden" name="priority" value="<?php echo h($priorityFilter); ?>">
+                                                    <input type="hidden" name="repair_job_id" value="<?php echo (int) $job['repair_job_id']; ?>" id="status_job_id_<?php echo (int) $job['repair_job_id']; ?>">
+                                                    <select name="job_status" class="rounded-lg border-slate-300 text-xs" onchange="handleJobStatusChange(this, <?php echo (int) $job['repair_job_id']; ?>)" id="status_select_<?php echo (int) $job['repair_job_id']; ?>">
                                                         <?php foreach ($jobStatuses as $status): ?>
                                                             <option value="<?php echo h($status); ?>" <?php echo $job['job_status'] === $status ? 'selected' : ''; ?>>
                                                                 <?php echo h($status); ?></option>
                                                         <?php endforeach; ?>
                                                     </select>
-                                                    <button type="submit"
-                                                        class="text-blue-700 hover:underline text-xs font-bold">Save</button>
+                                                    <button type="submit" class="text-blue-700 hover:underline text-xs font-bold status-submit-btn-<?php echo (int) $job['repair_job_id']; ?>" style="display: none;">Save</button>
                                                 </form>
                                             <?php endif; ?>
                                         </td>
@@ -1132,6 +1397,207 @@ if ($upcomingStmt) {
             </section>
         </div>
     </main>
+    </div>
+
+    <?php if ($showPartsModal && $partsModalJobDetails): ?>
+        <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+            <section class="relative w-full max-w-2xl max-h-[85vh] overflow-y-auto bg-white rounded-2xl border border-slate-200 shadow-2xl">
+                <div class="sticky top-0 z-10 bg-white border-b border-slate-100 px-6 py-5 flex items-center justify-between gap-3">
+                    <div>
+                        <h3 class="font-bold text-slate-900 text-lg">Complete Repair Job - Select Parts Used</h3>
+                        <p class="text-xs text-slate-500 mt-1"><?php echo h($partsModalJobDetails['job_order_no']); ?> | <?php echo h($partsModalJobDetails['customer_name']); ?></p>
+                    </div>
+                    <a href="repairjobsadmin.php?<?php echo h(http_build_query(array_filter([
+                        'shop' => $loginSlug,
+                        'q' => $search,
+                        'job_status' => $jobStatusFilter,
+                        'service_status' => $serviceStatusFilter,
+                        'priority' => $priorityFilter,
+                    ], static fn($v) => $v !== ''))); ?>" class="inline-flex items-center justify-center w-8 h-8 rounded-full text-slate-500 hover:text-slate-700 hover:bg-slate-100 transition-colors">
+                        <span class="material-symbols-outlined">close</span>
+                    </a>
+                </div>
+
+                <form method="post" class="p-6 space-y-6">
+                    <input type="hidden" name="csrf_token" value="<?php echo h($csrfToken); ?>"/>
+                    <input type="hidden" name="repair_job_id" value="<?php echo (int) $partsModalJobId; ?>"/>
+                    <input type="hidden" name="complete_with_parts" value="1"/>
+
+                    <div class="space-y-4">
+                        <p class="text-sm text-slate-600 font-medium">Select the parts/inventory items used in this repair:</p>
+                        
+                        <!-- No Parts Used Option -->
+                        <div class="border border-slate-200 rounded-lg p-4 hover:bg-slate-50 transition-colors bg-blue-50 border-blue-200">
+                            <div class="flex items-start gap-4">
+                                <input type="checkbox" name="no_parts_used" value="1" class="mt-1" id="no_parts_checkbox" onchange="toggleNoPartsMode()">
+                                <div class="flex-1 min-w-0">
+                                    <label for="no_parts_checkbox" class="font-semibold text-slate-900 cursor-pointer">No Parts Used</label>
+                                    <p class="text-xs text-slate-600 mt-1">Complete this job without using any inventory parts</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Parts Selection Container -->
+                        <div id="parts-selection-container">
+                            <?php if (count($inventoryItems) === 0): ?>
+                                <div class="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
+                                    No active inventory items available. You can mark the job as completed without parts or add items to inventory first.
+                                </div>
+                            <?php else: ?>
+                                <div class="space-y-3 max-h-96 overflow-y-auto">
+                                    <?php foreach ($inventoryItems as $item): ?>
+                                        <div class="border border-slate-200 rounded-lg p-4 hover:bg-slate-50 transition-colors">
+                                            <div class="flex items-start gap-4">
+                                                <input type="checkbox" name="part_selected" value="<?php echo (int) $item['item_id']; ?>" class="mt-1 part-checkbox" id="part_<?php echo (int) $item['item_id']; ?>" onchange="togglePartQuantity(<?php echo (int) $item['item_id']; ?>)">
+                                                <div class="flex-1 min-w-0">
+                                                    <label for="part_<?php echo (int) $item['item_id']; ?>" class="font-semibold text-slate-900 cursor-pointer"><?php echo h($item['part_name']); ?></label>
+                                                    <p class="text-xs text-slate-500">Code: <?php echo h($item['part_code'] ?? 'N/A'); ?> | Category: <?php echo h($item['category']); ?></p>
+                                                    <p class="text-xs text-slate-600 mt-1">Available: <?php echo (int) $item['stock_quantity']; ?> | Price: ₱<?php echo number_format((float) $item['unit_price'], 2); ?></p>
+                                                </div>
+                                                <div class="flex items-center gap-2">
+                                                    <input type="number" name="selected_parts[]" data-item-id="<?php echo (int) $item['item_id']; ?>" data-max-qty="<?php echo (int) $item['stock_quantity']; ?>" min="1" max="<?php echo (int) $item['stock_quantity']; ?>" value="1" class="part-quantity w-16 rounded-lg border-slate-300 text-sm text-center disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    <?php endforeach; ?>
+                                </div>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+
+                    <div class="border-t border-slate-100 pt-4 flex gap-3 justify-end">
+                        <a href="repairjobsadmin.php?<?php echo h(http_build_query(array_filter([
+                            'shop' => $loginSlug,
+                            'q' => $search,
+                            'job_status' => $jobStatusFilter,
+                            'service_status' => $serviceStatusFilter,
+                            'priority' => $priorityFilter,
+                        ], static fn($v) => $v !== ''))); ?>" class="px-4 py-2.5 rounded-lg border border-slate-300 bg-white text-slate-700 font-semibold hover:bg-slate-50 transition-colors">
+                            Cancel
+                        </a>
+                        <button type="submit" class="px-6 py-2.5 rounded-lg bg-green-600 text-white font-semibold hover:bg-green-700 transition-colors">
+                            Complete Job & Use Parts
+                        </button>
+                    </div>
+                </form>
+            </section>
+        </div>
+    <?php endif; ?>
 </body>
+
+<script>
+    function handleJobStatusChange(selectElement, jobId) {
+        const selectedStatus = selectElement.value;
+        const currentStatus = selectElement.getAttribute('data-current-status') || selectElement.options[0].textContent;
+        
+        // If changing to Completed, show parts modal instead
+        if (selectedStatus === 'Completed') {
+            // Redirect to show parts modal
+            const params = new URLSearchParams(window.location.search);
+            params.set('show_parts_modal', jobId);
+            window.location.href = '?' + params.toString();
+        } else {
+            // For other statuses, submit the form directly
+            const form = selectElement.closest('form');
+            
+            // Convert to POST to maintain CSRF
+            const postForm = document.createElement('form');
+            postForm.method = 'post';
+            postForm.innerHTML = `
+                <input type="hidden" name="csrf_token" value="<?php echo h($csrfToken); ?>">
+                <input type="hidden" name="repair_job_id" value="${jobId}">
+                <input type="hidden" name="job_status" value="${selectedStatus}">
+                <input type="hidden" name="update_job_status" value="1">
+            `;
+            document.body.appendChild(postForm);
+            postForm.submit();
+        }
+    }
+
+    function toggleNoPartsMode() {
+        const noPartsCheckbox = document.getElementById('no_parts_checkbox');
+        const partCheckboxes = document.querySelectorAll('.part-checkbox');
+        
+        partCheckboxes.forEach(checkbox => {
+            checkbox.disabled = noPartsCheckbox.checked;
+            checkbox.checked = false;
+            const itemId = checkbox.value;
+            const quantityInput = document.querySelector('input[data-item-id="' + itemId + '"]');
+            if (quantityInput) {
+                quantityInput.disabled = true;
+            }
+        });
+    }
+
+    function togglePartQuantity(itemId) {
+        const noPartsCheckbox = document.getElementById('no_parts_checkbox');
+        const checkbox = document.getElementById('part_' + itemId);
+        const quantityInput = document.querySelector('input[data-item-id="' + itemId + '"]');
+        
+        if (checkbox && quantityInput) {
+            quantityInput.disabled = !checkbox.checked;
+            if (checkbox.checked) {
+                quantityInput.focus();
+            }
+        }
+    }
+
+    // Handle converting selected checkboxes and quantities into proper form data
+    const form = document.querySelector('form[name="parts-form"]');
+    if (form) {
+        form.addEventListener('submit', function(e) {
+            const selectedParts = [];
+            document.querySelectorAll('.part-checkbox:checked').forEach(checkbox => {
+                const itemId = checkbox.value;
+                const quantityInput = document.querySelector('input[data-item-id="' + itemId + '"]');
+                if (quantityInput) {
+                    selectedParts.push({
+                        item_id: itemId,
+                        quantity: quantityInput.value
+                    });
+                }
+            });
+
+            // Store selected parts as JSON array in hidden input
+            const hiddenInput = document.createElement('input');
+            hiddenInput.type = 'hidden';
+            hiddenInput.name = 'selected_parts_json';
+            hiddenInput.value = JSON.stringify(selectedParts);
+            form.appendChild(hiddenInput);
+        });
+    }
+
+    // Convert selected_parts hidden inputs to proper format on form submission
+    document.querySelectorAll('form[method="post"]').forEach(form => {
+        if (form.querySelector('input[name="complete_with_parts"]')) {
+            form.addEventListener('submit', function(e) {
+                const noPartsCheckbox = form.querySelector('input[name="no_parts_used"]');
+                
+                // Clear previous selected_parts entries
+                const existingInputs = form.querySelectorAll('input[name="selected_parts[]"]');
+                existingInputs.forEach(input => input.remove());
+
+                // Only add parts if "No parts used" is NOT checked
+                if (!noPartsCheckbox || !noPartsCheckbox.checked) {
+                    // Add new entries for checked parts
+                    document.querySelectorAll('.part-checkbox:checked').forEach(checkbox => {
+                        const itemId = checkbox.value;
+                        const quantityInput = document.querySelector('input[data-item-id="' + itemId + '"]');
+                        if (quantityInput && quantityInput.value && parseInt(quantityInput.value) > 0) {
+                            const input = document.createElement('input');
+                            input.type = 'hidden';
+                            input.name = 'selected_parts[]';
+                            input.value = JSON.stringify({
+                                item_id: itemId,
+                                quantity: quantityInput.value
+                            });
+                            form.appendChild(input);
+                        }
+                    });
+                }
+            });
+        }
+    });
+</script>
 
 </html>

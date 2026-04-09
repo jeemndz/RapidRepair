@@ -94,6 +94,7 @@ function normalizePayment($row)
         'appointment_date' => $row['appointment_date'] ?? '',
         'appointment_time' => $row['appointment_time'] ?? '',
         'appointment_status' => (string)($row['appointment_status'] ?? ''),
+        'job_status' => $row['job_status'] !== null ? (string)$row['job_status'] : null,
     ];
 }
 
@@ -209,7 +210,8 @@ function handleList($conn, $jsonInput = [])
     p.updated_at,
     a.appointment_date,
     a.appointment_time,
-    a.status AS appointment_status
+    a.status AS appointment_status,
+    (SELECT job_status FROM repair_jobs WHERE appointment_id = p.appointment_id ORDER BY created_at DESC LIMIT 1) as job_status
 FROM payments p
 LEFT JOIN appointments a ON p.appointment_id = a.appointment_id
 WHERE p.tenantID = ?";

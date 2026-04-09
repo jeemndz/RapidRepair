@@ -91,10 +91,11 @@
 </head>
 
 <body class="bg-surface text-on-surface antialiased">
-    <!-- Side Navigation Shell -->
-    <!-- Updated SideNavBar Implementation based on SCREEN_106 -->
-    <aside
-        class="fixed inset-y-0 left-0 flex flex-col z-40 h-full w-64 border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-y-auto">
+    <div class="flex h-screen overflow-hidden">
+        <!-- Side Navigation Shell -->
+        <!-- Updated SideNavBar Implementation based on SCREEN_106 -->
+        <aside
+            class="w-64 flex-shrink-0 border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 h-screen sticky top-0 flex flex-col overflow-y-auto">
         <div class="p-6">
             <div class="flex items-center gap-3 mb-8">
                 <div class="bg-primary rounded-lg p-2 text-white">
@@ -176,8 +177,8 @@
             </div>
         </div>
     </aside>
-    <!-- Main Content Canvas -->
-    <main class="ml-64 min-h-screen flex flex-col">
+        <!-- Main Content Canvas -->
+        <main class="flex-1 overflow-y-auto flex flex-col">
         <!-- Top Nav Bar -->
         <header
             class="sticky top-0 z-40 w-full border-b border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md flex items-center justify-between px-8 h-16">
@@ -331,6 +332,26 @@
                     </div>
                 </div>
             </section>
+
+            <!-- Activity Logs Link -->
+            <section class="space-y-4">
+                <div class="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg p-6">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <h3 class="text-lg font-bold text-slate-900 tracking-tight flex items-center gap-2">
+                                <span class="material-symbols-outlined text-blue-600">history</span>
+                                System Activity Logs
+                            </h3>
+                            <p class="text-sm text-slate-600 mt-1">Monitor all system activities, user actions, and data changes in your shop.</p>
+                        </div>
+                        <a href="tenantslogs.php<?= isset($_GET['shop']) ? '?shop=' . urlencode($_GET['shop']) : '' ?>"
+                            class="bg-primary text-white px-6 py-3 rounded-lg font-bold flex items-center gap-2 hover:bg-blue-800 transition-colors shadow-sm whitespace-nowrap">
+                            <span class="material-symbols-outlined text-sm">arrow_forward</span>
+                            View Activity Logs
+                        </a>
+                    </div>
+                </div>
+            </section>
         </div>
         <!-- Footer: Performance Summary -->
         <footer class="bg-white border-t border-slate-200 px-8 py-4 flex items-center justify-between">
@@ -363,6 +384,7 @@
             </div>
         </footer>
     </main>
+    </div>
 
     <!-- Service Modal -->
     <div id="serviceModal" class="hidden fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">

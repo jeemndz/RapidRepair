@@ -77,7 +77,7 @@ $search = trim((string) ($_GET['search'] ?? ''));
 $statusFilter = trim((string) ($_GET['status'] ?? 'All'));
 $methodFilter = trim((string) ($_GET['method'] ?? 'All'));
 $page = max(1, (int) ($_GET['page'] ?? 1));
-$rowsPerPage = 10;
+$rowsPerPage = 5;
 
 $hasRepairJobIdColumn = false;
 $maxMonetaryAmount = 99999999.99;
@@ -548,7 +548,7 @@ $paymentsSql = "
         COALESCE(u.fullName, CONCAT('User #', p.user_id)) AS customer_name
     FROM payments p
     LEFT JOIN users u ON u.user_id = p.user_id
-    WHERE $whereSql
+    WHERE $whereSql AND p.paymentStatus IN ('Partial', 'Paid', 'Failed', 'Refunded')
     ORDER BY p.paymentDate DESC, p.payment_id DESC
     LIMIT $offset, $rowsPerPage
 ";
@@ -557,6 +557,39 @@ $paymentsResult = mysqli_query($conn, $paymentsSql);
 if ($paymentsResult) {
     while ($row = mysqli_fetch_assoc($paymentsResult)) {
         $payments[] = $row;
+    }
+}
+
+// Pending Payments Query
+$pendingPaymentsSql = "
+    SELECT
+        p.payment_id,
+        p.tenantID,
+        p.user_id,
+        " . ($hasRepairJobIdColumn ? "p.repair_job_id" : "NULL") . " AS repair_job_id,
+        p.paymentAmount,
+        p.amountPaid,
+        p.balance,
+        p.paymentMethod,
+        p.paymentDate,
+        p.paymentStatus,
+        p.referenceNumber,
+        p.gcashReferenceNumber,
+        p.remarks,
+        p.created_at,
+        p.updated_at,
+        COALESCE(u.fullName, CONCAT('User #', p.user_id)) AS customer_name
+    FROM payments p
+    LEFT JOIN users u ON u.user_id = p.user_id
+    WHERE p.tenantID = $tenantID AND p.paymentStatus = 'Pending'
+    ORDER BY p.paymentDate DESC, p.payment_id DESC
+    LIMIT 10
+";
+$pendingPayments = [];
+$pendingPaymentsResult = mysqli_query($conn, $pendingPaymentsSql);
+if ($pendingPaymentsResult) {
+    while ($row = mysqli_fetch_assoc($pendingPaymentsResult)) {
+        $pendingPayments[] = $row;
     }
 }
 
@@ -733,7 +766,8 @@ function buildPageUrl($pageNumber, $shopQuery, $search, $statusFilter, $methodFi
 </head>
 
 <body class="bg-background text-on-surface antialiased">
-    <aside class="fixed inset-y-0 left-0 w-64 flex flex-col border-r border-slate-200 bg-white overflow-y-auto z-50">
+    <div class="flex h-screen overflow-hidden">
+        <aside class="w-64 flex-shrink-0 border-r border-slate-200 bg-white h-screen sticky top-0 flex flex-col overflow-y-auto">
         <div class="p-6 flex-1">
             <div class="flex items-center gap-3 mb-8">
                 <div class="bg-primary rounded-lg p-2 text-white">
@@ -814,7 +848,7 @@ function buildPageUrl($pageNumber, $shopQuery, $search, $statusFilter, $methodFi
         </div>
     </aside>
 
-    <main class="ml-64 min-h-screen bg-background">
+    <main class="flex-1 overflow-y-auto flex flex-col bg-background">
         <header
             class="sticky top-0 z-40 w-full border-b border-slate-200 bg-white/80 backdrop-blur-md flex items-center justify-between px-8 h-16">
             <div class="flex items-center gap-6">
@@ -1021,9 +1055,88 @@ function buildPageUrl($pageNumber, $shopQuery, $search, $statusFilter, $methodFi
                 </div>
             </div>
 
+            <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden mb-8">
+                <div class="p-6 border-b border-slate-100 flex items-center justify-between">
+                    <h4 class="text-lg font-bold text-on-surface">Pending Payments</h4>
+                    <div class="text-xs text-slate-500 font-medium">
+                        <?php echo number_format(count($pendingPayments)); ?> pending
+                    </div>
+                </div>
+
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left border-collapse">
+                        <thead class="bg-surface">
+                            <tr>
+                                <th
+                                    class="px-6 py-4 text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">
+                                    Payment ID</th>
+                                <th
+                                    class="px-6 py-4 text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">
+                                    Customer</th>
+                                <th
+                                    class="px-6 py-4 text-[10px] font-bold text-on-surface-variant uppercase tracking-widest text-right">
+                                    Amount</th>
+                                <th
+                                    class="px-6 py-4 text-[10px] font-bold text-on-surface-variant uppercase tracking-widest text-right">
+                                    Paid</th>
+                                <th
+                                    class="px-6 py-4 text-[10px] font-bold text-on-surface-variant uppercase tracking-widest text-right">
+                                    Balance</th>
+                                <th
+                                    class="px-6 py-4 text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">
+                                    Method</th>
+                                <th
+                                    class="px-6 py-4 text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">
+                                    Date</th>
+                                <th
+                                    class="px-6 py-4 text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">
+                                    Reference</th>
+                                <th
+                                    class="px-6 py-4 text-[10px] font-bold text-on-surface-variant uppercase tracking-widest text-right">
+                                    Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-100">
+                            <?php if (count($pendingPayments) === 0): ?>
+                                <tr>
+                                    <td colspan="9" class="px-6 py-10 text-center text-sm text-slate-500">
+                                        No pending payments.
+                                    </td>
+                                </tr>
+                            <?php else: ?>
+                                <?php foreach ($pendingPayments as $payment): ?>
+                                    <?php
+                                    $reference = trim((string) ($payment['referenceNumber'] ?? ''));
+                                    $gcashRef = trim((string) ($payment['gcashReferenceNumber'] ?? ''));
+                                    $displayReference = $gcashRef !== '' ? $gcashRef : ($reference !== '' ? $reference : 'N/A');
+                                    ?>
+                                    <tr class="hover:bg-slate-50/50 transition-colors">
+                                        <td class="px-6 py-4 text-sm font-bold text-on-surface">#<?php echo (int) $payment['payment_id']; ?></td>
+                                        <td class="px-6 py-4">
+                                            <div class="text-sm font-medium text-on-surface"><?php echo h($payment['customer_name']); ?></div>
+                                        </td>
+                                        <td class="px-6 py-4 text-sm font-bold text-on-surface text-right">PHP <?php echo number_format((float) $payment['paymentAmount'], 2); ?></td>
+                                        <td class="px-6 py-4 text-sm font-bold text-green-700 text-right">PHP <?php echo number_format((float) $payment['amountPaid'], 2); ?></td>
+                                        <td class="px-6 py-4 text-sm font-bold text-orange-600 text-right">PHP <?php echo number_format((float) $payment['balance'], 2); ?></td>
+                                        <td class="px-6 py-4 text-sm text-on-surface-variant"><?php echo h($payment['paymentMethod']); ?></td>
+                                        <td class="px-6 py-4 text-sm text-on-surface-variant"><?php echo h(date('M d, Y', strtotime((string) $payment['paymentDate']))); ?></td>
+                                        <td class="px-6 py-4 text-sm text-on-surface-variant"><?php echo h($displayReference); ?></td>
+                                        <td class="px-6 py-4 text-right">
+                                            <button class="openStatusModal text-blue-600 hover:text-blue-800 transition-colors" data-payment-id="<?php echo (int) $payment['payment_id']; ?>" data-current-status="<?php echo h($payment['paymentStatus']); ?>">
+                                                <span class="material-symbols-outlined text-sm">edit</span>
+                                            </button>
+                                        </td>
+                                    </tr>
+                                <?php endforeach; ?>
+                            <?php endif; ?>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
             <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
                 <div class="p-6 border-b border-slate-100 flex items-center justify-between">
-                    <h4 class="text-lg font-bold text-on-surface">Recent Transactions</h4>
+                    <h4 class="text-lg font-bold text-on-surface">Transaction History</h4>
                     <div class="text-xs text-slate-500 font-medium">
                         <?php echo number_format($totalRows); ?> total records
                     </div>
@@ -1273,6 +1386,7 @@ function buildPageUrl($pageNumber, $shopQuery, $search, $statusFilter, $methodFi
             </div>
         </div>
     </main>
+    </div>
 </body>
 
 <script>
