@@ -111,6 +111,11 @@ if ($action === '') {
         'status' => 'error',
         'message' => 'Missing action parameter',
         'available_actions' => ['list', 'create', 'update', 'delete'],
+        'examples' => [
+            'GET' => 'GET /paymentcrud.php?action=list&tenantID=1',
+            'POST_JSON' => 'POST /paymentcrud.php with Content-Type: application/json and body: {"action":"list","tenantID":1}',
+            'POST_FORM' => 'POST /paymentcrud.php with Content-Type: application/x-www-form-urlencoded and body: action=list&tenantID=1'
+        ],
         'debug' => [
             'method' => $_SERVER['REQUEST_METHOD'],
             'content_type' => $_SERVER['CONTENT_TYPE'] ?? 'not set',
