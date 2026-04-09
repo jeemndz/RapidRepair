@@ -52,7 +52,7 @@ function getConnection()
         errorResponse('Database connection is not available.', 500);
     }
 
-    if (!$conn->ping()) {
+    if (!$conn->query('SELECT 1')) {
         errorResponse('Database connection lost.', 500);
     }
 
