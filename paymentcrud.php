@@ -5,75 +5,54 @@
  * Database: rapidrepairs (Azure MySQL)
  */
 
-// Error handling - prevent non-JSON output from errors
-ini_set('display_errors', 0);
-ini_set('log_errors', 1);
-error_reporting(E_ALL);
-ob_start(); // Start output buffering to catch any stray output
-
-// Set JSON headers FIRST before any output
+// CRITICAL: Set JSON headers and error handling FIRST
 header('Content-Type: application/json; charset=utf-8');
-header('Access-Control-Allow-Origin: *');
-header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
-header('Access-Control-Allow-Headers: Content-Type');
+ini_set('display_errors', '0');
+ini_set('log_errors', '1');
+error_reporting(E_ALL);
+ob_start();
 
 // Handle CORS preflight
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     http_response_code(200);
-    ob_end_clean();
-    exit;
+    die('{}');
 }
 
-// Database Configuration
-// Azure MySQL credentials
-$db_host = getenv('DB_HOST') ?: 'rapidrepairs.mysql.database.azure.com';
-$db_name = getenv('DB_NAME') ?: 'rapidrepairs';
-$db_user = getenv('DB_USER') ?: 'rfadmin1@rapidrepairs';  // Correct Azure format: username@servername
-$db_pass = getenv('DB_PASS') ?: 'rradmin123!';  // Your Azure password
+// Database Configuration - Use GitHub db.php as primary source
+$db_host = 'rapidrepairs.mysql.database.azure.com';
+$db_name = 'rapidrepairs';
+$db_user = 'rradmin1@rapidrepairs';
+$db_pass = 'rradmin123!';  // Update if different
 
-// Fallback to db.php from GitHub if still empty
-if (empty($db_pass) || $db_pass === 'rradmin123!') {
-    $db_config_path = __DIR__ . '/db.php';
-    
-    // Try local db.php first
-    if (file_exists($db_config_path)) {
-        include $db_config_path;
-    } else {
-        // Fallback to GitHub
-        $db_config_url = 'https://raw.githubusercontent.com/jeemnndz/RapidRepair/main/db.php';
-        $db_config_content = @file_get_contents($db_config_url);
-        
-        if ($db_config_content !== false) {
-            // Safely extract variables using regex
-            preg_match('/\$db_host\s*=\s*[\'"](.+?)[\'"]/i', $db_config_content, $m); if (!empty($m[1])) $db_host = $m[1];
-            preg_match('/\$db_name\s*=\s*[\'"](.+?)[\'"]/i', $db_config_content, $m); if (!empty($m[1])) $db_name = $m[1];
-            preg_match('/\$db_user\s*=\s*[\'"](.+?)[\'"]/i', $db_config_content, $m); if (!empty($m[1])) $db_user = $m[1];
-            preg_match('/\$db_pass\s*=\s*[\'"](.+?)[\'"]/i', $db_config_content, $m); if (!empty($m[1])) $db_pass = $m[1];
-        }
+// Try GitHub db.php for credentials (backup)
+$github_url = 'https://raw.githubusercontent.com/jeemnndz/RapidRepair/main/db.php';
+$github_content = @file_get_contents($github_url);
+if ($github_content && strpos($github_content, '$db_pass') !== false) {
+    preg_match('/\$db_pass\s*=\s*[\'"](.+?)[\'"]/i', $github_content, $m);
+    if (!empty($m[1])) {
+        $db_pass = $m[1];
     }
 }
 
 // Database Connection
-try {
-    if (empty($db_pass)) {
-        throw new Exception('Database password not configured. Check environment or db.php.');
-    }
-    
-    $conn = new mysqli($db_host, $db_user, $db_pass, $db_name);
-    
-    if ($conn->connect_error) {
-        throw new Exception('Connection failed: ' . $conn->connect_error);
-    }
-    
-    $conn->set_charset('utf8mb4');
-} catch (Exception $e) {
-    http_response_code(500);
+$conn = @new mysqli($db_host, $db_user, $db_pass, $db_name);
+
+if ($conn->connect_error) {
     ob_end_clean();
-    die(response('error', 'Database connection error: ' . $e->getMessage(), [
-        'host' => $db_host,
-        'user' => $db_user,
+    http_response_code(500);
+    die(json_encode([
+        'status' => 'error',
+        'message' => 'Database connection error',
+        'error' => $conn->connect_error,
+        'debug' => [
+            'host' => $db_host,
+            'user' => $db_user,
+            'database' => $db_name
+        ]
     ]));
 }
+
+$conn->set_charset('utf8mb4');
 
 // Helper Functions
 function normalizeId($value, $fallback = 0) {
@@ -102,19 +81,14 @@ function sanitizeString($str) {
     return trim(strip_tags($str ?? ''));
 }
 
-function response($status, $message, $data = null) {
-    // Headers already set at top of file, don't repeat
-    return json_encode([
+function sendJson($status, $message, $data = null, $httpCode = 200) {
+    ob_end_clean();
+    http_response_code($httpCode);
+    die(json_encode([
         'status' => $status,
         'message' => $message,
         'data' => $data
-    ]);
-}
-
-function outputJson($status, $message, $data = null, $httpCode = 200) {
-    ob_end_clean(); // Clear any buffered output
-    http_response_code($httpCode);
-    die(response($status, $message, $data));
+    ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
 }
 
 // Main Request Handler
@@ -123,19 +97,13 @@ $action = isset($_REQUEST['action']) ? sanitizeString($_REQUEST['action']) : '';
 try {
     switch ($action) {
         case 'test':
-            // Diagnostic endpoint
-            ob_end_clean();
-            http_response_code(200);
-            die(json_encode([
-                'status' => 'success',
-                'message' => 'Connection successful',
-                'database' => [
-                    'host' => $db_host,
-                    'name' => $db_name,
-                    'user' => $db_user,
-                    'charset' => $conn->character_set_name(),
-                ]
-            ]));
+            sendJson('success', 'Connection successful', [
+                'host' => $db_host,
+                'database' => $db_name,
+                'user' => $db_user,
+                'charset' => $conn->character_set_name(),
+            ], 200);
+            break;
         
         case 'list':
             handleList($conn);
@@ -154,16 +122,12 @@ try {
             break;
         
         default:
-            ob_end_clean();
-            http_response_code(400);
-            die(response('error', 'Invalid action. Use: list, create, update, delete, or test'));
+            sendJson('error', 'Invalid action. Use: list, create, update, delete, or test', null, 400);
     }
-} catch (Exception $e) {
-    ob_end_clean();
-    http_response_code(500);
-    die(response('error', $e->getMessage()));
+} catch (Throwable $e) {
+    sendJson('error', $e->getMessage(), null, 500);
 } finally {
-    if (isset($conn)) {
+    if (isset($conn) && $conn) {
         $conn->close();
     }
 }
@@ -265,9 +229,7 @@ function handleList($conn) {
 
     $stmt->close();
 
-    ob_end_clean();
-    http_response_code(200);
-    die(response('success', 'Payments retrieved successfully', $payments));
+    sendJson('success', 'Payments retrieved successfully', $payments, 200);
 }
 
 /**
@@ -327,13 +289,11 @@ function handleCreate($conn) {
     $payment_id = $stmt->insert_id;
     $stmt->close();
 
-    ob_end_clean();
-    http_response_code(201);
-    die(response('success', 'Payment created successfully', [
+    sendJson('success', 'Payment created successfully', [
         'payment_id' => $payment_id,
         'referenceNumber' => $referenceNumber,
         'paymentStatus' => $paymentStatus,
-    ]));
+    ], 201);
 }
 
 /**
@@ -440,9 +400,7 @@ function handleUpdate($conn) {
 
     $stmt->close();
 
-    ob_end_clean();
-    http_response_code(200);
-    die(response('success', 'Payment updated successfully'));
+    sendJson('success', 'Payment updated successfully', null, 200);
 }
 
 /**
@@ -467,8 +425,6 @@ function handleDelete($conn) {
 
     $stmt->close();
 
-    ob_end_clean();
-    http_response_code(200);
-    die(response('success', 'Payment deleted successfully'));
+    sendJson('success', 'Payment deleted successfully', null, 200);
 }
 ?>
