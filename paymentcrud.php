@@ -18,47 +18,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     die('{}');
 }
 
-// Database Configuration
-$db_host = null;
-$db_name = null;
-$db_user = null;
-$db_pass = null;
+// Database Configuration - Direct credentials as fallback
+$db_host = 'rapidrepairs.mysql.database.azure.com';
+$db_name = 'rapidrepairs';
+$db_user = 'rradmin1@rapidrepairs';
+$db_pass = 'Rr2024Admin!';  // Your MySQL password
 
-// Try to load db.php from parent or current directory
-$dbFileFound = false;
-if (file_exists(__DIR__ . '/../db.php')) {
-    require_once __DIR__ . '/../db.php';
-    $dbFileFound = true;
-} elseif (file_exists(__DIR__ . '/db.php')) {
-    require_once __DIR__ . '/db.php';
-    $dbFileFound = true;
+// Try environment variables first (if set)
+if (!empty(getenv('DB_PASS'))) {
+    $db_pass = getenv('DB_PASS');
 }
 
-// Fallback if db.php not found
-if (!$dbFileFound) {
-    $db_host = 'rapidrepairs.mysql.database.azure.com';
-    $db_name = 'rapidrepairs';
-    $db_user = 'rradmin1@rapidrepairs';
-    $db_pass = 'Rr2024Admin!';
+// Try to load db.php from parent or current directory
+if (file_exists(__DIR__ . '/../db.php')) {
+    include __DIR__ . '/../db.php';
+} elseif (file_exists(__DIR__ . '/db.php')) {
+    include __DIR__ . '/db.php';
 }
 
 // Database Connection
-if (!$db_host || !$db_name || !$db_user || !$db_pass) {
-    ob_end_clean();
-    http_response_code(500);
-    die(json_encode([
-        'status' => 'error',
-        'message' => 'Database configuration incomplete',
-        'debug' => [
-            'dbFileFound' => $dbFileFound,
-            'hasHost' => !empty($db_host),
-            'hasName' => !empty($db_name),
-            'hasUser' => !empty($db_user),
-            'hasPass' => !empty($db_pass)
-        ]
-    ]));
-}
-
 $conn = @new mysqli($db_host, $db_user, $db_pass, $db_name);
 
 if ($conn->connect_error) {
@@ -66,8 +44,7 @@ if ($conn->connect_error) {
     http_response_code(500);
     die(json_encode([
         'status' => 'error',
-        'message' => 'Database connection error',
-        'error' => $conn->connect_error,
+        'message' => 'Database connection failed: ' . $conn->connect_error,
         'debug' => [
             'host' => $db_host,
             'user' => $db_user,
