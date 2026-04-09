@@ -9,6 +9,7 @@
 ini_set('display_errors', 0);
 ini_set('log_errors', 1);
 error_reporting(E_ALL);
+ob_start(); // Start output buffering to catch any stray output
 
 // Set JSON headers FIRST before any output
 header('Content-Type: application/json; charset=utf-8');
@@ -19,6 +20,7 @@ header('Access-Control-Allow-Headers: Content-Type');
 // Handle CORS preflight
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     http_response_code(200);
+    ob_end_clean();
     exit;
 }
 
@@ -26,7 +28,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 // Azure MySQL credentials
 $db_host = getenv('DB_HOST') ?: 'rapidrepairs.mysql.database.azure.com';
 $db_name = getenv('DB_NAME') ?: 'rapidrepairs';
-$db_user = getenv('DB_USER') ?: 'rradmin1@rapidrepairs';  // Correct Azure format: username@servername
+$db_user = getenv('DB_USER') ?: 'rfadmin1@rapidrepairs';  // Correct Azure format: username@servername
 $db_pass = getenv('DB_PASS') ?: 'rradmin123!';  // Your Azure password
 
 // Fallback to db.php from GitHub if still empty
@@ -66,13 +68,10 @@ try {
     $conn->set_charset('utf8mb4');
 } catch (Exception $e) {
     http_response_code(500);
-    die(json_encode([
-        'status' => 'error',
-        'message' => 'Database connection error: ' . $e->getMessage(),
-        'debug' => [
-            'host' => $db_host,
-            'user' => $db_user,
-        ]
+    ob_end_clean();
+    die(response('error', 'Database connection error: ' . $e->getMessage(), [
+        'host' => $db_host,
+        'user' => $db_user,
     ]));
 }
 
@@ -104,12 +103,18 @@ function sanitizeString($str) {
 }
 
 function response($status, $message, $data = null) {
-    header('Content-Type: application/json');
+    // Headers already set at top of file, don't repeat
     return json_encode([
         'status' => $status,
         'message' => $message,
         'data' => $data
     ]);
+}
+
+function outputJson($status, $message, $data = null, $httpCode = 200) {
+    ob_end_clean(); // Clear any buffered output
+    http_response_code($httpCode);
+    die(response($status, $message, $data));
 }
 
 // Main Request Handler
@@ -119,6 +124,7 @@ try {
     switch ($action) {
         case 'test':
             // Diagnostic endpoint
+            ob_end_clean();
             http_response_code(200);
             die(json_encode([
                 'status' => 'success',
@@ -148,10 +154,12 @@ try {
             break;
         
         default:
+            ob_end_clean();
             http_response_code(400);
             die(response('error', 'Invalid action. Use: list, create, update, delete, or test'));
     }
 } catch (Exception $e) {
+    ob_end_clean();
     http_response_code(500);
     die(response('error', $e->getMessage()));
 } finally {
@@ -257,6 +265,7 @@ function handleList($conn) {
 
     $stmt->close();
 
+    ob_end_clean();
     http_response_code(200);
     die(response('success', 'Payments retrieved successfully', $payments));
 }
@@ -318,6 +327,7 @@ function handleCreate($conn) {
     $payment_id = $stmt->insert_id;
     $stmt->close();
 
+    ob_end_clean();
     http_response_code(201);
     die(response('success', 'Payment created successfully', [
         'payment_id' => $payment_id,
@@ -430,6 +440,7 @@ function handleUpdate($conn) {
 
     $stmt->close();
 
+    ob_end_clean();
     http_response_code(200);
     die(response('success', 'Payment updated successfully'));
 }
@@ -456,6 +467,7 @@ function handleDelete($conn) {
 
     $stmt->close();
 
+    ob_end_clean();
     http_response_code(200);
     die(response('success', 'Payment deleted successfully'));
 }
