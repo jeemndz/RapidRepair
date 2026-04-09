@@ -10,10 +10,41 @@ $formData = [
     'shopName' => '',
     'shopAddress' => '',
     'ownerName' => '',
+    'countryCode' => 'PH',
     'contactNumber' => '',
     'email' => '',
-    'subscriptionPlan' => ''
+    'subscriptionPlan' => '',
+    'billingCycle' => 'monthly'
 ];
+
+function getCountriesWithPhoneCodes()
+{
+    return [
+        ['code' => 'US', 'name' => 'United States', 'phone' => '+1'],
+        ['code' => 'CA', 'name' => 'Canada', 'phone' => '+1'],
+        ['code' => 'GB', 'name' => 'United Kingdom', 'phone' => '+44'],
+        ['code' => 'AU', 'name' => 'Australia', 'phone' => '+61'],
+        ['code' => 'PH', 'name' => 'Philippines', 'phone' => '+63'],
+        ['code' => 'SG', 'name' => 'Singapore', 'phone' => '+65'],
+        ['code' => 'MY', 'name' => 'Malaysia', 'phone' => '+60'],
+        ['code' => 'TH', 'name' => 'Thailand', 'phone' => '+66'],
+        ['code' => 'VN', 'name' => 'Vietnam', 'phone' => '+84'],
+        ['code' => 'IN', 'name' => 'India', 'phone' => '+91'],
+        ['code' => 'JP', 'name' => 'Japan', 'phone' => '+81'],
+        ['code' => 'CN', 'name' => 'China', 'phone' => '+86'],
+        ['code' => 'KR', 'name' => 'South Korea', 'phone' => '+82'],
+        ['code' => 'NZ', 'name' => 'New Zealand', 'phone' => '+64'],
+        ['code' => 'ZA', 'name' => 'South Africa', 'phone' => '+27'],
+        ['code' => 'DE', 'name' => 'Germany', 'phone' => '+49'],
+        ['code' => 'FR', 'name' => 'France', 'phone' => '+33'],
+        ['code' => 'IT', 'name' => 'Italy', 'phone' => '+39'],
+        ['code' => 'ES', 'name' => 'Spain', 'phone' => '+34'],
+        ['code' => 'NL', 'name' => 'Netherlands', 'phone' => '+31'],
+        ['code' => 'MX', 'name' => 'Mexico', 'phone' => '+52'],
+        ['code' => 'BR', 'name' => 'Brazil', 'phone' => '+55'],
+        ['code' => 'AR', 'name' => 'Argentina', 'phone' => '+54'],
+    ];
+}
 
 function ownersColumnExists($conn, $columnName)
 {
@@ -45,7 +76,7 @@ function normalizePlanKey($value)
     return $normalized === '' ? 'plan' : $normalized;
 }
 
-function loadSubscriptionPlans($conn)
+function loadSubscriptionPlansWithDetails($conn)
 {
     $plans = [];
 
@@ -53,33 +84,10 @@ function loadSubscriptionPlans($conn)
         return $plans;
     }
 
-    $hasPlanName = subscriptionPlansColumnExists($conn, 'plan_name');
-    $hasPlanCode = subscriptionPlansColumnExists($conn, 'plan_code');
-    $hasMonthlyPrice = subscriptionPlansColumnExists($conn, 'monthly_price');
-    $hasIsActive = subscriptionPlansColumnExists($conn, 'is_active');
-
-    if (!$hasPlanName) {
-        return $plans;
-    }
-
-    $columns = [];
-    if ($hasPlanCode) {
-        $columns[] = 'plan_code';
-    }
-    $columns[] = 'plan_name';
-    if ($hasMonthlyPrice) {
-        $columns[] = 'monthly_price';
-    }
-
-    $sql = "SELECT " . implode(', ', $columns) . " FROM subscription_plans";
-    if ($hasIsActive) {
-        $sql .= " WHERE is_active = 1";
-    }
-    if ($hasMonthlyPrice) {
-        $sql .= " ORDER BY monthly_price ASC, plan_name ASC";
-    } else {
-        $sql .= " ORDER BY plan_name ASC";
-    }
+    $sql = "SELECT plan_id, plan_code, plan_name, monthly_price, plan_features, is_active 
+            FROM subscription_plans 
+            WHERE is_active = 1 
+            ORDER BY monthly_price ASC, plan_name ASC";
 
     $result = mysqli_query($conn, $sql);
     if (!$result) {
@@ -92,24 +100,67 @@ function loadSubscriptionPlans($conn)
             continue;
         }
 
-        $planKeySource = $hasPlanCode ? (string) ($row['plan_code'] ?? '') : $planName;
-        $planKey = normalizePlanKey($planKeySource);
+        $planCode = strtolower(trim((string) ($row['plan_code'] ?? '')));
+        if ($planCode === '') {
+            $planCode = normalizePlanKey($planName);
+        }
 
-        $plans[$planKey] = [
-            'key' => $planKey,
-            'name' => $planName
+        // Parse plan features - try JSON first, fall back to newline/comma separated
+        $features = [];
+        $rawFeatures = trim((string) ($row['plan_features'] ?? ''));
+        if (!empty($rawFeatures)) {
+            $decoded = json_decode($rawFeatures, true);
+            if (is_array($decoded)) {
+                $features = $decoded;
+            } else {
+                // Fall back to splitting by newline or comma
+                $features = preg_split('/[\r\n,]+/', $rawFeatures);
+                $features = array_map('trim', $features);
+                $features = array_filter($features);
+            }
+        }
+
+        $plans[] = [
+            'plan_id' => (int) ($row['plan_id'] ?? 0),
+            'plan_code' => $planCode,
+            'plan_name' => $planName,
+            'monthly_price' => (float) ($row['monthly_price'] ?? 0),
+            'plan_features' => $features,
+            'is_active' => (int) ($row['is_active'] ?? 0)
         ];
     }
 
     return $plans;
 }
 
-$subscriptionPlans = loadSubscriptionPlans($conn);
+
+$subscriptionPlans = loadSubscriptionPlansWithDetails($conn);
 if (count($subscriptionPlans) === 0) {
     $subscriptionPlans = [
-        'starter' => ['key' => 'starter', 'name' => 'Starter'],
-        'professional' => ['key' => 'professional', 'name' => 'Professional'],
-        'enterprise' => ['key' => 'enterprise', 'name' => 'Enterprise']
+        [
+            'plan_id' => 1,
+            'plan_code' => 'starter',
+            'plan_name' => 'Starter',
+            'monthly_price' => 149,
+            'plan_features' => ['1 Location', 'Up to 5 Technicians', 'Basic Analytics'],
+            'is_active' => 1
+        ],
+        [
+            'plan_id' => 2,
+            'plan_code' => 'professional',
+            'plan_name' => 'Professional',
+            'monthly_price' => 399,
+            'plan_features' => ['Up to 3 Locations', 'Unlimited Technicians', 'Full Analytics Suite', 'SMS Notifications'],
+            'is_active' => 1
+        ],
+        [
+            'plan_id' => 3,
+            'plan_code' => 'enterprise',
+            'plan_name' => 'Enterprise',
+            'monthly_price' => 0,
+            'plan_features' => ['Unlimited Locations', 'Custom API Access', 'Dedicated Success Manager', '24/7 Priority Support'],
+            'is_active' => 1
+        ]
     ];
 }
 
@@ -155,17 +206,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['createTenantApplicati
         $formData['shopName'] = trim((string) ($_POST['shopName'] ?? ''));
         $formData['shopAddress'] = trim((string) ($_POST['shopAddress'] ?? ''));
         $formData['ownerName'] = trim((string) ($_POST['ownerName'] ?? ''));
+        $formData['countryCode'] = strtoupper(trim((string) ($_POST['countryCode'] ?? 'PH')));
         $formData['contactNumber'] = trim((string) ($_POST['contactNumber'] ?? ''));
         $formData['email'] = trim((string) ($_POST['email'] ?? ''));
         $formData['subscriptionPlan'] = strtolower(trim((string) ($_POST['subscriptionPlan'] ?? '')));
+        $formData['billingCycle'] = strtolower(trim((string) ($_POST['billingCycle'] ?? 'monthly')));
 
-        if ($formData['shopName'] === '' || $formData['shopAddress'] === '' || $formData['ownerName'] === '' || $formData['contactNumber'] === '' || $formData['email'] === '' || $formData['subscriptionPlan'] === '') {
+        if ($formData['shopName'] === '' || $formData['shopAddress'] === '' || $formData['ownerName'] === '' || $formData['countryCode'] === '' || $formData['contactNumber'] === '' || $formData['email'] === '' || $formData['subscriptionPlan'] === '' || $formData['billingCycle'] === '') {
             $errors[] = 'All fields are required.';
         }
 
-        $allowedPlans = array_keys($subscriptionPlans);
+        $allowedPlans = array_map(function($plan) {
+            return $plan['plan_code'];
+        }, $subscriptionPlans);
         if ($formData['subscriptionPlan'] !== '' && !in_array($formData['subscriptionPlan'], $allowedPlans, true)) {
             $errors[] = 'Please choose a valid plan.';
+        }
+
+        $validCountryCodes = array_map(function($country) {
+            return $country['code'];
+        }, getCountriesWithPhoneCodes());
+        if ($formData['countryCode'] !== '' && !in_array($formData['countryCode'], $validCountryCodes, true)) {
+            $errors[] = 'Please choose a valid country.';
+        }
+
+        if ($formData['contactNumber'] !== '' && !preg_match('/^[0-9\s\-\+\(\)]{7,20}$/', $formData['contactNumber'])) {
+            $errors[] = 'Please enter a valid phone number.';
         }
 
         if ($formData['email'] !== '' && !filter_var($formData['email'], FILTER_VALIDATE_EMAIL)) {
@@ -176,6 +242,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['createTenantApplicati
         $existingEmailResult = mysqli_query($conn, $existingEmailSql);
         if ($existingEmailResult && mysqli_num_rows($existingEmailResult) > 0) {
             $errors[] = 'This email is already registered.';
+        }
+
+        $allowedBillingCycles = ['monthly', 'quarterly', 'yearly'];
+        if ($formData['billingCycle'] !== '' && !in_array($formData['billingCycle'], $allowedBillingCycles, true)) {
+            $errors[] = 'Please choose a valid billing cycle.';
         }
 
         if (count($errors) === 0) {
@@ -215,6 +286,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['createTenantApplicati
                 $insertValues[] = "'" . mysqli_real_escape_string($conn, $formData['subscriptionPlan']) . "'";
             }
 
+            if (ownersColumnExists($conn, 'billing_cycle')) {
+                $insertColumns[] = 'billing_cycle';
+                $insertValues[] = "'" . mysqli_real_escape_string($conn, $formData['billingCycle']) . "'";
+            }
+
+            if (ownersColumnExists($conn, 'country_code')) {
+                $insertColumns[] = 'country_code';
+                $insertValues[] = "'" . mysqli_real_escape_string($conn, $formData['countryCode']) . "'";
+            }
+
             if (ownersColumnExists($conn, 'created_at')) {
                 $insertColumns[] = 'created_at';
                 $insertValues[] = 'NOW()';
@@ -224,15 +305,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['createTenantApplicati
             $insertResult = mysqli_query($conn, $insertSql);
 
             if ($insertResult) {
-                $successMessage = 'Application submitted successfully. It is now in Pending Applications for superadmin approval or rejection.';
-                $formData = [
-                    'shopName' => '',
-                    'shopAddress' => '',
-                    'ownerName' => '',
-                    'contactNumber' => '',
-                    'email' => '',
-                    'subscriptionPlan' => ''
-                ];
+                // Redirect to payment page with tenant ID and plan selected
+                header("Location: clientpayment.php?tenantID=" . urlencode($tenantID) . "&plan=" . urlencode($formData['subscriptionPlan']) . "&billingCycle=" . urlencode($formData['billingCycle']));
+                exit();
             } else {
                 $errors[] = 'Unable to submit your application right now. Please try again.';
             }
@@ -321,6 +396,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['createTenantApplicati
             },
         }
     </script>
+    <script>
+        function selectPlanAndScroll(planKey) {
+            // Set the subscription plan dropdown value
+            const planSelect = document.querySelector('select[name="subscriptionPlan"]');
+            if (planSelect) {
+                planSelect.value = planKey;
+            }
+
+            // Scroll to the application form with smooth behavior
+            const applicationSection = document.getElementById('application');
+            if (applicationSection) {
+                applicationSection.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                
+                // Add a subtle highlight animation to the form
+                const formCard = applicationSection.querySelector('.ring-4');
+                if (formCard) {
+                    formCard.style.transition = 'all 0.3s ease';
+                    formCard.style.boxShadow = '0 0 20px rgba(17, 82, 212, 0.3)';
+                    setTimeout(() => {
+                        formCard.style.boxShadow = '';
+                    }, 2000);
+                }
+            }
+        }
+    </script>
     <style>
         body {
             font-family: 'Inter', sans-serif;
@@ -380,8 +480,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['createTenantApplicati
                     <a href="../logout/logout.php?redirect=clientlanding.php"
                         class="px-4 py-2 rounded-lg text-sm font-bold tracking-tight border border-red-200 text-red-600 hover:bg-red-50 transition-all">Logout</a>
                 <?php else: ?>
-                    <a href="clientlogin.php"
-                        class="px-5 py-2 rounded-lg text-sm font-bold tracking-tight border border-primary text-primary hover:bg-primary/5 transition-all">Login</a>
+                    <a href="clientregister.php"
+                        class="px-5 py-2 rounded-lg text-sm font-bold tracking-tight border border-primary text-primary hover:bg-primary/5 transition-all">
+                        Register
+                    </a>
                 <?php endif; ?>
                 <a href="#application"
                     class="bg-primary text-on-primary px-5 py-2 rounded-lg text-sm font-bold tracking-tight hover:opacity-90 transition-all active:scale-95">Get
@@ -448,41 +550,58 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['createTenantApplicati
 
                     <?php if (!$isClientLoggedIn): ?>
                         <div class="mb-5 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-                            Please <a href="clientlogin.php" class="font-bold underline">log in</a> to use this application form.
+                            Please <a href="clientregister.php" class="font-bold underline">register</a> first then <a href="clientlogin.php" class="font-bold underline">login</a> to use this application
+                            form.
                         </div>
                     <?php endif; ?>
 
                     <form class="space-y-5" method="post" action="">
                         <input type="hidden" name="createTenantApplication" value="1" />
                         <fieldset <?php echo !$isClientLoggedIn ? 'disabled' : ''; ?>>
-                        <div class="grid grid-cols-1 gap-5">
-                            <div class="space-y-1.5">
-                                <label
-                                    class="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">Shop
-                                    Name</label>
-                                <input
-                                    class="w-full bg-surface-variant border-transparent rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent text-sm py-3 px-4"
-                                    placeholder="e.g. Precision Euro Works" type="text" name="shopName" required
-                                    value="<?php echo htmlspecialchars($formData['shopName'], ENT_QUOTES, 'UTF-8'); ?>" />
-                            </div>
-                            <div class="space-y-1.5">
-                                <label
-                                    class="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">Business
-                                    Address</label>
-                                <input
-                                    class="w-full bg-surface-variant border-transparent rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent text-sm py-3 px-4"
-                                    placeholder="Street, City, State, ZIP" type="text" name="shopAddress" required
-                                    value="<?php echo htmlspecialchars($formData['shopAddress'], ENT_QUOTES, 'UTF-8'); ?>" />
-                            </div>
-                            <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+                            <div class="grid grid-cols-1 gap-5">
                                 <div class="space-y-1.5">
                                     <label
-                                        class="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">Owner
+                                        class="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">Shop
                                         Name</label>
                                     <input
                                         class="w-full bg-surface-variant border-transparent rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent text-sm py-3 px-4"
-                                        placeholder="Full Name" type="text" name="ownerName" required
-                                        value="<?php echo htmlspecialchars($formData['ownerName'], ENT_QUOTES, 'UTF-8'); ?>" />
+                                        placeholder="e.g. Precision Euro Works" type="text" name="shopName" required
+                                        value="<?php echo htmlspecialchars($formData['shopName'], ENT_QUOTES, 'UTF-8'); ?>" />
+                                </div>
+                                <div class="space-y-1.5">
+                                    <label
+                                        class="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">Business
+                                        Address</label>
+                                    <input
+                                        class="w-full bg-surface-variant border-transparent rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent text-sm py-3 px-4"
+                                        placeholder="Street, City, State, ZIP" type="text" name="shopAddress" required
+                                        value="<?php echo htmlspecialchars($formData['shopAddress'], ENT_QUOTES, 'UTF-8'); ?>" />
+                                </div>
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+                                    <div class="space-y-1.5">
+                                        <label
+                                            class="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">Owner
+                                            Name</label>
+                                        <input
+                                            class="w-full bg-surface-variant border-transparent rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent text-sm py-3 px-4"
+                                            placeholder="Full Name" type="text" name="ownerName" required
+                                            value="<?php echo htmlspecialchars($formData['ownerName'], ENT_QUOTES, 'UTF-8'); ?>" />
+                                    </div>
+                                    <div class="space-y-1.5">
+                                        <label
+                                            class="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">Country</label>
+                                        <select
+                                            class="w-full bg-surface-variant border-transparent rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent text-sm py-3 px-4"
+                                            name="countryCode" required>
+                                            <?php foreach (getCountriesWithPhoneCodes() as $country): ?>
+                                                <option
+                                                    value="<?php echo htmlspecialchars($country['code'], ENT_QUOTES, 'UTF-8'); ?>"
+                                                    <?php echo $formData['countryCode'] === $country['code'] ? 'selected' : ''; ?>>
+                                                    <?php echo htmlspecialchars($country['name'], ENT_QUOTES, 'UTF-8'); ?> (<?php echo htmlspecialchars($country['phone'], ENT_QUOTES, 'UTF-8'); ?>)
+                                                </option>
+                                            <?php endforeach; ?>
+                                        </select>
+                                    </div>
                                 </div>
                                 <div class="space-y-1.5">
                                     <label
@@ -490,38 +609,53 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['createTenantApplicati
                                         Number</label>
                                     <input
                                         class="w-full bg-surface-variant border-transparent rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent text-sm py-3 px-4"
-                                        placeholder="+1 (555) 000-0000" type="tel" name="contactNumber" required
+                                        placeholder="10-digit phone number" type="tel" name="contactNumber" required
                                         value="<?php echo htmlspecialchars($formData['contactNumber'], ENT_QUOTES, 'UTF-8'); ?>" />
                                 </div>
+                                <div class="space-y-1.5">
+                                    <label
+                                        class="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">Email
+                                        Address</label>
+                                    <input
+                                        class="w-full bg-surface-variant border-transparent rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent text-sm py-3 px-4"
+                                        placeholder="admin@shop.com" type="email" name="email" required
+                                        value="<?php echo htmlspecialchars($formData['email'], ENT_QUOTES, 'UTF-8'); ?>" />
+                                </div>
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+                                    <div class="space-y-1.5">
+                                        <label
+                                            class="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">Choose
+                                            Plan</label>
+                                        <select
+                                            class="w-full bg-surface-variant border-transparent rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent text-sm py-3 px-4"
+                                            name="subscriptionPlan" required>
+                                            <option value="" <?php echo $formData['subscriptionPlan'] === '' ? 'selected' : ''; ?>>Select a plan</option>
+                                            <?php foreach ($subscriptionPlans as $planOption): ?>
+                                                <option
+                                                    value="<?php echo htmlspecialchars($planOption['plan_code'], ENT_QUOTES, 'UTF-8'); ?>"
+                                                    <?php echo $formData['subscriptionPlan'] === $planOption['plan_code'] ? 'selected' : ''; ?>>
+                                                    <?php echo htmlspecialchars($planOption['plan_name'], ENT_QUOTES, 'UTF-8'); ?>
+                                                </option>
+                                            <?php endforeach; ?>
+                                        </select>
+                                    </div>
+                                    <div class="space-y-1.5">
+                                        <label
+                                            class="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">Billing
+                                            Cycle</label>
+                                        <select
+                                            class="w-full bg-surface-variant border-transparent rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent text-sm py-3 px-4"
+                                            name="billingCycle" required>
+                                            <option value="monthly" <?php echo $formData['billingCycle'] === 'monthly' ? 'selected' : ''; ?>>Monthly</option>
+                                            <option value="quarterly" <?php echo $formData['billingCycle'] === 'quarterly' ? 'selected' : ''; ?>>Quarterly</option>
+                                            <option value="yearly" <?php echo $formData['billingCycle'] === 'yearly' ? 'selected' : ''; ?>>Yearly</option>
+                                        </select>
+                                    </div>
+                                </div>
                             </div>
-                            <div class="space-y-1.5">
-                                <label
-                                    class="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">Email
-                                    Address</label>
-                                <input
-                                    class="w-full bg-surface-variant border-transparent rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent text-sm py-3 px-4"
-                                    placeholder="admin@shop.com" type="email" name="email" required
-                                    value="<?php echo htmlspecialchars($formData['email'], ENT_QUOTES, 'UTF-8'); ?>" />
-                            </div>
-                            <div class="space-y-1.5">
-                                <label
-                                    class="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">Choose
-                                    Plan</label>
-                                <select
-                                    class="w-full bg-surface-variant border-transparent rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent text-sm py-3 px-4"
-                                    name="subscriptionPlan" required>
-                                    <option value="" <?php echo $formData['subscriptionPlan'] === '' ? 'selected' : ''; ?>>Select a plan</option>
-                                    <?php foreach ($subscriptionPlans as $planOption): ?>
-                                        <option value="<?php echo htmlspecialchars($planOption['key'], ENT_QUOTES, 'UTF-8'); ?>" <?php echo $formData['subscriptionPlan'] === $planOption['key'] ? 'selected' : ''; ?>>
-                                            <?php echo htmlspecialchars($planOption['name'], ENT_QUOTES, 'UTF-8'); ?>
-                                        </option>
-                                    <?php endforeach; ?>
-                                </select>
-                            </div>
-                        </div>
-                        <button
-                            class="w-full bg-primary text-white font-bold py-4 rounded-lg tracking-tight hover:bg-primary/90 transition-all mt-4"
-                            type="submit">Complete Registration</button>
+                            <button
+                                class="w-full bg-primary text-white font-bold py-4 rounded-lg tracking-tight hover:bg-primary/90 transition-all mt-4"
+                                type="submit">Complete Registration</button>
                         </fieldset>
                     </form>
                 </div>
@@ -575,104 +709,46 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['createTenantApplicati
                     <p class="text-on-surface-variant">Pricing tiers designed to grow with your operation.</p>
                 </div>
                 <div
-                    class="grid grid-cols-1 md:grid-cols-3 gap-0 border border-outline rounded-xl overflow-hidden shadow-sm">
-                    <!-- Starter -->
-                    <div class="bg-white p-10 border-r border-outline flex flex-col">
-                        <div class="mb-8">
-                            <span
-                                class="text-[10px] font-bold text-on-surface-variant tracking-widest uppercase">Starter</span>
-                            <div class="mt-4 flex items-baseline gap-1">
-                                <span class="text-4xl font-black tracking-tighter">$149</span>
-                                <span class="text-on-surface-variant text-sm">/mo</span>
-                            </div>
-                        </div>
-                        <ul class="space-y-4 mb-10 flex-grow">
-                            <li class="flex items-center gap-3 text-sm"><span
-                                    class="material-symbols-outlined text-primary text-lg" data-icon="check_circle"
-                                    data-weight="fill" style="font-variation-settings: 'FILL' 1;">check_circle</span> 1
-                                Location</li>
-                            <li class="flex items-center gap-3 text-sm"><span
-                                    class="material-symbols-outlined text-primary text-lg" data-icon="check_circle"
-                                    data-weight="fill" style="font-variation-settings: 'FILL' 1;">check_circle</span> Up
-                                to 5 Technicians</li>
-                            <li class="flex items-center gap-3 text-sm"><span
-                                    class="material-symbols-outlined text-primary text-lg" data-icon="check_circle"
-                                    data-weight="fill" style="font-variation-settings: 'FILL' 1;">check_circle</span>
-                                Basic Analytics</li>
-                            <li class="flex items-center gap-3 text-sm text-on-surface-variant/50"><span
-                                    class="material-symbols-outlined text-slate-300 text-lg"
-                                    data-icon="cancel">cancel</span> Custom API</li>
-                        </ul>
-                        <a href="#application"
-                            class="w-full py-3 border-2 border-primary text-primary font-bold rounded-lg hover:bg-primary/5 transition-colors text-center block">Start
-                            Trial</a>
-                    </div>
-                    <!-- Professional -->
-                    <div class="bg-primary-container p-10 border-r border-outline flex flex-col relative">
-                        <div
-                            class="absolute top-4 right-4 bg-primary text-white text-[8px] font-black uppercase px-2 py-1 rounded">
+                    class="grid grid-cols-1 md:grid-cols-<?php echo count($subscriptionPlans); ?> gap-0 border border-outline rounded-xl overflow-hidden shadow-sm">
+                    <?php foreach ($subscriptionPlans as $index => $plan): 
+                        $isLast = $index === count($subscriptionPlans) - 1;
+                        $isRecommended = count($subscriptionPlans) > 1 && $index === 1;
+                    ?>
+                    <div class="bg-white <?php echo !$isLast ? 'border-r border-outline' : ''; ?> p-10 flex flex-col cursor-pointer hover:shadow-md transition-shadow group hover:border-primary/30 <?php echo $isRecommended ? 'bg-primary-container' : ''; ?>"
+                        onclick="selectPlanAndScroll('<?php echo htmlspecialchars($plan['plan_code'], ENT_QUOTES, 'UTF-8'); ?>')">
+                        <?php if ($isRecommended): ?>
+                        <div class="absolute top-4 right-4 bg-primary text-white text-[8px] font-black uppercase px-2 py-1 rounded">
                             Recommended</div>
+                        <?php endif; ?>
                         <div class="mb-8">
                             <span
-                                class="text-[10px] font-bold text-primary tracking-widest uppercase">Professional</span>
+                                class="text-[10px] font-bold <?php echo $isRecommended ? 'text-primary' : 'text-on-surface-variant'; ?> tracking-widest uppercase"><?php echo htmlspecialchars($plan['plan_name'], ENT_QUOTES, 'UTF-8'); ?></span>
                             <div class="mt-4 flex items-baseline gap-1">
-                                <span class="text-4xl font-black tracking-tighter">$399</span>
-                                <span class="text-on-surface-variant text-sm">/mo</span>
+                                <?php if ($plan['monthly_price'] > 0): ?>
+                                    <span class="text-4xl font-black tracking-tighter">₱<?php echo number_format($plan['monthly_price'], 0); ?></span>
+                                    <span class="text-on-surface-variant text-sm">/mo</span>
+                                <?php else: ?>
+                                    <span class="text-4xl font-black tracking-tighter">Custom</span>
+                                <?php endif; ?>
                             </div>
                         </div>
                         <ul class="space-y-4 mb-10 flex-grow">
+                            <?php foreach ($plan['plan_features'] as $feature): ?>
                             <li class="flex items-center gap-3 text-sm"><span
                                     class="material-symbols-outlined text-primary text-lg" data-icon="check_circle"
-                                    data-weight="fill" style="font-variation-settings: 'FILL' 1;">check_circle</span> Up
-                                to 3 Locations</li>
-                            <li class="flex items-center gap-3 text-sm"><span
-                                    class="material-symbols-outlined text-primary text-lg" data-icon="check_circle"
-                                    data-weight="fill" style="font-variation-settings: 'FILL' 1;">check_circle</span>
-                                Unlimited Technicians</li>
-                            <li class="flex items-center gap-3 text-sm"><span
-                                    class="material-symbols-outlined text-primary text-lg" data-icon="check_circle"
-                                    data-weight="fill" style="font-variation-settings: 'FILL' 1;">check_circle</span>
-                                Full Analytics Suite</li>
-                            <li class="flex items-center gap-3 text-sm"><span
-                                    class="material-symbols-outlined text-primary text-lg" data-icon="check_circle"
-                                    data-weight="fill" style="font-variation-settings: 'FILL' 1;">check_circle</span>
-                                SMS Notifications</li>
+                                    data-weight="fill" style="font-variation-settings: 'FILL' 1;">check_circle</span> <?php echo htmlspecialchars(trim((string) $feature), ENT_QUOTES, 'UTF-8'); ?></li>
+                            <?php endforeach; ?>
                         </ul>
-                        <a href="#application"
-                            class="w-full py-3 bg-primary text-white font-bold rounded-lg shadow-md hover:opacity-90 transition-all text-center block">Go
-                            Professional</a>
+                        <button type="button" onclick="event.stopPropagation(); selectPlanAndScroll('<?php echo htmlspecialchars($plan['plan_code'], ENT_QUOTES, 'UTF-8'); ?>')"
+                            class="w-full py-3 <?php echo $isRecommended ? 'bg-primary text-white shadow-md hover:opacity-90' : 'border-2 border-primary text-primary hover:bg-primary/5'; ?> font-bold rounded-lg transition-all text-center block">
+                            <?php if ($plan['monthly_price'] > 0): ?>
+                                <?php echo $isRecommended ? 'Go ' . htmlspecialchars($plan['plan_name'], ENT_QUOTES, 'UTF-8') : 'Start ' . htmlspecialchars($plan['plan_name'], ENT_QUOTES, 'UTF-8'); ?>
+                            <?php else: ?>
+                                Contact Sales
+                            <?php endif; ?>
+                        </button>
                     </div>
-                    <!-- Enterprise -->
-                    <div class="bg-white p-10 flex flex-col">
-                        <div class="mb-8">
-                            <span
-                                class="text-[10px] font-bold text-on-surface-variant tracking-widest uppercase">Enterprise</span>
-                            <div class="mt-4 flex items-baseline gap-1">
-                                <span class="text-4xl font-black tracking-tighter">Custom</span>
-                            </div>
-                        </div>
-                        <ul class="space-y-4 mb-10 flex-grow">
-                            <li class="flex items-center gap-3 text-sm"><span
-                                    class="material-symbols-outlined text-primary text-lg" data-icon="check_circle"
-                                    data-weight="fill" style="font-variation-settings: 'FILL' 1;">check_circle</span>
-                                Unlimited Locations</li>
-                            <li class="flex items-center gap-3 text-sm"><span
-                                    class="material-symbols-outlined text-primary text-lg" data-icon="check_circle"
-                                    data-weight="fill" style="font-variation-settings: 'FILL' 1;">check_circle</span>
-                                Custom API Access</li>
-                            <li class="flex items-center gap-3 text-sm"><span
-                                    class="material-symbols-outlined text-primary text-lg" data-icon="check_circle"
-                                    data-weight="fill" style="font-variation-settings: 'FILL' 1;">check_circle</span>
-                                Dedicated Success Manager</li>
-                            <li class="flex items-center gap-3 text-sm"><span
-                                    class="material-symbols-outlined text-primary text-lg" data-icon="check_circle"
-                                    data-weight="fill" style="font-variation-settings: 'FILL' 1;">check_circle</span>
-                                24/7 Priority Support</li>
-                        </ul>
-                        <a href="#support"
-                            class="w-full py-3 border-2 border-slate-900 text-slate-900 font-bold rounded-lg hover:bg-slate-50 transition-colors text-center block">Contact
-                            Sales</a>
-                    </div>
+                    <?php endforeach; ?>
                 </div>
             </div>
         </section>

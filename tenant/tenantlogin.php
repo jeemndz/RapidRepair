@@ -74,9 +74,13 @@ if (isset($_POST['login'])) {
             mysqli_stmt_close($ownerStmt);
 
             if ($ownerUser) {
-                // Owner login
-                // Check if this is the first login
-                if (isset($ownerUser['first_login']) && $ownerUser['first_login'] == 1) {
+                // Check account status - prevent login if Suspended or Inactive
+                $ownerStatus = isset($ownerUser['status']) ? trim((string)$ownerUser['status']) : '';
+                if ($ownerStatus === 'Suspended') {
+                    $error = "⚠️ Your account has been suspended due to non-payment. Please contact support to restore your account.";
+                } elseif ($ownerStatus === 'Inactive') {
+                    $error = "Your account is currently inactive. Please contact support for assistance.";
+                } elseif (isset($ownerUser['first_login']) && $ownerUser['first_login'] == 1) {
                     // First login: compare plain text password
                     if ($password === $ownerUser['password']) {
                         $_SESSION['tenantID'] = $ownerUser['tenantID'];
@@ -162,8 +166,13 @@ if (isset($_POST['login'])) {
                 mysqli_stmt_close($roleStmt);
 
                 if ($roleUser) {
-                    // Staff role login
-                    if (password_verify($password, $roleUser['password'])) {
+                    // Check account status - prevent login if Suspended or Inactive
+                    $roleStatus = isset($roleUser['status']) ? trim((string)$roleUser['status']) : '';
+                    if ($roleStatus === 'Suspended') {
+                        $error = "⚠️ Your account has been suspended. Please contact your shop administrator for assistance.";
+                    } elseif ($roleStatus !== 'Active') {
+                        $error = "Your account is not active. Please contact your shop administrator.";
+                    } elseif (password_verify($password, $roleUser['password'])) {
                         $_SESSION['tenantID'] = $tenantID;
                         $_SESSION['login_slug'] = $requestedShop;
                         $_SESSION['userType'] = 'staff';

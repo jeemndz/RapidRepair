@@ -3,30 +3,9 @@
 session_start();
 require_once __DIR__ . "/../db.php";
 
-if (isset($_POST['logout_superadmin'])) {
-    $_SESSION = [];
-
-    if (ini_get('session.use_cookies')) {
-        $params = session_get_cookie_params();
-        setcookie(
-            session_name(),
-            '',
-            time() - 42000,
-            $params['path'],
-            $params['domain'],
-            $params['secure'],
-            $params['httponly']
-        );
-    }
-
-    session_destroy();
-    header("Location: /superadmin/superaddlogin.php");
-    exit();
-}
-
 // Redirect if not logged in
 if (!isset($_SESSION['superadmin_id'])) {
-    header("Location: /superadmin/superaddlogin.php");
+    header("Location: superaddlogin.php");
     exit();
 }
 
@@ -389,12 +368,16 @@ function initials($name)
                 </div>
 
                 <!-- Logout -->
-                <form method="POST" class="w-full">
-                    <button type="submit" name="logout_superadmin"
-                        class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-red-500 hover:bg-red-50 dark:hover:bg-red-900/10 transition-colors cursor-pointer text-left">
-                        <span class="material-symbols-outlined">logout</span>
-                        <p class="text-sm font-medium">Logout</p>
-                    </button>
+                <button id="logoutBtn" type="button"
+                    class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-red-500 hover:bg-red-50 dark:hover:bg-red-900/10 transition-colors cursor-pointer text-left">
+                    <span class="material-symbols-outlined">logout</span>
+                    <p class="text-sm font-medium">Logout</p>
+                </button>
+                
+                <!-- Logout Form (Hidden) -->
+                <form id="logoutForm" method="POST" action="../logout/logout.php" class="hidden">
+                    <input type="hidden" name="action" value="confirm">
+                    <input type="hidden" name="redirect" value="superaddlogin.php">
                 </form>
             </div>
         </aside>
@@ -822,6 +805,14 @@ function initials($name)
 
     <script>
         document.addEventListener('DOMContentLoaded', function () {
+            // Prevent back button access - push a state onto history
+            history.pushState(null, null, window.location.href);
+            
+            window.addEventListener('popstate', function(event) {
+                // User clicked back button - redirect to logout
+                window.location.href = '../logout/logout.php?action=do_logout&redirect=superaddlogin.php';
+            });
+
             // Growth Table Pagination
             const growthTable = document.querySelector('.growth-table');
             if (growthTable) {
@@ -929,6 +920,16 @@ function initials($name)
                 const inactiveTenantsList = inactiveSearchInput.closest('.rounded-xl').querySelector('.inactive-tenants-list');
                 const inactiveCount = inactiveSearchInput.closest('.rounded-xl').querySelector('.inactive-count');
                 inactiveSearchInput.addEventListener('input', () => filterTenants(inactiveSearchInput, inactiveTenantsList, inactiveCount));
+            }
+
+            // Logout handler - submit to logout.php
+            const logoutBtn = document.getElementById('logoutBtn');
+            const logoutForm = document.getElementById('logoutForm');
+
+            if (logoutBtn && logoutForm) {
+                logoutBtn.addEventListener('click', () => {
+                    logoutForm.submit();
+                });
             }
         });
     </script>

@@ -2,6 +2,7 @@
 // superaddlogin.php
 session_start();
 require_once __DIR__ . "/../db.php"; // your database connection file
+require_once __DIR__ . "/../log_helper.php"; // audit logging
 include __DIR__ . "/../session_security.php";
 
 $message = "";
@@ -19,20 +20,32 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
     if ($result->num_rows === 1) {
         $row = $result->fetch_assoc();
 
-        // Plain text password check
-        if ($password === $row['password']) {
+        // Verify password using password_verify for bcrypt hashing
+        if (password_verify($password, $row['password'])) {
             // Successful login
             $_SESSION['superadmin_id'] = $row['superadmin_id'];
             $_SESSION['email'] = $row['email'];
             $_SESSION['username'] = $row['username'];
 
+            // Log successful login - create temporary session for logging
+            $tempName = $row['username'];
+            $_SESSION['_temp_admin_name'] = $tempName;
+            log_event($conn, "Superadmin Login", "Superadmin", (int)$row['superadmin_id'], "Successful login via username/email: " . htmlspecialchars($loginInput));
+            unset($_SESSION['_temp_admin_name']);
+
             // Redirect to superadd.php
             header("Location: superadd.php");
             exit();
         } else {
+            // Log failed password attempt
+            $logDetails = "Failed login attempt with username/email: " . htmlspecialchars($loginInput) . " (incorrect password)";
+            log_event($conn, "Superadmin Login Failed", "Superadmin", null, $logDetails);
             $message = "Incorrect password.";
         }
     } else {
+        // Log failed login - no account found
+        $logDetails = "Failed login attempt - account not found for: " . htmlspecialchars($loginInput);
+        log_event($conn, "Superadmin Login Failed", "Superadmin", null, $logDetails);
         $message = "No account found with that username or email.";
     }
 }
@@ -127,7 +140,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                             <input type="checkbox" class="rounded border-slate-300 text-red-600 focus:ring-red-600 bg-transparent">
                             <span class="text-sm text-slate-600 group-hover:text-slate-900 transition-colors">Remember this session</span>
                         </label>
-                        <a class="text-sm font-medium text-red-600 hover:underline" href="#">Forgot Password?</a>
+                        <a class="text-sm font-medium text-red-600 hover:underline" href="superadmin_forgot_password.php">Forgot Password?</a>
                     </div>
 
                     <button

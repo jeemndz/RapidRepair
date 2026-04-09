@@ -1,6 +1,7 @@
 <?php
 session_start();
 require_once __DIR__ . "/../db.php";
+require_once __DIR__ . "/../log_helper.php";
 
 if (isset($_POST['logout_superadmin'])) {
     $_SESSION = [];
@@ -83,6 +84,205 @@ function initials($name)
     $first = strtoupper(substr($parts[0], 0, 1));
     $second = count($parts) > 1 ? strtoupper(substr($parts[count($parts) - 1], 0, 1)) : '';
     return $first . ($second ?: '');
+}
+
+// Handle Create Superadmin
+if (isset($_POST['createSuperadmin'])) {
+    $fullName = trim($_POST['fullName'] ?? '');
+    $email = trim($_POST['email'] ?? '');
+    $username = trim($_POST['username'] ?? '');
+    $password = trim($_POST['password'] ?? '');
+    $accessScope = trim($_POST['accessScope'] ?? 'Global Root');
+    
+    $errors = [];
+    
+    if ($fullName === '') {
+        $errors[] = 'Full Name is required';
+    }
+    if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        $errors[] = 'Valid email is required';
+    }
+    if ($username === '' || strlen($username) < 4) {
+        $errors[] = 'Username must be at least 4 characters';
+    }
+    if ($password === '' || strlen($password) < 6) {
+        $errors[] = 'Password must be at least 6 characters';
+    }
+    
+    // Check if username already exists
+    if (empty($errors)) {
+        $checkStmt = $conn->prepare("SELECT superadmin_id FROM superadmin WHERE username = ? LIMIT 1");
+        if ($checkStmt) {
+            $checkStmt->bind_param("s", $username);
+            $checkStmt->execute();
+            if ($checkStmt->get_result()->num_rows > 0) {
+                $errors[] = 'Username already exists';
+            }
+            $checkStmt->close();
+        }
+    }
+    
+    // Check if email already exists
+    if (empty($errors)) {
+        $checkStmt = $conn->prepare("SELECT superadmin_id FROM superadmin WHERE email = ? LIMIT 1");
+        if ($checkStmt) {
+            $checkStmt->bind_param("s", $email);
+            $checkStmt->execute();
+            if ($checkStmt->get_result()->num_rows > 0) {
+                $errors[] = 'Email already exists';
+            }
+            $checkStmt->close();
+        }
+    }
+    
+    if (empty($errors)) {
+        $hashedPassword = password_hash($password, PASSWORD_BCRYPT);
+        $role = 'Superadmin';
+        $status = 'Active';
+        
+        $insertStmt = $conn->prepare("
+            INSERT INTO superadmin (fullName, email, username, password, role, access_scope, status)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        ");
+        
+        if ($insertStmt) {
+            $insertStmt->bind_param("sssssss", $fullName, $email, $username, $hashedPassword, $role, $accessScope, $status);
+            if ($insertStmt->execute()) {
+                $newAdminId = $insertStmt->insert_id;
+                $logDetails = "Created new Superadmin: $fullName ($username), Access Scope: $accessScope";
+                log_event($conn, "Create Superadmin Account", "Superadmin", (int)$newAdminId, $logDetails);
+                
+                $_SESSION['admin_notice'] = 'Superadmin account created successfully';
+                header("Location: supersettings.php");
+                exit();
+            }
+            $insertStmt->close();
+        }
+        if (empty($_SESSION['admin_notice'])) {
+            $_SESSION['admin_notice'] = 'Error: Failed to create superadmin account';
+        }
+    } else {
+        $_SESSION['admin_error'] = implode(', ', $errors);
+    }
+}
+
+// Handle Update Superadmin
+if (isset($_POST['updateSuperadmin'])) {
+    $superadminId = (int)($_POST['superadmin_id'] ?? 0);
+    $fullName = trim($_POST['fullName'] ?? '');
+    $email = trim($_POST['email'] ?? '');
+    $accessScope = trim($_POST['accessScope'] ?? 'Global Root');
+    $status = trim($_POST['status'] ?? 'Active');
+    
+    $errors = [];
+    
+    if ($superadminId <= 0) {
+        $errors[] = 'Invalid superadmin ID';
+    }
+    if ($fullName === '') {
+        $errors[] = 'Full Name is required';
+    }
+    if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        $errors[] = 'Valid email is required';
+    }
+    
+    if (empty($errors)) {
+        $updateStmt = $conn->prepare("
+            UPDATE superadmin 
+            SET fullName = ?, email = ?, access_scope = ?, status = ?
+            WHERE superadmin_id = ?
+        ");
+        
+        if ($updateStmt) {
+            $updateStmt->bind_param("ssssi", $fullName, $email, $accessScope, $status, $superadminId);
+            if ($updateStmt->execute()) {
+                $logDetails = "Updated Superadmin: $fullName, Access Scope: $accessScope, Status: $status";
+                log_event($conn, "Update Superadmin Account", "Superadmin", $superadminId, $logDetails);
+                
+                $_SESSION['admin_notice'] = 'Superadmin account updated successfully';
+                header("Location: supersettings.php");
+                exit();
+            }
+            $updateStmt->close();
+        }
+        if (empty($_SESSION['admin_notice'])) {
+            $_SESSION['admin_notice'] = 'Error: Failed to update superadmin account';
+        }
+    } else {
+        $_SESSION['admin_error'] = implode(', ', $errors);
+    }
+}
+
+// Handle Delete Superadmin
+if (isset($_POST['deleteSuperadmin'])) {
+    $superadminId = (int)($_POST['superadmin_id'] ?? 0);
+    $currentAdminId = (int)$_SESSION['superadmin_id'];
+    
+    if ($superadminId > 0 && $superadminId !== $currentAdminId) {
+        // Get admin details before deletion
+        $getStmt = $conn->prepare("SELECT fullName, username FROM superadmin WHERE superadmin_id = ? LIMIT 1");
+        $adminName = 'Unknown';
+        if ($getStmt) {
+            $getStmt->bind_param("i", $superadminId);
+            $getStmt->execute();
+            $res = $getStmt->get_result();
+            if ($res && $res->num_rows > 0) {
+                $row = $res->fetch_assoc();
+                $adminName = $row['fullName'];
+            }
+            $getStmt->close();
+        }
+        
+        $deleteStmt = $conn->prepare("DELETE FROM superadmin WHERE superadmin_id = ? LIMIT 1");
+        if ($deleteStmt) {
+            $deleteStmt->bind_param("i", $superadminId);
+            if ($deleteStmt->execute()) {
+                $logDetails = "Deleted Superadmin account: $adminName";
+                log_event($conn, "Delete Superadmin Account", "Superadmin", $superadminId, $logDetails);
+                
+                $_SESSION['admin_notice'] = 'Superadmin account deleted successfully';
+            } else {
+                $_SESSION['admin_notice'] = 'Error: Failed to delete superadmin account';
+            }
+            $deleteStmt->close();
+        }
+    } else if ($superadminId === $currentAdminId) {
+        $_SESSION['admin_notice'] = 'Error: Cannot delete your own account';
+    } else {
+        $_SESSION['admin_notice'] = 'Error: Invalid superadmin ID';
+    }
+    header("Location: supersettings.php");
+    exit();
+}
+
+// Fetch all superadmin accounts
+$allAdmins = [];
+$adminsStmt = $conn->prepare("
+    SELECT superadmin_id, fullName, email, username, access_scope, status, last_modified
+    FROM superadmin
+    ORDER BY created_at DESC
+");
+if ($adminsStmt) {
+    $adminsStmt->execute();
+    $allAdmins = $adminsStmt->get_result()->fetch_all(MYSQLI_ASSOC);
+    $adminsStmt->close();
+}
+
+// Get notices from session
+$adminNotice = $_SESSION['admin_notice'] ?? '';
+$adminError = $_SESSION['admin_error'] ?? '';
+unset($_SESSION['admin_notice'], $_SESSION['admin_error']);
+$showCreateModal = isset($_GET['showCreateModal']) ? true : false;
+$editingAdminId = isset($_GET['editAdminId']) ? (int)$_GET['editAdminId'] : null;
+$editingAdmin = null;
+
+if ($editingAdminId) {
+    foreach ($allAdmins as $admin) {
+        if ($admin['superadmin_id'] === $editingAdminId) {
+            $editingAdmin = $admin;
+            break;
+        }
+    }
 }
 ?>
 
@@ -284,6 +484,21 @@ function initials($name)
                     permissions.</p>
             </div>
             <div class="grid grid-cols-12 gap-6">
+                <!-- Notice Messages -->
+                <?php if ($adminNotice !== ''): ?>
+                    <div class="col-span-12 p-4 bg-green-50 border border-green-200 rounded-lg flex items-center gap-3">
+                        <span class="material-symbols-outlined text-green-700">check_circle</span>
+                        <p class="text-sm font-medium text-green-700"><?= htmlspecialchars($adminNotice) ?></p>
+                    </div>
+                <?php endif; ?>
+                
+                <?php if ($adminError !== ''): ?>
+                    <div class="col-span-12 p-4 bg-red-50 border border-red-200 rounded-lg flex items-center gap-3">
+                        <span class="material-symbols-outlined text-red-700">error</span>
+                        <p class="text-sm font-medium text-red-700"><?= htmlspecialchars($adminError) ?></p>
+                    </div>
+                <?php endif; ?>
+                
                 <!-- Section 1: System Branding (Bento Style) -->
                 <section class="col-span-12 lg:col-span-8 bg-white border border-slate-200 rounded-lg shadow-sm p-6">
                     <div class="flex items-center gap-3 mb-6">
@@ -383,9 +598,10 @@ function initials($name)
                             <h3 class="text-xl font-bold text-slate-900">User Roles &amp; Permissions</h3>
                         </div>
                         <button
+                            onclick="openCreateModal()"
                             class="px-4 py-2 bg-primary text-white text-xs font-bold rounded-lg hover:bg-opacity-90 active:scale-95 transition-all shadow-md flex items-center gap-2">
                             <span class="material-symbols-outlined text-sm">add</span>
-                            Create New Role
+                            Create New Superadmin
                         </button>
                     </div>
                     <div class="overflow-x-auto">
@@ -406,91 +622,52 @@ function initials($name)
                                 </tr>
                             </thead>
                             <tbody class="divide-y divide-slate-100">
-                                <tr class="hover:bg-slate-50 transition-colors">
-                                    <td class="px-6 py-4">
-                                        <div class="flex flex-col">
-                                            <span class="text-sm font-bold text-slate-900">Superadmin</span>
-                                            <span class="text-xs text-slate-500">Total architectural control</span>
-                                        </div>
-                                    </td>
-                                    <td class="px-6 py-4">
-                                        <div class="flex flex-wrap gap-1.5">
-                                            <span
-                                                class="px-2 py-0.5 bg-primary-container text-primary text-[10px] font-bold rounded-full">Global
-                                                Root</span>
-                                            <span
-                                                class="px-2 py-0.5 bg-primary-container text-primary text-[10px] font-bold rounded-full">Financials</span>
-                                        </div>
-                                    </td>
-                                    <td class="px-6 py-4">
-                                        <span
-                                            class="px-2.5 py-1 bg-green-100 text-green-700 text-xs font-bold rounded-full">System
-                                            Active</span>
-                                    </td>
-                                    <td class="px-6 py-4 text-sm text-slate-500">Oct 12, 2023</td>
-                                    <td class="px-6 py-4 text-right">
-                                        <button class="text-slate-400 hover:text-primary transition-colors">
-                                            <span class="material-symbols-outlined">edit</span>
-                                        </button>
-                                    </td>
-                                </tr>
-                                <tr class="hover:bg-slate-50 transition-colors">
-                                    <td class="px-6 py-4">
-                                        <div class="flex flex-col">
-                                            <span class="text-sm font-bold text-slate-900">Support</span>
-                                            <span class="text-xs text-slate-500">Tenant assistance &amp;
-                                                ticketing</span>
-                                        </div>
-                                    </td>
-                                    <td class="px-6 py-4">
-                                        <div class="flex flex-wrap gap-1.5">
-                                            <span
-                                                class="px-2 py-0.5 bg-secondary-container text-secondary text-[10px] font-bold rounded-full">Ticket
-                                                Read/Write</span>
-                                            <span
-                                                class="px-2 py-0.5 bg-secondary-container text-secondary text-[10px] font-bold rounded-full">User
-                                                Reset</span>
-                                        </div>
-                                    </td>
-                                    <td class="px-6 py-4">
-                                        <span
-                                            class="px-2.5 py-1 bg-green-100 text-green-700 text-xs font-bold rounded-full">Active</span>
-                                    </td>
-                                    <td class="px-6 py-4 text-sm text-slate-500">Jan 05, 2024</td>
-                                    <td class="px-6 py-4 text-right">
-                                        <button class="text-slate-400 hover:text-primary transition-colors">
-                                            <span class="material-symbols-outlined">edit</span>
-                                        </button>
-                                    </td>
-                                </tr>
-                                <tr class="hover:bg-slate-50 transition-colors">
-                                    <td class="px-6 py-4">
-                                        <div class="flex flex-col">
-                                            <span class="text-sm font-bold text-slate-900">Auditor</span>
-                                            <span class="text-xs text-slate-500">Compliance &amp; log monitoring</span>
-                                        </div>
-                                    </td>
-                                    <td class="px-6 py-4">
-                                        <div class="flex flex-wrap gap-1.5">
-                                            <span
-                                                class="px-2 py-0.5 bg-slate-100 text-slate-500 text-[10px] font-bold rounded-full">Read
-                                                Only</span>
-                                            <span
-                                                class="px-2 py-0.5 bg-slate-100 text-slate-500 text-[10px] font-bold rounded-full">Log
-                                                Export</span>
-                                        </div>
-                                    </td>
-                                    <td class="px-6 py-4">
-                                        <span
-                                            class="px-2.5 py-1 bg-green-100 text-green-700 text-xs font-bold rounded-full">Active</span>
-                                    </td>
-                                    <td class="px-6 py-4 text-sm text-slate-500">Mar 22, 2024</td>
-                                    <td class="px-6 py-4 text-right">
-                                        <button class="text-slate-400 hover:text-primary transition-colors">
-                                            <span class="material-symbols-outlined">edit</span>
-                                        </button>
-                                    </td>
-                                </tr>
+                                <?php if (empty($allAdmins)): ?>
+                                    <tr>
+                                        <td colspan="5" class="px-6 py-8 text-center text-sm text-slate-500">No superadmin accounts found.</td>
+                                    </tr>
+                                <?php else: ?>
+                                    <?php foreach ($allAdmins as $admin): ?>
+                                        <tr class="hover:bg-slate-50 transition-colors">
+                                            <td class="px-6 py-4">
+                                                <div class="flex flex-col">
+                                                    <span class="text-sm font-bold text-slate-900"><?= htmlspecialchars($admin['fullName']) ?></span>
+                                                    <span class="text-xs text-slate-500"><?= htmlspecialchars($admin['username']) ?> (<?= htmlspecialchars($admin['email']) ?>)</span>
+                                                </div>
+                                            </td>
+                                            <td class="px-6 py-4">
+                                                <span class="px-2 py-0.5 bg-primary-container text-primary text-[10px] font-bold rounded-full">
+                                                    <?= htmlspecialchars($admin['access_scope']) ?>
+                                                </span>
+                                            </td>
+                                            <td class="px-6 py-4">
+                                                <span class="px-2.5 py-1 <?= strtolower($admin['status']) === 'active' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700' ?> text-xs font-bold rounded-full">
+                                                    <?= htmlspecialchars($admin['status']) ?>
+                                                </span>
+                                            </td>
+                                            <td class="px-6 py-4 text-sm text-slate-500">
+                                                <?= $admin['last_modified'] ? date('M d, Y', strtotime($admin['last_modified'])) : 'N/A' ?>
+                                            </td>
+                                            <td class="px-6 py-4 text-right flex gap-2 justify-end">
+                                                <?php if ((int)$admin['superadmin_id'] !== (int)$_SESSION['superadmin_id']): ?>
+                                                    <button 
+                                                        onclick="openEditModal(<?= (int)$admin['superadmin_id'] ?>)"
+                                                        class="text-slate-400 hover:text-primary transition-colors p-1">
+                                                        <span class="material-symbols-outlined text-lg">edit</span>
+                                                    </button>
+                                                    <form method="POST" style="display:inline;" onsubmit="return confirm('Are you sure you want to delete this superadmin account?');">
+                                                        <input type="hidden" name="superadmin_id" value="<?= (int)$admin['superadmin_id'] ?>">
+                                                        <button type="submit" name="deleteSuperadmin" class="text-slate-400 hover:text-red-500 transition-colors p-1">
+                                                            <span class="material-symbols-outlined text-lg">delete</span>
+                                                        </button>
+                                                    </form>
+                                                <?php else: ?>
+                                                    <span class="text-slate-300 text-xs font-semibold px-2 py-1 bg-slate-50 rounded">Your Account</span>
+                                                <?php endif; ?>
+                                            </td>
+                                        </tr>
+                                    <?php endforeach; ?>
+                                <?php endif; ?>
                             </tbody>
                         </table>
                     </div>
@@ -506,6 +683,174 @@ function initials($name)
             </div>
         </div>
     </main>
+    
+    <!-- Create/Edit Superadmin Modal -->
+    <div id="adminModal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+        <div class="bg-white rounded-lg shadow-2xl max-w-md w-full mx-4 max-h-[90vh] overflow-y-auto">
+            <div class="p-6 border-b border-slate-200 flex items-center justify-between">
+                <h2 id="modalTitle" class="text-xl font-bold text-slate-900">Create New Superadmin</h2>
+                <button onclick="closeModal()" class="text-slate-400 hover:text-slate-600">
+                    <span class="material-symbols-outlined">close</span>
+                </button>
+            </div>
+            
+            <form id="adminForm" method="POST" class="p-6 space-y-4">
+                <input type="hidden" id="superadmin_id" name="superadmin_id" value="">
+                <input type="hidden" id="formMode" name="formMode" value="create">
+                
+                <div>
+                    <label class="block text-sm font-bold text-slate-700 mb-1.5">Full Name</label>
+                    <input 
+                        type="text" 
+                        id="fullName"
+                        name="fullName"
+                        placeholder="John Doe"
+                        class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-primary/20 outline-none"
+                        required />
+                </div>
+                
+                <div>
+                    <label class="block text-sm font-bold text-slate-700 mb-1.5">Email Address</label>
+                    <input 
+                        type="email" 
+                        id="email"
+                        name="email"
+                        placeholder="admin@example.com"
+                        class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-primary/20 outline-none"
+                        required />
+                </div>
+                
+                <div>
+                    <label class="block text-sm font-bold text-slate-700 mb-1.5">Username</label>
+                    <input 
+                        type="text" 
+                        id="username"
+                        name="username"
+                        placeholder="johndoe123"
+                        class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-primary/20 outline-none"
+                        required />
+                </div>
+                
+                <div id="passwordDiv">
+                    <label class="block text-sm font-bold text-slate-700 mb-1.5">Password</label>
+                    <input 
+                        type="password" 
+                        id="password"
+                        name="password"
+                        placeholder="Min. 6 characters"
+                        class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-primary/20 outline-none"
+                        required />
+                </div>
+                
+                <div>
+                    <label class="block text-sm font-bold text-slate-700 mb-1.5">Access Scope</label>
+                    <select 
+                        id="accessScope"
+                        name="accessScope"
+                        class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-primary/20 outline-none">
+                        <option value="Global Root">Global Root</option>
+                        <option value="Tenant Management">Tenant Management</option>
+                        <option value="Financial">Financial</option>
+                        <option value="Audit & Compliance">Audit & Compliance</option>
+                        <option value="Support">Support</option>
+                    </select>
+                </div>
+                
+                <div id="statusDiv" class="hidden">
+                    <label class="block text-sm font-bold text-slate-700 mb-1.5">Status</label>
+                    <select 
+                        id="status"
+                        name="status"
+                        class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-primary/20 outline-none">
+                        <option value="Active">Active</option>
+                        <option value="Inactive">Inactive</option>
+                    </select>
+                </div>
+                
+                <div class="flex gap-3 mt-6">
+                    <button 
+                        type="button" 
+                        onclick="closeModal()"
+                        class="flex-1 px-4 py-2 border border-slate-300 text-slate-600 text-sm font-bold rounded-lg hover:bg-slate-50 transition-all">
+                        Cancel
+                    </button>
+                    <button 
+                        type="submit"
+                        id="submitBtn"
+                        class="flex-1 px-4 py-2 bg-primary text-white text-sm font-bold rounded-lg hover:bg-opacity-90 transition-all">
+                        Create
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+    
+    <script>
+        function openCreateModal() {
+            document.getElementById('modalTitle').textContent = 'Create New Superadmin';
+            document.getElementById('adminForm').reset();
+            document.getElementById('superadmin_id').value = '';
+            document.getElementById('formMode').value = 'create';
+            document.getElementById('passwordDiv').classList.remove('hidden');
+            document.getElementById('statusDiv').classList.add('hidden');
+            document.getElementById('submitBtn').textContent = 'Create';
+            document.getElementById('adminForm').onsubmit = function(e) {
+                const input = document.createElement('input');
+                input.type = 'hidden';
+                input.name = 'createSuperadmin';
+                input.value = '1';
+                this.appendChild(input);
+            };
+            document.getElementById('adminModal').classList.remove('hidden');
+        }
+        
+        function openEditModal(adminId) {
+            const allAdmins = <?= json_encode($allAdmins) ?>;
+            const admin = allAdmins.find(a => a.superadmin_id == adminId);
+            
+            if (!admin) return;
+            
+            document.getElementById('modalTitle').textContent = 'Edit Superadmin Account';
+            document.getElementById('superadmin_id').value = admin.superadmin_id;
+            document.getElementById('fullName').value = admin.fullName;
+            document.getElementById('email').value = admin.email;
+            document.getElementById('username').value = admin.username;
+            document.getElementById('username').disabled = true;
+            document.getElementById('accessScope').value = admin.access_scope;
+            document.getElementById('status').value = admin.status;
+            
+            document.getElementById('passwordDiv').classList.add('hidden');
+            document.getElementById('statusDiv').classList.remove('hidden');
+            document.getElementById('submitBtn').textContent = 'Update';
+            
+            document.getElementById('adminForm').onsubmit = function(e) {
+                // Remove old hidden inputs
+                const oldInputs = this.querySelectorAll('input[name="createSuperadmin"], input[name="updateSuperadmin"]');
+                oldInputs.forEach(inp => inp.remove());
+                
+                const input = document.createElement('input');
+                input.type = 'hidden';
+                input.name = 'updateSuperadmin';
+                input.value = '1';
+                this.appendChild(input);
+            };
+            
+            document.getElementById('adminModal').classList.remove('hidden');
+        }
+        
+        function closeModal() {
+            document.getElementById('adminModal').classList.add('hidden');
+            document.getElementById('adminForm').reset();
+            document.getElementById('username').disabled = false;
+        }
+        
+        // Close modal when clicking outside
+        document.getElementById('adminModal').addEventListener('click', function(e) {
+            if (e.target === this) {
+                closeModal();
+            }
+        });
+    </script>
 </body>
 
 </html>

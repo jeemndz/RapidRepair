@@ -29,6 +29,10 @@ if (!isset($_SESSION['superadmin_id'])) {
 }
 
 include __DIR__ . "/../db.php";
+require_once __DIR__ . "/../log_helper.php";
+require_once __DIR__ . "/../PHPMailer/src/Exception.php";
+require_once __DIR__ . "/../PHPMailer/src/PHPMailer.php";
+require_once __DIR__ . "/../PHPMailer/src/SMTP.php";
 
 $superadminName = "Superadmin";
 $superadminStmt = $conn->prepare("SELECT fullName FROM superadmin WHERE superadmin_id = ? LIMIT 1");
@@ -131,6 +135,449 @@ function getBillingCycleDivisor($billingCycle)
     return 1;
 }
 
+// Billing Notification Functions
+function buildMailTransports()
+{
+    $smtpHost = getenv('SMTP_HOST') ?: 'smtp.gmail.com';
+    $smtpPort = (int) (getenv('SMTP_PORT') ?: 587);
+    $smtpEncryption = strtolower(trim((string) (getenv('SMTP_ENCRYPTION') ?: '')));
+    $smtpUsername = getenv('SMTP_USERNAME') ?: 'rapidrepair224@gmail.com';
+    $smtpPassword = getenv('SMTP_PASSWORD') ?: 'gabd xcqy gbgq rtwj';
+
+    if ($smtpEncryption === '') {
+        $smtpEncryption = ($smtpPort === 465) ? 'ssl' : 'tls';
+    }
+
+    $mailTransports = [
+        [
+            'label' => 'primary',
+            'host' => $smtpHost,
+            'port' => $smtpPort,
+            'encryption' => $smtpEncryption,
+            'username' => $smtpUsername,
+            'password' => $smtpPassword,
+            'from_address' => getenv('MAIL_FROM_ADDRESS') ?: $smtpUsername,
+            'from_name' => getenv('MAIL_FROM_NAME') ?: 'Rapid Repair Admin',
+            'reply_to_address' => getenv('MAIL_REPLY_TO') ?: (getenv('MAIL_FROM_ADDRESS') ?: $smtpUsername),
+            'reply_to_name' => getenv('MAIL_REPLY_TO_NAME') ?: 'Rapid Repair Support'
+        ]
+    ];
+
+    return $mailTransports;
+}
+
+function sendBillingReminderEmail($ownerRow, $planName, $billingCycle, $nextBillingDate, $planPrice)
+{
+    $email = trim((string) ($ownerRow['email'] ?? ''));
+    if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        return ['sent' => false, 'reason' => 'invalid_email'];
+    }
+
+    $ownerName = trim((string) ($ownerRow['ownerName'] ?? 'Tenant Owner'));
+    $shopName = trim((string) ($ownerRow['shopName'] ?? 'Your Shop'));
+    $loginSlug = trim((string) ($ownerRow['login_slug'] ?? ''));
+    $baseURL = rtrim((string) (getenv('APP_BASE_URL') ?: 'https://rapidrepair-gygpcbczgyg0czek.southeastasia-01.azurewebsites.net'), '/');
+    $loginLink = $loginSlug !== ''
+        ? $baseURL . '/tenant/tenantlogin.php?shop=' . urlencode($loginSlug)
+        : $baseURL . '/tenant/tenantlogin.php';
+
+    $safeOwnerName = htmlspecialchars($ownerName, ENT_QUOTES, 'UTF-8');
+    $safeShopName = htmlspecialchars($shopName, ENT_QUOTES, 'UTF-8');
+    $safeEmail = htmlspecialchars($email, ENT_QUOTES, 'UTF-8');
+    $safePlanName = htmlspecialchars((string) $planName, ENT_QUOTES, 'UTF-8');
+    $safeBillingCycle = htmlspecialchars(ucfirst((string) $billingCycle), ENT_QUOTES, 'UTF-8');
+    $safeNextBillingDate = htmlspecialchars((string) $nextBillingDate, ENT_QUOTES, 'UTF-8');
+    $safePlanPrice = htmlspecialchars(number_format((float) $planPrice, 2), ENT_QUOTES, 'UTF-8');
+    $safeLoginLink = htmlspecialchars($loginLink, ENT_QUOTES, 'UTF-8');
+
+    $mail = new \PHPMailer\PHPMailer\PHPMailer(true);
+    $mail->isHTML(true);
+    $mail->Subject = 'Billing Reminder: Your RapidRepair Subscription Renewal is Coming';
+    $mail->Body = "
+        <!DOCTYPE html>
+        <html lang='en'>
+        <head>
+            <meta charset='UTF-8'>
+            <meta name='viewport' content='width=device-width, initial-scale=1.0'>
+            <title>RapidRepair Billing Reminder</title>
+        </head>
+        <body style='margin:0;padding:0;background:#f1f5f9;font-family:Arial,Helvetica,sans-serif;color:#0f172a;'>
+            <table role='presentation' cellpadding='0' cellspacing='0' border='0' width='100%' style='background:#f1f5f9;padding:24px 0;'>
+                <tr>
+                    <td align='center'>
+                        <table role='presentation' cellpadding='0' cellspacing='0' border='0' width='100%' style='max-width:640px;background:#ffffff;border:1px solid #dbe1ea;border-radius:14px;overflow:hidden;'>
+                            <tr>
+                                <td style='padding:22px 24px;background:linear-gradient(135deg,#f59e0b,#d97706);color:#ffffff;'>
+                                    <h1 style='margin:0;font-size:26px;line-height:32px;font-weight:700;color:#ffffff;'>⏰ Billing Reminder</h1>
+                                    <p style='margin:6px 0 0 0;font-size:14px;line-height:20px;'>Your subscription renewal is coming up</p>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td style='padding:24px;'>
+                                    <p style='margin:0 0 12px 0;font-size:24px;line-height:30px;font-weight:700;color:#0f172a;'>Hello {$safeOwnerName},</p>
+                                    <p style='margin:0 0 18px 0;font-size:16px;line-height:24px;color:#1e293b;'>
+                                        This is a reminder that your <strong>{$safeShopName}</strong> subscription will be renewed soon.
+                                    </p>
+
+                                    <table role='presentation' cellpadding='0' cellspacing='0' border='0' width='100%' style='border:1px solid #fbbf24;border-radius:12px;background:#fffbeb;margin:0 0 18px 0;'>
+                                        <tr><td style='padding:14px 16px;font-size:14px;color:#92400e;'><strong>Plan:</strong> {$safePlanName}</td></tr>
+                                        <tr><td style='padding:0 16px 14px 16px;font-size:14px;color:#92400e;'><strong>Billing Cycle:</strong> {$safeBillingCycle}</td></tr>
+                                        <tr><td style='padding:0 16px 14px 16px;font-size:14px;color:#92400e;'><strong>🔔 Next Billing Date:</strong> {$safeNextBillingDate}</td></tr>
+                                        <tr><td style='padding:0 16px 16px 16px;font-size:14px;color:#92400e;'><strong>Amount Due:</strong> PHP {$safePlanPrice}</td></tr>
+                                    </table>
+
+                                    <p style='margin:0 0 18px 0;font-size:15px;line-height:22px;color:#0f172a;'>
+                                        Please ensure your payment method is current. Your service will automatically renew on the billing date.
+                                    </p>
+
+                                    <p style='margin:0 0 18px 0;'>
+                                        <a href='{$safeLoginLink}' style='display:inline-block;padding:12px 24px;background:#b91c1c;color:#ffffff;text-decoration:none;border-radius:8px;font-weight:600;font-size:14px;'>Access Your Account</a>
+                                    </p>
+                                    
+                                    <p style='margin:0 0 0 0;font-size:12px;line-height:18px;color:#666666;'>
+                                        If you have any questions, please contact our support team.
+                                    </p>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td style='padding:14px 24px;border-top:1px solid #e5e7eb;background:#f8fafc;font-size:11px;line-height:18px;color:#64748b;'>
+                                    This is an automated billing reminder from RapidRepair System.
+                                </td>
+                            </tr>
+                        </table>
+                    </td>
+                </tr>
+            </table>
+        </body>
+        </html>
+    ";
+    $mail->AltBody = "Billing Reminder: Your RapidRepair Subscription Renewal\n\n"
+        . "Hello {$ownerName},\n\n"
+        . "This is a reminder that your {$shopName} subscription will be renewed soon.\n\n"
+        . "=== SUBSCRIPTION DETAILS ===\n"
+        . "Plan: {$planName}\n"
+        . "Billing Cycle: " . ucfirst((string) $billingCycle) . "\n"
+        . "Next Billing Date: {$nextBillingDate}\n"
+        . "Amount Due: PHP " . number_format((float) $planPrice, 2) . "\n\n"
+        . "Please ensure your payment method is current.\n\n"
+        . "Account Login: {$loginLink}\n";
+
+    $mailTransports = buildMailTransports();
+    $lastError = '';
+
+    foreach ($mailTransports as $transport) {
+        try {
+            $mail->isSMTP();
+            $mail->Host = $transport['host'];
+            $mail->SMTPAuth = true;
+            $mail->Username = $transport['username'];
+            $mail->Password = $transport['password'];
+            $mail->Port = $transport['port'];
+
+            if ($transport['encryption'] === 'ssl' || $transport['encryption'] === 'smtps') {
+                $mail->SMTPSecure = \PHPMailer\PHPMailer\PHPMailer::ENCRYPTION_SMTPS;
+            } elseif ($transport['encryption'] === 'tls' || $transport['encryption'] === 'starttls') {
+                $mail->SMTPSecure = \PHPMailer\PHPMailer\PHPMailer::ENCRYPTION_STARTTLS;
+            } else {
+                $mail->SMTPSecure = \PHPMailer\PHPMailer\PHPMailer::ENCRYPTION_STARTTLS;
+            }
+
+            if (!empty($transport['from_address'])) {
+                $mail->setFrom($transport['from_address'], $transport['from_name'] ?? '');
+            }
+            if (!empty($transport['reply_to_address'])) {
+                $mail->addReplyTo($transport['reply_to_address'], $transport['reply_to_name'] ?? '');
+            }
+
+            $mail->clearAddresses();
+            $mail->addAddress($email, $ownerName);
+            $mail->send();
+
+            return ['sent' => true, 'reason' => ''];
+        } catch (Exception $e) {
+            $lastError = $e->getMessage();
+            $mail->clearAddresses();
+            continue;
+        }
+    }
+
+    return ['sent' => false, 'reason' => $lastError];
+}
+
+function checkAndSendBillingNotifications($conn, $daysBeforeBilling = 7)
+{
+    $billingNotificationCheck = date('Y-m-d', strtotime("+{$daysBeforeBilling} days"));
+    $notificationsSent = 0;
+    $notificationsFailed = 0;
+
+    // Get all active subscriptions with upcoming billing dates
+    $query = "SELECT 
+                    o.tenantID, 
+                    o.ownerName, 
+                    o.shopName, 
+                    o.email, 
+                    o.login_slug,
+                    o.subscription_plan, 
+                    o.billing_cycle, 
+                    o.plan_price,
+                    o.next_billing_date,
+                    o.billing_notification_sent
+              FROM owners o
+              WHERE o.status = 'Active' 
+              AND o.subscription_plan IS NOT NULL 
+              AND o.next_billing_date IS NOT NULL
+              AND DATE(o.next_billing_date) <= DATE('{$billingNotificationCheck}')
+              AND (o.billing_notification_sent IS NULL OR o.billing_notification_sent = 0)";
+
+    $result = mysqli_query($conn, $query);
+
+    if ($result && mysqli_num_rows($result) > 0) {
+        while ($row = mysqli_fetch_assoc($result)) {
+            $emailResult = sendBillingReminderEmail(
+                $row,
+                $row['subscription_plan'],
+                $row['billing_cycle'],
+                $row['next_billing_date'],
+                $row['plan_price']
+            );
+
+            if ($emailResult['sent']) {
+                // Mark notification as sent
+                $tenantID = (int) $row['tenantID'];
+                $updateQuery = "UPDATE owners SET billing_notification_sent = 1 WHERE tenantID = {$tenantID} LIMIT 1";
+                if (mysqli_query($conn, $updateQuery)) {
+                    $notificationsSent++;
+                    // Log the event
+                    log_event($conn, "Send Billing Notification", "Billing", $tenantID, "Billing reminder sent for next billing date: " . $row['next_billing_date']);
+                }
+            } else {
+                $notificationsFailed++;
+            }
+        }
+    }
+
+    return [
+        'sent' => $notificationsSent,
+        'failed' => $notificationsFailed
+    ];
+}
+
+function sendAccountSuspensionEmail($ownerRow, $planName, $billingCycle, $nextBillingDate, $planPrice)
+{
+    $email = trim((string) ($ownerRow['email'] ?? ''));
+    if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        return ['sent' => false, 'reason' => 'invalid_email'];
+    }
+
+    $ownerName = trim((string) ($ownerRow['ownerName'] ?? 'Tenant Owner'));
+    $shopName = trim((string) ($ownerRow['shopName'] ?? 'Your Shop'));
+    $loginSlug = trim((string) ($ownerRow['login_slug'] ?? ''));
+    $baseURL = rtrim((string) (getenv('APP_BASE_URL') ?: 'https://rapidrepair-gygpcbczgyg0czek.southeastasia-01.azurewebsites.net'), '/');
+    $loginLink = $loginSlug !== ''
+        ? $baseURL . '/tenant/tenantlogin.php?shop=' . urlencode($loginSlug)
+        : $baseURL . '/tenant/tenantlogin.php';
+
+    $safeOwnerName = htmlspecialchars($ownerName, ENT_QUOTES, 'UTF-8');
+    $safeShopName = htmlspecialchars($shopName, ENT_QUOTES, 'UTF-8');
+    $safeEmail = htmlspecialchars($email, ENT_QUOTES, 'UTF-8');
+    $safePlanName = htmlspecialchars((string) $planName, ENT_QUOTES, 'UTF-8');
+    $safeBillingCycle = htmlspecialchars(ucfirst((string) $billingCycle), ENT_QUOTES, 'UTF-8');
+    $safeNextBillingDate = htmlspecialchars((string) $nextBillingDate, ENT_QUOTES, 'UTF-8');
+    $safePlanPrice = htmlspecialchars(number_format((float) $planPrice, 2), ENT_QUOTES, 'UTF-8');
+    $safeLoginLink = htmlspecialchars($loginLink, ENT_QUOTES, 'UTF-8');
+
+    $mail = new \PHPMailer\PHPMailer\PHPMailer(true);
+    $mail->isHTML(true);
+    $mail->Subject = '⚠️ URGENT: Your RapidRepair Account Has Been Suspended Due to Unpaid Invoice';
+    $mail->Body = "
+        <!DOCTYPE html>
+        <html lang='en'>
+        <head>
+            <meta charset='UTF-8'>
+            <meta name='viewport' content='width=device-width, initial-scale=1.0'>
+            <title>RapidRepair Account Suspended</title>
+        </head>
+        <body style='margin:0;padding:0;background:#f1f5f9;font-family:Arial,Helvetica,sans-serif;color:#0f172a;'>
+            <table role='presentation' cellpadding='0' cellspacing='0' border='0' width='100%' style='background:#f1f5f9;padding:24px 0;'>
+                <tr>
+                    <td align='center'>
+                        <table role='presentation' cellpadding='0' cellspacing='0' border='0' width='100%' style='max-width:640px;background:#ffffff;border:1px solid #dbe1ea;border-radius:14px;overflow:hidden;'>
+                            <tr>
+                                <td style='padding:22px 24px;background:linear-gradient(135deg,#dc2626,#991b1b);color:#ffffff;'>
+                                    <h1 style='margin:0;font-size:26px;line-height:32px;font-weight:700;color:#ffffff;'>⚠️ Account Suspended</h1>
+                                    <p style='margin:6px 0 0 0;font-size:14px;line-height:20px;'>Immediate action required to restore service</p>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td style='padding:24px;'>
+                                    <p style='margin:0 0 12px 0;font-size:24px;line-height:30px;font-weight:700;color:#0f172a;'>Hello {$safeOwnerName},</p>
+                                    <p style='margin:0 0 18px 0;font-size:16px;line-height:24px;color:#1e293b;'>
+                                        <strong style='color:#dc2626;'>Your {$safeShopName} account has been suspended</strong> due to non-payment on the invoice below.
+                                    </p>
+
+                                    <table role='presentation' cellpadding='0' cellspacing='0' border='0' width='100%' style='border:1px solid #dc2626;border-radius:12px;background:#fee2e2;margin:0 0 18px 0;'>
+                                        <tr><td style='padding:14px 16px;font-size:14px;color:#991b1b;'><strong>Plan:</strong> {$safePlanName}</td></tr>
+                                        <tr><td style='padding:0 16px 14px 16px;font-size:14px;color:#991b1b;'><strong>Billing Cycle:</strong> {$safeBillingCycle}</td></tr>
+                                        <tr><td style='padding:0 16px 14px 16px;font-size:14px;color:#991b1b;'><strong>⚠️ Billing Date:</strong> {$safeNextBillingDate}</td></tr>
+                                        <tr><td style='padding:0 16px 16px 16px;font-size:14px;color:#991b1b;'><strong>Amount Overdue:</strong> PHP {$safePlanPrice}</td></tr>
+                                    </table>
+
+                                    <p style='margin:0 0 18px 0;font-size:15px;line-height:22px;color:#0f172a;'>
+                                        <strong>Your service is now temporarily unavailable.</strong> To restore your account and regain access to your RapidRepair system, please settle the outstanding payment immediately.
+                                    </p>
+
+                                    <p style='margin:0 0 18px 0;font-size:13px;line-height:20px;color:#dc2626;background:#fee2e2;padding:12px;border-radius:8px;'>
+                                        ⏰ <strong>Action Required:</strong> Please complete payment within 48 hours to avoid permanent account termination.
+                                    </p>
+
+                                    <p style='margin:0 0 18px 0;'>
+                                        <a href='{$safeLoginLink}' style='display:inline-block;padding:12px 24px;background:#dc2626;color:#ffffff;text-decoration:none;border-radius:8px;font-weight:600;font-size:14px;'>Settle Payment & Restore Account</a>
+                                    </p>
+                                    
+                                    <p style='margin:0 0 0 0;font-size:12px;line-height:18px;color:#666666;'>
+                                        <strong>Questions?</strong> Contact our billing support team for assistance with payment.
+                                    </p>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td style='padding:14px 24px;border-top:1px solid #e5e7eb;background:#f8fafc;font-size:11px;line-height:18px;color:#64748b;'>
+                                    This is an automated message from RapidRepair System regarding your suspended account.
+                                </td>
+                            </tr>
+                        </table>
+                    </td>
+                </tr>
+            </table>
+        </body>
+        </html>
+    ";
+    $mail->AltBody = "URGENT: Your RapidRepair Account Has Been Suspended\n\n"
+        . "Hello {$ownerName},\n\n"
+        . "Your {$shopName} account has been suspended due to non-payment on the invoice below.\n\n"
+        . "=== OVERDUE INVOICE DETAILS ===\n"
+        . "Plan: {$planName}\n"
+        . "Billing Cycle: " . ucfirst((string) $billingCycle) . "\n"
+        . "Billing Date: {$nextBillingDate}\n"
+        . "Amount Overdue: PHP " . number_format((float) $planPrice, 2) . "\n\n"
+        . "Your service is now temporarily unavailable.\n\n"
+        . "To restore your account and regain access, please settle the outstanding payment immediately.\n\n"
+        . "⏰ URGENT: Please complete payment within 48 hours to avoid permanent account termination.\n\n"
+        . "Account Login: {$loginLink}\n";
+
+    $mailTransports = buildMailTransports();
+    $lastError = '';
+
+    foreach ($mailTransports as $transport) {
+        try {
+            $mail->isSMTP();
+            $mail->Host = $transport['host'];
+            $mail->SMTPAuth = true;
+            $mail->Username = $transport['username'];
+            $mail->Password = $transport['password'];
+            $mail->Port = $transport['port'];
+
+            if ($transport['encryption'] === 'ssl' || $transport['encryption'] === 'smtps') {
+                $mail->SMTPSecure = \PHPMailer\PHPMailer\PHPMailer::ENCRYPTION_SMTPS;
+            } elseif ($transport['encryption'] === 'tls' || $transport['encryption'] === 'starttls') {
+                $mail->SMTPSecure = \PHPMailer\PHPMailer\PHPMailer::ENCRYPTION_STARTTLS;
+            } else {
+                $mail->SMTPSecure = \PHPMailer\PHPMailer\PHPMailer::ENCRYPTION_STARTTLS;
+            }
+
+            if (!empty($transport['from_address'])) {
+                $mail->setFrom($transport['from_address'], $transport['from_name'] ?? '');
+            }
+            if (!empty($transport['reply_to_address'])) {
+                $mail->addReplyTo($transport['reply_to_address'], $transport['reply_to_name'] ?? '');
+            }
+
+            $mail->clearAddresses();
+            $mail->addAddress($email, $ownerName);
+            $mail->send();
+
+            return ['sent' => true, 'reason' => ''];
+        } catch (Exception $e) {
+            $lastError = $e->getMessage();
+            $mail->clearAddresses();
+            continue;
+        }
+    }
+
+    return ['sent' => false, 'reason' => $lastError];
+}
+
+function checkAndSuspendUnpaidAccounts($conn)
+{
+    $today = date('Y-m-d');
+    $accountsSuspended = 0;
+    $suspensionsFailed = 0;
+
+    // Get all Active accounts with overdue billing (next_billing_date has passed and no paid payment after that date)
+    $query = "SELECT 
+                    o.tenantID, 
+                    o.ownerName, 
+                    o.shopName, 
+                    o.email, 
+                    o.login_slug,
+                    o.subscription_plan, 
+                    o.billing_cycle, 
+                    o.plan_price,
+                    o.next_billing_date
+              FROM owners o
+              LEFT JOIN subscription_payments sp ON o.tenantID = sp.tenantID 
+                AND sp.payment_status = 'Paid' 
+                AND DATE(sp.paid_at) >= DATE(o.next_billing_date)
+              WHERE o.status = 'Active' 
+              AND o.subscription_plan IS NOT NULL 
+              AND o.next_billing_date IS NOT NULL
+              AND DATE(o.next_billing_date) < DATE('{$today}')
+              AND sp.payment_id IS NULL";
+
+    $result = mysqli_query($conn, $query);
+
+    if ($result && mysqli_num_rows($result) > 0) {
+        while ($row = mysqli_fetch_assoc($result)) {
+            $tenantID = (int) $row['tenantID'];
+            $ownerName = $row['ownerName'];
+            $shopName = $row['shopName'];
+            
+            // Send suspension notification email
+            $emailResult = sendAccountSuspensionEmail(
+                $row,
+                $row['subscription_plan'],
+                $row['billing_cycle'],
+                $row['next_billing_date'],
+                $row['plan_price']
+            );
+
+            // Suspend the account regardless of email success
+            $updateQuery = "UPDATE owners SET status = 'Suspended' WHERE tenantID = {$tenantID} LIMIT 1";
+            if (mysqli_query($conn, $updateQuery)) {
+                $accountsSuspended++;
+                
+                // Log the suspension event
+                log_event(
+                    $conn, 
+                    "Suspend Account - Unpaid Invoice", 
+                    "Account", 
+                    $tenantID, 
+                    "Account suspended due to unpaid billing. Shop: {$shopName}, Owner: {$ownerName}, Overdue Date: " . $row['next_billing_date'] . ", Amount: PHP " . number_format((float) $row['plan_price'], 2)
+                );
+
+                // Update billing notification flag to 0 so reminder can be sent again if reactivated
+                mysqli_query($conn, "UPDATE owners SET billing_notification_sent = 0 WHERE tenantID = {$tenantID} LIMIT 1");
+            } else {
+                $suspensionsFailed++;
+            }
+        }
+    }
+
+    return [
+        'suspended' => $accountsSuspended,
+        'failed' => $suspensionsFailed
+    ];
+}
+
 $hasPlanIdColumn = subscriptionsColumnExists($conn, 'plan_id');
 $hasPlanCodeColumn = subscriptionsColumnExists($conn, 'plan_code');
 $hasPlanNameColumn = subscriptionsColumnExists($conn, 'plan_name');
@@ -167,6 +614,16 @@ if (isset($_POST['togglePlanStatus'])) {
 
     if ($toggleResult) {
         $notice = $statusValue === 1 ? 'activated' : 'deactivated';
+        
+        // Log the plan status toggle
+        $getPlanSql = "SELECT plan_name, plan_id, plan_code FROM subscription_plans WHERE $whereClause LIMIT 1";
+        $getPlanRes = mysqli_query($conn, $getPlanSql);
+        $planRow = $getPlanRes && mysqli_num_rows($getPlanRes) > 0 ? mysqli_fetch_assoc($getPlanRes) : [];
+        $planName = $planRow['plan_name'] ?? 'Unknown Plan';
+        $planId = isset($planRow['plan_id']) ? (int)$planRow['plan_id'] : null;
+        $logDetails = "Plan status changed to: " . ($statusValue === 1 ? 'Active' : 'Inactive');
+        log_event($conn, "Toggle Subscription Plan Status", "Subscription Plan", $planId, $logDetails);
+        
         header("Location: subscriptionmanage.php?plan_notice=$notice");
     } else {
         header("Location: subscriptionmanage.php?plan_notice=failed");
@@ -211,6 +668,14 @@ if (isset($_POST['updatePlan'])) {
     $updateResult = mysqli_query($conn, $updateSql);
 
     if ($updateResult) {
+        // Log the plan update
+        $planId = null;
+        if ($hasPlanIdColumn && isset($_POST['plan_id'])) {
+            $planId = (int)$_POST['plan_id'];
+        }
+        $logDetails = "Updated plan: Name=$planName, Price=" . number_format($monthlyPrice, 2) . "/month";
+        log_event($conn, "Update Subscription Plan", "Subscription Plan", $planId, $logDetails);
+        
         header("Location: subscriptionmanage.php?plan_notice=updated");
     } else {
         header("Location: subscriptionmanage.php?plan_notice=failed");
@@ -263,6 +728,14 @@ if (isset($_POST['publishPlan'])) {
     $insertPlan = mysqli_query($conn, $insertPlanSql);
 
     if ($insertPlan) {
+        // Log the plan creation
+        $newPlanId = null;
+        if ($hasPlanIdColumn) {
+            $newPlanId = (int)$conn->insert_id;
+        }
+        $logDetails = "Created new subscription plan: Name=$planName, Price=" . number_format($monthlyPrice, 2) . "/month, Status=Active";
+        log_event($conn, "Create Subscription Plan", "Subscription Plan", $newPlanId, $logDetails);
+        
         header("Location: subscriptionmanage.php?plan_notice=created");
     } else {
         header("Location: subscriptionmanage.php?plan_notice=failed");
@@ -270,7 +743,54 @@ if (isset($_POST['publishPlan'])) {
     exit();
 }
 
+// Handle billing notification requests
+$billingNotificationResult = '';
+$suspensionResult = '';
+
+// Ensure billing_notification_sent column exists
+$checkColumnQuery = "SHOW COLUMNS FROM owners LIKE 'billing_notification_sent'";
+$checkColumnResult = mysqli_query($conn, $checkColumnQuery);
+if (!$checkColumnResult || mysqli_num_rows($checkColumnResult) === 0) {
+    // Column doesn't exist, create it
+    $createColumnQuery = "ALTER TABLE owners ADD COLUMN billing_notification_sent TINYINT(1) DEFAULT 0 AFTER plan_price";
+    mysqli_query($conn, $createColumnQuery);
+}
+
+if (isset($_POST['send_billing_notifications'])) {
+    $result = checkAndSendBillingNotifications($conn, 7);
+    if ($result['sent'] > 0) {
+        $billingNotificationResult = 'success';
+    } elseif ($result['failed'] > 0) {
+        $billingNotificationResult = 'partial_fail';
+    } else {
+        $billingNotificationResult = 'no_notifications';
+    }
+    header("Location: subscriptionmanage.php?billing_notice={$billingNotificationResult}&sent={$result['sent']}&failed={$result['failed']}");
+    exit();
+}
+
+if (isset($_POST['suspend_unpaid_accounts'])) {
+    $result = checkAndSuspendUnpaidAccounts($conn);
+    if ($result['suspended'] > 0) {
+        $suspensionResult = 'success';
+    } elseif ($result['failed'] > 0) {
+        $suspensionResult = 'partial_fail';
+    } else {
+        $suspensionResult = 'no_unpaid';
+    }
+    header("Location: subscriptionmanage.php?suspension_notice={$suspensionResult}&suspended={$result['suspended']}&suspension_failed={$result['failed']}");
+    exit();
+}
+
 $planNotice = $_GET['plan_notice'] ?? '';
+$billingNotice = $_GET['billing_notice'] ?? '';
+$notificationsSent = (int) ($_GET['sent'] ?? 0);
+$notificationsFailed = (int) ($_GET['failed'] ?? 0);
+
+$suspensionNotice = $_GET['suspension_notice'] ?? '';
+$suspensionCount = (int) ($_GET['suspended'] ?? 0);
+$suspensionFailedCount = (int) ($_GET['suspension_failed'] ?? 0);
+
 $planFilter = strtolower(trim((string) ($_GET['plan_filter'] ?? 'all')));
 $allowedPlanFilters = ['all', 'active', 'inactive'];
 if (!in_array($planFilter, $allowedPlanFilters, true)) {
@@ -698,6 +1218,44 @@ if ($mrrResult) {
             </div>
         <?php endif; ?>
 
+        <?php if ($billingNotice !== ''): ?>
+            <?php if ($billingNotice === 'success'): ?>
+                <div class="mb-6 rounded-lg px-4 py-3 text-sm font-medium bg-emerald-100 text-emerald-800 flex items-center gap-2">
+                    <span class="material-symbols-outlined">check_circle</span>
+                    ✓ Billing notifications sent successfully (<?php echo $notificationsSent; ?> reminder<?php echo $notificationsSent !== 1 ? 's' : ''; ?> sent)
+                </div>
+            <?php elseif ($billingNotice === 'partial_fail'): ?>
+                <div class="mb-6 rounded-lg px-4 py-3 text-sm font-medium bg-amber-100 text-amber-800 flex items-center gap-2">
+                    <span class="material-symbols-outlined">warning</span>
+                    ⚠ Partial failure: <?php echo $notificationsSent; ?> notification<?php echo $notificationsSent !== 1 ? 's' : ''; ?> sent, <?php echo $notificationsFailed; ?> failed
+                </div>
+            <?php elseif ($billingNotice === 'no_notifications'): ?>
+                <div class="mb-6 rounded-lg px-4 py-3 text-sm font-medium bg-blue-100 text-blue-800 flex items-center gap-2">
+                    <span class="material-symbols-outlined">info</span>
+                    ℹ No upcoming billing dates within 7 days or all have been notified
+                </div>
+            <?php endif; ?>
+        <?php endif; ?>
+
+        <?php if ($suspensionNotice !== ''): ?>
+            <?php if ($suspensionNotice === 'success'): ?>
+                <div class="mb-6 rounded-lg px-4 py-3 text-sm font-medium bg-red-100 text-red-800 flex items-center gap-2">
+                    <span class="material-symbols-outlined">block</span>
+                    ✓ Accounts suspended successfully (<?php echo $suspensionCount; ?> account<?php echo $suspensionCount !== 1 ? 's' : ''; ?> suspended for non-payment)
+                </div>
+            <?php elseif ($suspensionNotice === 'partial_fail'): ?>
+                <div class="mb-6 rounded-lg px-4 py-3 text-sm font-medium bg-amber-100 text-amber-800 flex items-center gap-2">
+                    <span class="material-symbols-outlined">warning</span>
+                    ⚠ Partial failure: <?php echo $suspensionCount; ?> account<?php echo $suspensionCount !== 1 ? 's' : ''; ?> suspended, <?php echo $suspensionFailedCount; ?> failed
+                </div>
+            <?php elseif ($suspensionNotice === 'no_unpaid'): ?>
+                <div class="mb-6 rounded-lg px-4 py-3 text-sm font-medium bg-blue-100 text-blue-800 flex items-center gap-2">
+                    <span class="material-symbols-outlined">info</span>
+                    ℹ No overdue unpaid accounts found to suspend
+                </div>
+            <?php endif; ?>
+        <?php endif; ?>
+
         <!-- Header Section -->
         <div class="flex items-end justify-between mb-8">
             <div>
@@ -710,11 +1268,28 @@ if ($mrrResult) {
                 <p class="text-on-surface-variant mt-2 text-sm max-w-lg">Manage multi-tenant service tiers, pricing
                     structures, and feature entitlements across the enterprise ecosystem.</p>
             </div>
-            <button type="button" onclick="openCreatePlanModal()"
-                class="flex items-center gap-2 px-5 py-2.5 bg-primary text-white text-sm font-bold rounded-lg shadow-sm active:scale-95 transition-transform">
-                <span class="material-symbols-outlined text-[20px]" data-icon="add">add</span>
-                Create New Plan
-            </button>
+            <div class="flex items-center gap-2 flex-wrap">
+                <form method="POST" class="inline">
+                    <button type="submit" name="send_billing_notifications" value="1"
+                        class="flex items-center gap-2 px-5 py-2.5 bg-amber-600 hover:bg-amber-700 text-white text-sm font-bold rounded-lg shadow-sm active:scale-95 transition-transform">
+                        <span class="material-symbols-outlined text-[20px]">notifications_active</span>
+                        Send Billing Notifications
+                    </button>
+                </form>
+                <form method="POST" class="inline">
+                    <button type="submit" name="suspend_unpaid_accounts" value="1"
+                        class="flex items-center gap-2 px-5 py-2.5 bg-red-600 hover:bg-red-700 text-white text-sm font-bold rounded-lg shadow-sm active:scale-95 transition-transform"
+                        onclick="return confirm('⚠️ This will suspend all accounts with overdue payments. Continue?');">
+                        <span class="material-symbols-outlined text-[20px]">block</span>
+                        Suspend Unpaid Accounts
+                    </button>
+                </form>
+                <button type="button" onclick="openCreatePlanModal()"
+                    class="flex items-center gap-2 px-5 py-2.5 bg-primary text-white text-sm font-bold rounded-lg shadow-sm active:scale-95 transition-transform">
+                    <span class="material-symbols-outlined text-[20px]" data-icon="add">add</span>
+                    Create New Plan
+                </button>
+            </div>
         </div>
 
         <?php if ($hasIsActiveColumn): ?>

@@ -27,6 +27,54 @@ header("Pragma: no-cache");
 header("Expires: Thu, 01 Jan 1970 00:00:00 GMT");
 
 include __DIR__ . "/../db.php";
+require_once __DIR__ . "/../log_helper.php";
+
+/**
+ * Check if a tenant has made a payment in subscription_payments table
+ */
+function getTenantPaymentStatus($conn, $tenantID)
+{
+    $tenantID = (int) $tenantID;
+    
+    // Check if subscription_payments table exists
+    $checkTable = mysqli_query($conn, "SHOW TABLES LIKE 'subscription_payments'");
+    if (!$checkTable || mysqli_num_rows($checkTable) === 0) {
+        return ['status' => 'unknown', 'paid_at' => null, 'amount' => null, 'payment_method' => null];
+    }
+    
+    $query = "SELECT payment_status, paid_at, amount, payment_method FROM subscription_payments WHERE tenantID = " . $tenantID . " ORDER BY created_at DESC LIMIT 1";
+    $result = mysqli_query($conn, $query);
+    
+    if (!$result || mysqli_num_rows($result) === 0) {
+        return ['status' => 'unpaid', 'paid_at' => null, 'amount' => null, 'payment_method' => null];
+    }
+    
+    $payment = mysqli_fetch_assoc($result);
+    return [
+        'status' => strtolower($payment['payment_status']),
+        'paid_at' => $payment['paid_at'],
+        'amount' => $payment['amount'],
+        'payment_method' => $payment['payment_method']
+    ];
+}
+
+/**
+ * Get formatted payment status badge
+ */
+function getPaymentStatusBadge($paymentStatus)
+{
+    switch (strtolower($paymentStatus)) {
+        case 'paid':
+            return ['badge' => '<span class="px-2 py-1 bg-green-100 text-green-700 text-xs font-bold rounded-md">Paid</span>', 'icon' => 'check_circle', 'class' => 'text-green-600'];
+        case 'pending':
+            return ['badge' => '<span class="px-2 py-1 bg-amber-100 text-amber-700 text-xs font-bold rounded-md">Pending Payment</span>', 'icon' => 'schedule', 'class' => 'text-amber-600'];
+        case 'failed':
+            return ['badge' => '<span class="px-2 py-1 bg-red-100 text-red-700 text-xs font-bold rounded-md">Failed</span>', 'icon' => 'error', 'class' => 'text-red-600'];
+        case 'unpaid':
+        default:
+            return ['badge' => '<span class="px-2 py-1 bg-slate-100 text-slate-700 text-xs font-bold rounded-md">No Payment</span>', 'icon' => 'warning', 'class' => 'text-slate-600'];
+    }
+}
 
 if (isset($_POST['logout_superadmin'])) {
     $_SESSION = [];
@@ -643,6 +691,26 @@ if (isset($_POST['updateTenantStatus'])) {
 
             $ownerRes = mysqli_query($conn, "SELECT ownerName, shopName, email, login_slug, username, password FROM owners WHERE tenantID = '$tenantID' LIMIT 1");
             $ownerRow = $ownerRes && mysqli_num_rows($ownerRes) > 0 ? mysqli_fetch_assoc($ownerRes) : [];
+            
+            // If username is empty, generate one
+            $username = trim((string) ($ownerRow['username'] ?? ''));
+            if ($username === '') {
+                $username = generateUsername($conn, $ownerRow['shopName'] ?? 'User');
+                // Update the owners table with the generated username
+                $updateUsernameQuery = "UPDATE owners SET username = '" . mysqli_real_escape_string($conn, $username) . "' WHERE tenantID = '$tenantID'";
+                mysqli_query($conn, $updateUsernameQuery);
+                $ownerRow['username'] = $username;
+            }
+            
+            // If password is empty, use a temporary password
+            $tempPassword = trim((string) ($ownerRow['password'] ?? ''));
+            if ($tempPassword === '') {
+                $tempPassword = generateTemporaryPassword();
+                // Update the owners table with the password
+                $updatePasswordQuery = "UPDATE owners SET password = '" . mysqli_real_escape_string($conn, $tempPassword) . "' WHERE tenantID = '$tenantID'";
+                mysqli_query($conn, $updatePasswordQuery);
+            }
+            
             $emailResult = sendTenantActivationDetailsEmail(
                 $ownerRow,
                 $subscriptionPlans[$subscriptionPlan]['name'],
@@ -651,9 +719,15 @@ if (isset($_POST['updateTenantStatus'])) {
                 $subscriptionEnd,
                 $nextBillingDate,
                 $planTotalPrice,
-                $ownerRow['username'] ?? '',
-                $ownerRow['password'] ?? ''
+                $username,
+                $tempPassword
             );
+
+            // Log the applicant approval
+            $shopName = $ownerRow['shopName'] ?? 'Unknown Shop';
+            $ownerName = $ownerRow['ownerName'] ?? 'Unknown Owner';
+            $logDetails = "Applicant approved and activated. Owner: $ownerName, Shop: $shopName, Plan: " . $subscriptionPlans[$subscriptionPlan]['name'] . ", Billing Cycle: $billingCycle, Amount: PHP " . number_format((float)$planTotalPrice, 2);
+            log_event($conn, "Accept Applicant", "Applicant", (int)$tenantID, $logDetails);
 
             if ($emailResult['sent']) {
                 header("Location: superaddtenants.php?notice=tenant_approved_email_sent");
@@ -679,6 +753,26 @@ if (isset($_POST['updateTenantStatus'])) {
         } else {
             $redirect = 'tenant_rejected';
         }
+        
+        // Log the status change
+        $tenantRes = mysqli_query($conn, "SELECT shopName, ownerName FROM owners WHERE tenantID = '$tenantID' LIMIT 1");
+        $tenantRow = $tenantRes && mysqli_num_rows($tenantRes) > 0 ? mysqli_fetch_assoc($tenantRes) : [];
+        $shopName = $tenantRow['shopName'] ?? 'Unknown Shop';
+        $ownerName = $tenantRow['ownerName'] ?? 'Unknown Owner';
+        
+        if ($status === 'Active') {
+            $action = "Accept Applicant";
+            $logDetails = "Applicant approved and activated. Owner: $ownerName, Shop: $shopName";
+        } elseif ($status === 'Suspended') {
+            $action = "Suspend Tenant";
+            $logDetails = "Tenant suspended. Owner: $ownerName, Shop: $shopName";
+        } else {
+            $action = "Reject Applicant";
+            $logDetails = "Applicant rejected. Owner: $ownerName, Shop: $shopName";
+        }
+        
+        log_event($conn, $action, "Applicant", (int)$tenantID, $logDetails);
+        
         header("Location: superaddtenants.php?notice=" . $redirect);
     } else {
         header("Location: superaddtenants.php?notice=tenant_status_update_failed");
@@ -809,26 +903,44 @@ function generateSlug($conn, $shopName)
 
 function generateUsername($conn, $shopName)
 {
-    // Convert shop name to lowercase username
+    // Convert shop name to lowercase and clean it
     $username = strtolower(trim($shopName));
-    $username = preg_replace('/[^a-z0-9]/', '', $username); // remove spaces & symbols
+    $username = preg_replace('/[^a-z0-9]/', '', $username); // remove spaces & special characters
 
-    // fallback if empty
+    // Truncate to reasonable length while keeping shop name recognizable
+    if (strlen($username) > 20) {
+        $username = substr($username, 0, 20);
+    }
+
+    // Fallback if empty after cleaning
     if ($username === '') {
-        $username = 'user';
+        $username = 'shop';
     }
 
     $originalUsername = $username;
     $counter = 1;
 
-    // Ensure UNIQUE username
-    while (true) {
-        $check = mysqli_query($conn, "SELECT tenantID FROM owners WHERE username='$username'");
-        if (mysqli_num_rows($check) == 0)
-            break;
-
-        $username = $originalUsername . $counter;
-        $counter++;
+    // Ensure UNIQUE username - check if base username already exists
+    $check = mysqli_query($conn, "SELECT tenantID FROM owners WHERE username='$username'");
+    if (mysqli_num_rows($check) > 0) {
+        // If exists, append counter to keep it connected to shop name
+        while (true) {
+            // Try username with counter
+            $testUsername = $originalUsername . $counter;
+            $check = mysqli_query($conn, "SELECT tenantID FROM owners WHERE username='$testUsername'");
+            if (mysqli_num_rows($check) == 0) {
+                $username = $testUsername;
+                break;
+            }
+            $counter++;
+            
+            // Safety check to avoid infinite loops (max 999 variations)
+            if ($counter > 999) {
+                // Add timestamp as last resort
+                $username = $originalUsername . substr(time(), -4);
+                break;
+            }
+        }
     }
 
     return $username;
@@ -922,6 +1034,10 @@ if (isset($_POST['updateTenant'])) {
     $updateSql = "UPDATE owners SET " . implode(",\n        ", $updateFields) . "\n        WHERE tenantID = '$tenantID'";
 
     if (mysqli_query($conn, $updateSql)) {
+        // Log the tenant update
+        $logDetails = "Updated: Shop Name, Address, Owner Name, Email, Contact, Status";
+        log_event($conn, "Update Tenant Information", "Tenant", (int)$tenantID, $logDetails);
+        
         header("Location: superaddtenants.php?notice=tenant_updated");
     } else {
         header("Location: superaddtenants.php?notice=tenant_update_failed");
@@ -1277,10 +1393,22 @@ if (isset($_POST['createTenant'])) {
     }
 
     if ($insert && $subscriptionSynced && $emailSent) {
+        // Log the tenant creation
+        $logDetails = "Created new tenant: $shopName, Owner: $ownerName, Subscription: $subscriptionPlan, Status: Active";
+        log_event($conn, "Create Tenant", "Tenant", (int)$tenantID, $logDetails);
+        
         header("Location: superaddtenants.php?notice=tenant_created_email_sent");
     } elseif ($insert && $subscriptionSynced && $emailFailureReason === 'quota') {
+        // Log the tenant creation
+        $logDetails = "Created new tenant: $shopName, Owner: $ownerName, Subscription: $subscriptionPlan, Status: Active";
+        log_event($conn, "Create Tenant", "Tenant", (int)$tenantID, $logDetails);
+        
         header("Location: superaddtenants.php?notice=tenant_created_email_quota_exceeded");
     } elseif ($insert && $subscriptionSynced) {
+        // Log the tenant creation
+        $logDetails = "Created new tenant: $shopName, Owner: $ownerName, Subscription: $subscriptionPlan, Status: Active";
+        log_event($conn, "Create Tenant", "Tenant", (int)$tenantID, $logDetails);
+        
         header("Location: superaddtenants.php?notice=tenant_created_email_failed");
     } else {
         header("Location: superaddtenants.php?notice=tenant_create_failed");
@@ -1627,6 +1755,7 @@ if (isset($_POST['createTenant'])) {
                                 <th class="px-6 py-4">Shop Name</th>
                                 <th class="px-6 py-4">Applicant</th>
                                 <th class="px-6 py-4">Plan</th>
+                                <th class="px-6 py-4">Payment</th>
                                 <th class="px-6 py-4">Submission Date</th>
                                 <th class="px-6 py-4 text-right">Actions</th>
                             </tr>
@@ -1654,6 +1783,12 @@ if (isset($_POST['createTenant'])) {
                                         $pendingPlanKey = $defaultPlanKey;
                                     }
                                     $tenantPlan = $subscriptionPlans[$pendingPlanKey]['name'];
+                                    
+                                    // Get payment status for this applicant
+                                    $paymentInfo = getTenantPaymentStatus($conn, $pendingRow['tenantID']);
+                                    $isPaid = $paymentInfo['status'] === 'paid';
+                                    $paymentBadge = getPaymentStatusBadge($paymentInfo['status']);
+                                    
                                     $pendingSearchHaystack = strtolower(trim((string) ($pendingRow['shopName'] ?? '') . ' ' . (string) ($pendingRow['ownerName'] ?? '') . ' ' . (string) ($pendingRow['email'] ?? '') . ' ' . (string) $tenantPlan . ' pending ' . date("M d, Y", strtotime($pendingRow['created_at']))));
                                     ?>
                                     <tr class="searchable-pending hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors"
@@ -1683,14 +1818,33 @@ if (isset($_POST['createTenant'])) {
                                             </div>
                                         </td>
                                         <td class="px-6 py-4 text-sm"><?php echo htmlspecialchars($tenantPlan); ?></td>
+                                        <td class="px-6 py-4 text-sm">
+                                            <div class="flex flex-col gap-1">
+                                                <?php echo $paymentBadge['badge']; ?>
+                                                <?php if ($isPaid && $paymentInfo['amount']): ?>
+                                                    <div class="text-xs text-slate-500">₱<?php echo number_format((float) $paymentInfo['amount'], 2); ?></div>
+                                                    <div class="text-xs text-slate-500"><?php echo htmlspecialchars($paymentInfo['payment_method']); ?></div>
+                                                <?php endif; ?>
+                                            </div>
+                                        </td>
                                         <td class="px-6 py-4 text-sm text-slate-600 dark:text-slate-400">
                                             <?php echo date("M d, Y", strtotime($pendingRow['created_at'])); ?>
                                         </td>
                                         <td class="px-6 py-4 text-right">
                                             <div class="flex justify-end gap-2">
+                                                <?php
+                                                    $planBillingCycle = $pendingRow['billing_cycle'] ?? 'monthly';
+                                                    $billingDivisor = getBillingCycleDivisor($planBillingCycle);
+                                                    $planPrice = $subscriptionPlans[$pendingPlanKey]['monthly_price'] * $billingDivisor;
+                                                ?>
                                                 <button
-                                                    onclick="approveTenant('<?php echo $pendingRow['tenantID']; ?>', '<?php echo htmlspecialchars($pendingPlanKey, ENT_QUOTES, 'UTF-8'); ?>')"
-                                                    class="px-3 py-1.5 bg-red-600 text-white text-xs font-bold rounded-lg hover:bg-red-700 transition-colors">Accept</button>
+                                                    onclick="openApplicantReview('<?php echo addslashes($pendingRow['tenantID']); ?>', '<?php echo addslashes($pendingRow['ownerName']); ?>', '<?php echo addslashes($pendingRow['shopName']); ?>', '<?php echo addslashes($pendingRow['shopAddress']); ?>', '<?php echo addslashes($pendingRow['email']); ?>', '<?php echo addslashes($pendingRow['contactNumber']); ?>', '<?php echo addslashes($tenantPlan); ?>', '<?php echo addslashes($planBillingCycle); ?>', '<?php echo addslashes($paymentInfo['status']); ?>', '<?php echo addslashes($paymentInfo['amount']); ?>', '<?php echo addslashes($paymentInfo['payment_method']); ?>', '<?php echo addslashes((string)$planPrice); ?>')"
+                                                    class="px-3 py-1.5 border border-blue-200 text-blue-600 text-xs font-bold rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/10 transition-colors">
+                                                    <span class="flex items-center gap-1">
+                                                        <span class="material-symbols-outlined text-sm">info</span>
+                                                        View Details
+                                                    </span>
+                                                </button>
                                                 <button onclick="rejectTenant('<?php echo $pendingRow['tenantID']; ?>')"
                                                     class="px-3 py-1.5 border border-red-200 text-red-600 text-xs font-bold rounded-lg hover:bg-red-50 dark:hover:bg-red-900/10 transition-colors">Reject</button>
                                             </div>
@@ -1701,14 +1855,14 @@ if (isset($_POST['createTenant'])) {
                             } else {
                                 ?>
                                 <tr>
-                                    <td colspan="5" class="px-6 py-8 text-center text-slate-500">No pending applications
+                                    <td colspan="6" class="px-6 py-8 text-center text-slate-500">No pending applications
                                     </td>
                                 </tr>
                                 <?php
                             }
                             ?>
                             <tr id="pendingSearchEmpty" class="hidden">
-                                <td colspan="5" class="px-6 py-8 text-center text-slate-500">
+                                <td colspan="6" class="px-6 py-8 text-center text-slate-500">
                                     <div class="flex flex-col items-center gap-2">
                                         <span
                                             class="material-symbols-outlined text-4xl text-slate-300">search_off</span>
@@ -1841,7 +1995,7 @@ if (isset($_POST['createTenant'])) {
                     <div class="px-8 py-6 border-b flex justify-between items-center">
                         <div>
                             <h2 class="text-xl font-bold">Approve Application</h2>
-                            <p class="text-sm text-gray-500">Select subscription plan and billing cycle</p>
+                            <p class="text-sm text-gray-500">Review payment and select subscription details</p>
                         </div>
                         <button onclick="closeApprovalModal()" class="text-gray-400 hover:text-black">
                             <span class="material-symbols-outlined">close</span>
@@ -1849,35 +2003,179 @@ if (isset($_POST['createTenant'])) {
                     </div>
                     <div class="p-8 flex flex-col gap-6">
                         <input type="hidden" id="approveTenantID" name="tenantID">
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div class="flex flex-col gap-2">
-                                <label class="text-xs font-bold uppercase text-gray-500">Subscription Plan</label>
-                                <select id="approvalSubscriptionPlan" class="border rounded-lg p-3" required>
-                                    <?php foreach ($subscriptionPlans as $plan): ?>
-                                        <option value="<?php echo htmlspecialchars($plan['key']); ?>"
-                                            data-plan-features="<?php echo htmlspecialchars(json_encode($plan['features']), ENT_QUOTES, 'UTF-8'); ?>">
-                                            <?php echo htmlspecialchars($plan['name']); ?> - PHP
-                                            <?php echo number_format($plan['monthly_price'], 2); ?> / month
-                                        </option>
-                                    <?php endforeach; ?>
-                                </select>
-                                <div id="approvalPlanFeaturesPreview" class="mt-2 text-xs text-slate-600 space-y-1">
+                        <input type="hidden" id="approvalPaymentPaid" name="paymentPaid" value="false">
+                        <input type="hidden" id="approvalSubscriptionPlan">
+                        <input type="hidden" id="approvalBillingCycle">
+                        
+                        <!-- Payment Status Alert -->
+                        <div id="paymentNotPaidWarning" class="hidden p-4 bg-amber-50 border border-amber-200 rounded-lg">
+                            <div class="flex items-start gap-3">
+                                <span class="material-symbols-outlined text-amber-600 text-xl">warning</span>
+                                <div>
+                                    <p class="text-sm font-bold text-amber-800">Payment Required</p>
+                                    <p class="text-xs text-amber-700 mt-1">This applicant has not completed payment yet. Please verify payment before approval.</p>
                                 </div>
                             </div>
-                            <div class="flex flex-col gap-2">
-                                <label class="text-xs font-bold uppercase text-gray-500">Billing Cycle</label>
-                                <select id="approvalBillingCycle" class="border rounded-lg p-3" required>
-                                    <option value="monthly">Monthly</option>
-                                    <option value="quarterly">Quarterly</option>
-                                    <option value="yearly">Yearly</option>
-                                </select>
+                        </div>
+                        
+                        <div id="paymentPaidSuccess" class="hidden p-4 bg-green-50 border border-green-200 rounded-lg">
+                            <div class="flex items-start gap-3">
+                                <span class="material-symbols-outlined text-green-600 text-xl">check_circle</span>
+                                <div>
+                                    <p class="text-sm font-bold text-green-800">Payment Verified</p>
+                                    <p class="text-xs text-green-700 mt-1" id="paymentVerificationText"></p>
+                                </div>
                             </div>
                         </div>
+                        
+                        <!-- Subscription Details -->
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 bg-slate-50 dark:bg-slate-800 p-6 rounded-lg">
+                            <div>
+                                <p class="text-xs font-bold uppercase text-gray-500">Shop Name</p>
+                                <p class="text-lg font-semibold mt-2" id="approvalShopName">-</p>
+                            </div>
+                            <div>
+                                <p class="text-xs font-bold uppercase text-gray-500">Owner Name</p>
+                                <p class="text-lg font-semibold mt-2" id="approvalOwnerName">-</p>
+                            </div>
+                            <div>
+                                <p class="text-xs font-bold uppercase text-gray-500">Subscription Plan</p>
+                                <p class="text-lg font-semibold mt-2" id="approvalPlanDisplay">-</p>
+                            </div>
+                            <div>
+                                <p class="text-xs font-bold uppercase text-gray-500">Billing Cycle</p>
+                                <p class="text-lg font-semibold mt-2 capitalize" id="approvalBillingCycleDisplay">-</p>
+                            </div>
+                        </div>
+                        
                         <div class="flex gap-4">
                             <button type="button" onclick="closeApprovalModal()"
                                 class="flex-1 border rounded-lg py-3">Cancel</button>
                             <button onclick="submitApproval()"
-                                class="flex-1 bg-red-600 text-white rounded-lg py-3">Approve & Activate</button>
+                                class="flex-1 bg-red-600 text-white rounded-lg py-3 disabled:opacity-50 disabled:cursor-not-allowed"
+                                id="approvalSubmitBtn">Approve & Activate</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Applicant Details Review Modal -->
+            <div id="applicantReviewModal" class="hidden fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+                <div class="bg-white dark:bg-slate-900 w-full max-w-2xl rounded-xl shadow-2xl border flex flex-col overflow-hidden max-h-[90vh] overflow-y-auto">
+                    <div class="px-8 py-6 border-b flex justify-between items-center sticky top-0 bg-white dark:bg-slate-900">
+                        <div>
+                            <h2 class="text-xl font-bold">Application Review</h2>
+                            <p class="text-sm text-gray-500">Review applicant details before approval</p>
+                        </div>
+                        <button onclick="closeApplicantReviewModal()" class="text-gray-400 hover:text-black">
+                            <span class="material-symbols-outlined">close</span>
+                        </button>
+                    </div>
+                    
+                    <div class="p-8 flex flex-col gap-6">
+                        <!-- Applicant Information Section -->
+                        <div>
+                            <h3 class="text-lg font-bold mb-4 flex items-center gap-2">
+                                <span class="material-symbols-outlined text-red-600">person</span>
+                                Applicant Information
+                            </h3>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-6 bg-slate-50 dark:bg-slate-800 p-6 rounded-lg">
+                                <div>
+                                    <p class="text-xs font-bold uppercase text-gray-500">Owner Name</p>
+                                    <p class="text-lg font-semibold mt-2" id="reviewOwnerName">-</p>
+                                </div>
+                                <div>
+                                    <p class="text-xs font-bold uppercase text-gray-500">Shop Name</p>
+                                    <p class="text-lg font-semibold mt-2" id="reviewShopName">-</p>
+                                </div>
+                                <div>
+                                    <p class="text-xs font-bold uppercase text-gray-500">Email Address</p>
+                                    <p class="text-sm mt-2 break-all" id="reviewEmail">-</p>
+                                </div>
+                                <div>
+                                    <p class="text-xs font-bold uppercase text-gray-500">Contact Number</p>
+                                    <p class="text-sm mt-2" id="reviewContactNumber">-</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Shop Information Section -->
+                        <div>
+                            <h3 class="text-lg font-bold mb-4 flex items-center gap-2">
+                                <span class="material-symbols-outlined text-blue-600">location_on</span>
+                                Shop Information
+                            </h3>
+                            <div class="bg-slate-50 dark:bg-slate-800 p-6 rounded-lg">
+                                <p class="text-xs font-bold uppercase text-gray-500">Shop Address</p>
+                                <p class="text-sm mt-2" id="reviewShopAddress">-</p>
+                            </div>
+                        </div>
+
+                        <!-- Subscription Details Section -->
+                        <div>
+                            <h3 class="text-lg font-bold mb-4 flex items-center gap-2">
+                                <span class="material-symbols-outlined text-green-600">card_membership</span>
+                                Subscription Details
+                            </h3>
+                            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 bg-slate-50 dark:bg-slate-800 p-6 rounded-lg">
+                                <div>
+                                    <p class="text-xs font-bold uppercase text-gray-500">Selected Plan</p>
+                                    <p class="text-lg font-semibold mt-2" id="reviewPlan">-</p>
+                                    <p class="text-xs text-gray-600 mt-1" id="reviewPlanPrice">PHP 0.00</p>
+                                </div>
+                                <div>
+                                    <p class="text-xs font-bold uppercase text-gray-500">Billing Cycle</p>
+                                    <p class="text-lg font-semibold mt-2 capitalize" id="reviewBillingCycle">-</p>
+                                </div>
+                                <div>
+                                    <p class="text-xs font-bold uppercase text-gray-500">Application Date</p>
+                                    <p class="text-lg font-semibold mt-2" id="reviewApplicationDate">-</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Payment Status Section -->
+                        <div>
+                            <h3 class="text-lg font-bold mb-4 flex items-center gap-2">
+                                <span class="material-symbols-outlined text-purple-600">payments</span>
+                                Payment Status
+                            </h3>
+                            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 bg-slate-50 dark:bg-slate-800 p-6 rounded-lg">
+                                <div>
+                                    <p class="text-xs font-bold uppercase text-gray-500">Payment Status</p>
+                                    <div class="mt-2" id="reviewPaymentBadge">-</div>
+                                </div>
+                                <div>
+                                    <p class="text-xs font-bold uppercase text-gray-500">Payment Amount</p>
+                                    <p class="text-lg font-semibold mt-2" id="reviewPaymentAmount">-</p>
+                                </div>
+                                <div>
+                                    <p class="text-xs font-bold uppercase text-gray-500">Payment Method</p>
+                                    <p class="text-lg font-semibold mt-2" id="reviewPaymentMethod">-</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Action Buttons -->
+                        <div class="flex gap-4 pt-4 border-t">
+                            <button type="button" onclick="closeApplicantReviewModal()"
+                                class="flex-1 border rounded-lg py-3 font-semibold hover:bg-slate-50">
+                                Close
+                            </button>
+                            <button onclick="openApprovalFromReview()" 
+                                class="flex-1 bg-green-600 text-white rounded-lg py-3 font-semibold hover:bg-green-700">
+                                <span class="flex items-center justify-center gap-2">
+                                    <span class="material-symbols-outlined">check_circle</span>
+                                    Reviewed
+                                </span>
+                            </button>
+                            <button id="rejectReviewBtn" onclick="rejectTenantFromReview()"
+                                class="flex-1 border border-red-200 text-red-600 rounded-lg py-3 font-semibold hover:bg-red-50">
+                                <span class="flex items-center justify-center gap-2">
+                                    <span class="material-symbols-outlined">cancel</span>
+                                    Reject
+                                </span>
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -2135,13 +2433,34 @@ if (isset($_POST['createTenant'])) {
             document.getElementById("editTenantModal").classList.add("hidden");
         }
 
-        function approveTenant(tenantID, subscriptionPlan = '') {
+        function approveTenant(tenantID, subscriptionPlan = '', isPaid = false, billingCycle = 'monthly', shopName = '', ownerName = '') {
             document.getElementById("approveTenantID").value = tenantID;
-            const approvalPlanSelect = document.getElementById("approvalSubscriptionPlan");
-            if (approvalPlanSelect && subscriptionPlan !== '') {
-                approvalPlanSelect.value = subscriptionPlan;
+            document.getElementById("approvalPaymentPaid").value = isPaid ? 'true' : 'false';
+            document.getElementById("approvalSubscriptionPlan").value = subscriptionPlan || '';
+            document.getElementById("approvalBillingCycle").value = billingCycle || 'monthly';
+            
+            // Display static applicant details
+            document.getElementById("approvalShopName").textContent = shopName || '-';
+            document.getElementById("approvalOwnerName").textContent = ownerName || '-';
+            document.getElementById("approvalPlanDisplay").textContent = subscriptionPlan || '-';
+            document.getElementById("approvalBillingCycleDisplay").textContent = billingCycle || '-';
+            
+            // Update payment status display
+            const paymentNotPaidWarning = document.getElementById("paymentNotPaidWarning");
+            const paymentPaidSuccess = document.getElementById("paymentPaidSuccess");
+            const approvalSubmitBtn = document.getElementById("approvalSubmitBtn");
+            
+            if (isPaid) {
+                paymentNotPaidWarning.classList.add("hidden");
+                paymentPaidSuccess.classList.remove("hidden");
+                document.getElementById("paymentVerificationText").textContent = "Payment confirmed. You may proceed with approval.";
+                approvalSubmitBtn.disabled = false;
+            } else {
+                paymentNotPaidWarning.classList.remove("hidden");
+                paymentPaidSuccess.classList.add("hidden");
+                approvalSubmitBtn.disabled = true;
             }
-            renderPlanFeatures('approvalSubscriptionPlan', 'approvalPlanFeaturesPreview');
+            
             document.getElementById("approvalModal").classList.remove("hidden");
         }
 
@@ -2228,6 +2547,74 @@ if (isset($_POST['createTenant'])) {
 
             document.body.appendChild(form);
             form.submit();
+        }
+
+        // Applicant Review Modal Functions
+        function openApplicantReview(tenantID, ownerName, shopName, shopAddress, email, contactNumber, subscriptionPlan, billingCycle, paymentStatus, paymentAmount, paymentMethod, planPrice) {
+            // Set applicant details
+            document.getElementById('reviewOwnerName').textContent = ownerName || '-';
+            document.getElementById('reviewShopName').textContent = shopName || '-';
+            document.getElementById('reviewEmail').textContent = email || '-';
+            document.getElementById('reviewContactNumber').textContent = contactNumber || '-';
+            document.getElementById('reviewShopAddress').textContent = shopAddress || '-';
+            document.getElementById('reviewPlan').textContent = subscriptionPlan || '-';
+            document.getElementById('reviewBillingCycle').textContent = (billingCycle || '-').toLowerCase();
+            document.getElementById('reviewApplicationDate').textContent = new Date().toLocaleDateString();
+            
+            // Set plan price
+            document.getElementById('reviewPlanPrice').textContent = planPrice ? '₱' + parseFloat(planPrice).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : 'PHP 0.00';
+            
+            // Set payment details
+            document.getElementById('reviewPaymentAmount').textContent = paymentAmount ? '₱' + parseFloat(paymentAmount).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '-';
+            document.getElementById('reviewPaymentMethod').textContent = paymentMethod || '-';
+            
+            // Set payment status badge
+            const paymentBadges = {
+                'paid': '<span class="px-3 py-1 bg-green-100 text-green-700 text-xs font-bold rounded-md inline-block">✓ Paid</span>',
+                'pending': '<span class="px-3 py-1 bg-amber-100 text-amber-700 text-xs font-bold rounded-md inline-block">⏱ Pending</span>',
+                'failed': '<span class="px-3 py-1 bg-red-100 text-red-700 text-xs font-bold rounded-md inline-block">✗ Failed</span>',
+                'unpaid': '<span class="px-3 py-1 bg-slate-100 text-slate-700 text-xs font-bold rounded-md inline-block">- No Payment</span>'
+            };
+            document.getElementById('reviewPaymentBadge').innerHTML = paymentBadges[paymentStatus.toLowerCase()] || paymentBadges['unpaid'];
+            
+            // Store tenantID and applicant details for later use
+            document.getElementById('applicantReviewModal').dataset.tenantID = tenantID;
+            document.getElementById('applicantReviewModal').dataset.subscriptionPlan = subscriptionPlan || '';
+            document.getElementById('applicantReviewModal').dataset.billingCycle = billingCycle || 'monthly';
+            document.getElementById('applicantReviewModal').dataset.shopName = shopName || '';
+            document.getElementById('applicantReviewModal').dataset.ownerName = ownerName || '';
+            document.getElementById('applicantReviewModal').dataset.isPaid = paymentStatus.toLowerCase() === 'paid' ? 'true' : 'false';
+            
+            // Open the modal
+            document.getElementById("applicantReviewModal").classList.remove("hidden");
+        }
+
+        function closeApplicantReviewModal() {
+            document.getElementById("applicantReviewModal").classList.add("hidden");
+        }
+
+        function openApprovalFromReview() {
+            const modal = document.getElementById("applicantReviewModal");
+            const tenantID = modal.dataset.tenantID;
+            const subscriptionPlan = modal.dataset.subscriptionPlan;
+            const billingCycle = modal.dataset.billingCycle;
+            const shopName = modal.dataset.shopName;
+            const ownerName = modal.dataset.ownerName;
+            const isPaid = modal.dataset.isPaid === 'true';
+            
+            // Close review modal and open approval modal
+            closeApplicantReviewModal();
+            approveTenant(tenantID, subscriptionPlan, isPaid, billingCycle, shopName, ownerName);
+        }
+
+        function rejectTenantFromReview() {
+            const modal = document.getElementById("applicantReviewModal");
+            const tenantID = modal.dataset.tenantID;
+            
+            if (confirm('Are you sure you want to reject this application?')) {
+                closeApplicantReviewModal();
+                rejectTenant(tenantID);
+            }
         }
     </script>
 

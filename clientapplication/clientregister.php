@@ -30,6 +30,27 @@ function ensureClientPasswordColumn($conn)
     return mysqli_query($conn, $alterSql) !== false;
 }
 
+function validatePasswordStrength($password)
+{
+    $requirements = [
+        'length' => strlen($password) >= 8,
+        'uppercase' => preg_match('/[A-Z]/', $password),
+        'lowercase' => preg_match('/[a-z]/', $password),
+        'number' => preg_match('/[0-9]/', $password),
+        'special' => preg_match('/[!@#$%^&*()_\+\-=\[\]{};:\'",.<>?\/\\|`~]/', $password)
+    ];
+
+    return $requirements;
+}
+
+function isPasswordStrong($password)
+{
+    $requirements = validatePasswordStrength($password);
+    return array_reduce($requirements, function ($carry, $item) {
+        return $carry && $item;
+    }, true);
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['registerClient'])) {
     $formData['firstName'] = trim((string) ($_POST['firstName'] ?? ''));
     $formData['lastName'] = trim((string) ($_POST['lastName'] ?? ''));
@@ -47,6 +68,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['registerClient'])) {
 
     if ($formData['password'] !== '' && strlen($formData['password']) < 8) {
         $errors[] = 'Password must be at least 8 characters.';
+    }
+
+    if ($formData['password'] !== '' && !isPasswordStrong($formData['password'])) {
+        $errors[] = 'Password must contain uppercase, lowercase, number, and special character (e.g., Rapidrepair1!).';
     }
 
     if ($formData['password'] !== $formData['confirmPassword']) {
@@ -238,7 +263,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['registerClient'])) {
     <main class="flex-grow flex items-stretch pt-16">
         <!-- Left: Branding & Visual (Architectural North Star) -->
         <div
-            class="hidden lg:flex w-1/2 bg-on-background relative overflow-hidden flex-col justify-center px-20 architectural-grid">
+            class="hidden lg:flex w-1/2 bg-on-background relative overflow-hidden flex-col justify-center px-20">
+            <!-- Background Image Carousel -->
+            <div class="absolute inset-0 overflow-hidden">
+                <div id="bg-image-1" class="absolute inset-0 bg-cover bg-center transition-opacity duration-1000 opacity-100" style="background-image: linear-gradient(135deg, rgba(0,0,0,0.5), rgba(0,0,0,0.7)), url('../adspictures/ads1.png');"></div>
+                <div id="bg-image-2" class="absolute inset-0 bg-cover bg-center transition-opacity duration-1000 opacity-0" style="background-image: linear-gradient(135deg, rgba(0,0,0,0.5), rgba(0,0,0,0.7)), url('../adspictures/ads2.png');"></div>
+                <div id="bg-image-3" class="absolute inset-0 bg-cover bg-center transition-opacity duration-1000 opacity-0" style="background-image: linear-gradient(135deg, rgba(0,0,0,0.5), rgba(0,0,0,0.7)), url('../adspictures/ads3.png');"></div>
+            </div>
             <div class="absolute inset-0 bg-gradient-to-br from-primary/20 to-transparent"></div>
             <div class="relative z-10">
                 <div
@@ -286,7 +317,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['registerClient'])) {
         </div>
         <!-- Right: Registration Form -->
         <div class="w-full lg:w-1/2 flex items-center justify-center p-8 md:p-12 lg:p-24 bg-surface">
-            <div class="w-full max-w-md">
+            <div class="w-full max-w-4xl">
                 <div class="mb-10 lg:hidden">
                     <div class="text-[20px] font-black text-[#1152d4] uppercase tracking-tighter mb-2">RapidRepairCo.
                     </div>
@@ -314,7 +345,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['registerClient'])) {
 
                     <form class="space-y-5" method="post" action="">
                         <input type="hidden" name="registerClient" value="1" />
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div class="space-y-5">
                             <div class="space-y-1.5">
                                 <label class="text-[12px] font-bold text-on-surface-variant uppercase tracking-wider">First Name</label>
                                 <input
@@ -339,38 +370,95 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['registerClient'])) {
                                 placeholder="manager@shop.com" type="email" name="email" required
                                 value="<?php echo htmlspecialchars($formData['email'], ENT_QUOTES, 'UTF-8'); ?>" />
                         </div>
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div class="space-y-5">
                             <div class="space-y-1.5">
                                 <label
                                     class="text-[12px] font-bold text-on-surface-variant uppercase tracking-wider">Create
                                     Password</label>
-                                <input
-                                    class="w-full h-11 bg-surface-container-highest border border-outline px-4 rounded-lg focus:ring-1 focus:ring-primary focus:border-primary text-[14px] outline-none transition-all"
-                                    placeholder="••••••••" type="password" name="password" required />
+                                <div class="relative">
+                                    <input
+                                        id="password"
+                                        class="w-full h-11 bg-surface-container-highest border border-outline px-4 rounded-lg focus:ring-1 focus:ring-primary focus:border-primary text-[14px] outline-none transition-all pr-12"
+                                        placeholder="••••••••" type="password" name="password" required
+                                        oninput="updatePasswordStrength(this.value)" />
+                                    <button
+                                        type="button"
+                                        class="absolute right-3 top-1/2 transform -translate-y-1/2 text-on-surface-variant hover:text-primary transition-colors"
+                                        onclick="togglePasswordVisibility('password', this)">
+                                        <span class="material-symbols-outlined text-[20px]" id="password-eye">visibility</span>
+                                    </button>
+                                </div>
+                                
+                                <!-- Password Strength Indicator -->
+                                <div class="mt-3 space-y-2">
+                                    <div class="flex gap-1">
+                                        <div id="strength-1" class="h-1 flex-1 bg-slate-200 rounded-full transition-colors"></div>
+                                        <div id="strength-2" class="h-1 flex-1 bg-slate-200 rounded-full transition-colors"></div>
+                                        <div id="strength-3" class="h-1 flex-1 bg-slate-200 rounded-full transition-colors"></div>
+                                        <div id="strength-4" class="h-1 flex-1 bg-slate-200 rounded-full transition-colors"></div>
+                                        <div id="strength-5" class="h-1 flex-1 bg-slate-200 rounded-full transition-colors"></div>
+                                    </div>
+                                    <div id="strength-text" class="text-[12px] text-slate-500">Password strength: —</div>
+                                </div>
+
+                                <!-- Password Requirements -->
+                                <div class="mt-2 space-y-1">
+                                    <div class="text-[10px] font-semibold text-on-surface-variant uppercase tracking-wider">Password Requirements:</div>
+                                    <div class="grid grid-cols-3 gap-1 text-[11px]">
+                                        <div class="flex items-center gap-1.5">
+                                            <span id="req-length" class="text-lg leading-none">○</span>
+                                            <span class="text-on-surface-variant">8+ characters</span>
+                                        </div>
+                                        <div class="flex items-center gap-1.5">
+                                            <span id="req-upper" class="text-lg leading-none">○</span>
+                                            <span class="text-on-surface-variant">Uppercase</span>
+                                        </div>
+                                        <div class="flex items-center gap-1.5">
+                                            <span id="req-lower" class="text-lg leading-none">○</span>
+                                            <span class="text-on-surface-variant">Lowercase</span>
+                                        </div>
+                                        <div class="flex items-center gap-1.5">
+                                            <span id="req-number" class="text-lg leading-none">○</span>
+                                            <span class="text-on-surface-variant">Number</span>
+                                        </div>
+                                        <div class="flex items-center gap-1.5">
+                                            <span id="req-special" class="text-lg leading-none">○</span>
+                                            <span class="text-on-surface-variant">Special char.</span>
+                                        </div>
+                                    </div>
                             </div>
-                            <div class="space-y-1.5">
-                                <label
-                                    class="text-[12px] font-bold text-on-surface-variant uppercase tracking-wider">Confirm
-                                    Password</label>
+                        </div>
+                        <div class="space-y-1.5">
+                            <label
+                                class="text-[12px] font-bold text-on-surface-variant uppercase tracking-wider">Confirm
+                                Password</label>
+                            <div class="relative">
                                 <input
-                                    class="w-full h-11 bg-surface-container-highest border border-outline px-4 rounded-lg focus:ring-1 focus:ring-primary focus:border-primary text-[14px] outline-none transition-all"
+                                    id="confirmPassword"
+                                    class="w-full h-11 bg-surface-container-highest border border-outline px-4 rounded-lg focus:ring-1 focus:ring-primary focus:border-primary text-[14px] outline-none transition-all pr-12"
                                     placeholder="••••••••" type="password" name="confirmPassword" required />
+                                <button
+                                    type="button"
+                                    class="absolute right-3 top-1/2 transform -translate-y-1/2 text-on-surface-variant hover:text-primary transition-colors"
+                                    onclick="togglePasswordVisibility('confirmPassword', this)">
+                                    <span class="material-symbols-outlined text-[20px]" id="confirmPassword-eye">visibility</span>
+                                </button>
                             </div>
                         </div>
-                        <div class="flex items-center gap-2 pt-2">
-                            <input class="w-4 h-4 text-primary border-outline rounded focus:ring-primary" id="terms"
-                                type="checkbox" required />
-                            <label class="text-[12px] text-on-surface-variant leading-none" for="terms">I agree to the
-                                <a class="text-primary font-bold" href="#">Terms of Service</a> and <a
-                                    class="text-primary font-bold" href="#">Privacy Policy</a>.</label>
-                        </div>
-                        <div class="pt-4 space-y-4">
+                        <div class="pt-4 space-y-3">
+                            <div class="flex items-start gap-2.5 p-3 bg-slate-50 rounded-lg border border-slate-200">
+                                <input class="w-4 h-4 text-primary border-outline rounded focus:ring-primary mt-0.5 flex-shrink-0" id="terms"
+                                    type="checkbox" required />
+                                <label class="text-[12px] text-on-surface-variant leading-relaxed" for="terms">I agree to the
+                                    <a class="text-primary font-bold hover:underline" href="#">Terms of Service</a> and <a
+                                        class="text-primary font-bold hover:underline" href="#">Privacy Policy</a>.</label>
+                            </div>
                             <button
-                                class="w-full h-12 bg-primary text-white font-bold rounded-lg hover:opacity-90 active:scale-[0.98] transition-all tracking-tight shadow-sm"
+                                class="w-full h-16 bg-primary text-white font-bold rounded-lg hover:opacity-90 active:scale-[0.98] transition-all tracking-tight shadow-sm text-[16px]"
                                 type="submit">
                                 Create Account
                             </button>
-                            <div class="text-center">
+                            <div class="text-center pt-2">
                                 <span class="text-[14px] text-on-surface-variant">Already have an account? </span>
                                 <a class="text-[14px] text-primary font-bold hover:underline" href="clientlogin.php">Login</a>
                             </div>
@@ -385,7 +473,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['registerClient'])) {
     </main>
     <!-- Footer -->
     <footer
-        class="w-full py-12 px-8 flex flex-col md:flex-row justify-between items-center gap-4 bg-slate-50 dark:bg-slate-950 border-t border-slate-200 dark:border-slate-800 font-['Inter'] text-[14px] leading-relaxed">
+        class="w-full py-6 px-8 flex flex-col md:flex-row justify-between items-center gap-2 bg-slate-50 dark:bg-slate-950 border-t border-slate-200 dark:border-slate-800 font-['Inter'] text-[12px] leading-relaxed">
         <div class="text-lg font-bold text-slate-900 dark:text-slate-100">
             RapidRepairCo.
         </div>
@@ -403,6 +491,109 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['registerClient'])) {
                 href="#">Support</a>
         </div>
     </footer>
+    <script>
+        // Background Image Carousel
+        const adImages = ['ads1.png', 'ads2.png', 'ads3.png']; // All available images
+        let currentImageIndex = 0;
+        
+        function rotateBackground() {
+            // Hide current image
+            const currentElement = document.getElementById(`bg-image-${currentImageIndex + 1}`);
+            if (currentElement) {
+                currentElement.style.opacity = '0';
+            }
+            
+            // Move to next image
+            currentImageIndex = (currentImageIndex + 1) % adImages.length;
+            
+            // Show next image
+            const nextElement = document.getElementById(`bg-image-${currentImageIndex + 1}`);
+            if (nextElement) {
+                nextElement.style.opacity = '1';
+            }
+        }
+        
+        // Rotate every 5 seconds
+        setInterval(rotateBackground, 5000);
+
+        function togglePasswordVisibility(fieldId, button) {
+            const passwordField = document.getElementById(fieldId);
+            const eyeIcon = document.getElementById(fieldId + '-eye');
+            
+            if (passwordField.type === 'password') {
+                passwordField.type = 'text';
+                eyeIcon.textContent = 'visibility_off';
+            } else {
+                passwordField.type = 'password';
+                eyeIcon.textContent = 'visibility';
+            }
+        }
+
+        function updatePasswordStrength(password) {
+            const requirements = {
+                length: password.length >= 8,
+                uppercase: /[A-Z]/.test(password),
+                lowercase: /[a-z]/.test(password),
+                number: /[0-9]/.test(password),
+                special: /[!@#$%^&*()_\+\-=\[\]{};:'"",.<>?\/\\|`~]/.test(password)
+            };
+
+            // Update requirement indicators
+            updateRequirementIndicator('req-length', requirements.length);
+            updateRequirementIndicator('req-upper', requirements.uppercase);
+            updateRequirementIndicator('req-lower', requirements.lowercase);
+            updateRequirementIndicator('req-number', requirements.number);
+            updateRequirementIndicator('req-special', requirements.special);
+
+            // Calculate strength score
+            const metRequirements = Object.values(requirements).filter(val => val).length;
+            const strengthPercentage = (metRequirements / 5) * 100;
+
+            // Update strength bars
+            for (let i = 1; i <= 5; i++) {
+                const bar = document.getElementById(`strength-${i}`);
+                if ((i / 5) * 100 <= strengthPercentage) {
+                    bar.style.backgroundColor = getStrengthColor(metRequirements);
+                } else {
+                    bar.style.backgroundColor = '#e2e8f0';
+                }
+            }
+
+            // Update strength text
+            const strengthText = document.getElementById('strength-text');
+            if (password.length === 0) {
+                strengthText.textContent = 'Password strength: —';
+            } else if (metRequirements === 5) {
+                strengthText.textContent = 'Password strength: Strong ✓';
+                strengthText.style.color = '#16a34a';
+            } else if (metRequirements >= 3) {
+                strengthText.textContent = 'Password strength: Fair';
+                strengthText.style.color = '#f59e0b';
+            } else {
+                strengthText.textContent = 'Password strength: Weak';
+                strengthText.style.color = '#ef4444';
+            }
+        }
+
+        function updateRequirementIndicator(elementId, isMet) {
+            const element = document.getElementById(elementId);
+            if (isMet) {
+                element.textContent = '✓';
+                element.style.color = '#16a34a';
+                element.style.fontSize = '16px';
+            } else {
+                element.textContent = '○';
+                element.style.color = '#cbd5e1';
+                element.style.fontSize = '24px';
+            }
+        }
+
+        function getStrengthColor(metRequirements) {
+            if (metRequirements === 5) return '#16a34a'; // Green
+            if (metRequirements >= 3) return '#f59e0b'; // Orange
+            return '#ef4444'; // Red
+        }
+    </script>
 </body>
 
 </html>

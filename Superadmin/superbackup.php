@@ -1,6 +1,7 @@
 <?php
 session_start();
 require_once __DIR__ . "/../db.php";
+require_once __DIR__ . "/../log_helper.php";
 
 if (isset($_POST['logout_superadmin'])) {
     $_SESSION = [];
@@ -232,6 +233,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $backupPath = $backupDir . DIRECTORY_SEPARATOR . $fileName;
 
             if (createDatabaseBackup($conn, $backupPath)) {
+                // Log the backup creation
+                $fileSize = filesize($backupPath) ?: 0;
+                $logDetails = "Created database backup: $fileName, Size: $fileSize bytes";
+                log_event($conn, "Create Backup", "Backup File", null, $logDetails);
+                
                 header('Location: superbackup.php?success=' . urlencode($fileName));
                 exit();
             }
@@ -247,7 +253,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $basePath = realpath($backupDir);
 
         if ($target && $basePath && strpos($target, $basePath) === 0 && is_file($target)) {
+            $fileSize = filesize($target) ?: 0;
             if (@unlink($target)) {
+                // Log the backup deletion
+                $logDetails = "Deleted backup file: $fileName, Size: $fileSize bytes";
+                log_event($conn, "Delete Backup", "Backup File", null, $logDetails);
+                
                 header('Location: superbackup.php?deleted=' . urlencode($fileName));
                 exit();
             }
