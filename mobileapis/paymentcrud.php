@@ -72,24 +72,53 @@ if (!isset($conn) || $conn->connect_error) {
     ]);
 }
 
+// Parse JSON input with better error handling
 $rawInput = file_get_contents('php://input');
-$jsonInput = json_decode($rawInput, true);
+$jsonInput = [];
+$contentType = $_SERVER['CONTENT_TYPE'] ?? '';
+
+if (stripos($contentType, 'application/json') !== false && !empty($rawInput)) {
+    $jsonInput = json_decode($rawInput, true);
+    if (json_last_error() !== JSON_ERROR_NONE) {
+        sendResponse(400, [
+            'status' => 'error',
+            'message' => 'Invalid JSON format',
+            'json_error' => json_last_error_msg(),
+            'debug' => [
+                'raw_input' => substr($rawInput, 0, 200),
+                'content_type' => $contentType
+            ]
+        ]);
+    }
+}
 if (!is_array($jsonInput)) {
     $jsonInput = [];
 }
 
-$action = sanitizeString(
-    $_GET['action']
-    ?? $_POST['action']
-    ?? $jsonInput['action']
-    ?? ''
-);
+// Extract action from multiple sources with priority
+$action = '';
+if (!empty($jsonInput['action'])) {
+    $action = sanitizeString($jsonInput['action']);
+} elseif (!empty($_POST['action'])) {
+    $action = sanitizeString($_POST['action']);
+} elseif (!empty($_GET['action'])) {
+    $action = sanitizeString($_GET['action']);
+}
+$action = strtolower($action);
 
 if ($action === '') {
     sendResponse(400, [
         'status' => 'error',
         'message' => 'Missing action parameter',
         'available_actions' => ['list', 'create', 'update', 'delete'],
+        'debug' => [
+            'method' => $_SERVER['REQUEST_METHOD'],
+            'content_type' => $_SERVER['CONTENT_TYPE'] ?? 'not set',
+            'get_params' => !empty($_GET) ? array_keys($_GET) : [],
+            'post_params' => !empty($_POST) ? array_keys($_POST) : [],
+            'json_params' => !empty($jsonInput) ? array_keys($jsonInput) : [],
+            'raw_input_length' => strlen($rawInput ?? ''),
+        ]
     ]);
 }
 
@@ -110,7 +139,8 @@ try {
         default:
             sendResponse(400, [
                 'status' => 'error',
-                'message' => 'Invalid action',
+                'message' => 'Invalid action: ' . $action,
+                'available_actions' => ['list', 'create', 'update', 'delete'],
             ]);
     }
 } catch (Throwable $e) {
