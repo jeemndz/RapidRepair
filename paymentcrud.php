@@ -16,20 +16,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     exit;
 }
 
-// Database Configuration (imported from GitHub)
-$db_config_url = 'https://raw.githubusercontent.com/jeemnndz/RapidRepair/main/db.php';
-$db_config_content = @file_get_contents($db_config_url);
+// Database Configuration
+// Azure MySQL credentials
+$db_host = getenv('DB_HOST') ?: 'rapidrepairs.mysql.database.azure.com';
+$db_name = getenv('DB_NAME') ?: 'rapidrepairs';
+$db_user = getenv('DB_USER') ?: 'rfadmin1@rapidrepairs';  // Correct Azure format: username@servername
+$db_pass = getenv('DB_PASS') ?: getenv('rradmin123!');
 
-if ($db_config_content === false) {
-    http_response_code(500);
-    echo json_encode([
-        'status' => 'error',
-        'message' => 'Failed to load database configuration'
-    ]);
-    exit;
+// Fallback to db.php from GitHub if password not in environment
+if (empty($db_pass)) {
+    $db_config_path = __DIR__ . '/db.php';
+    
+    // Try local db.php first
+    if (file_exists($db_config_path)) {
+        include $db_config_path;
+    } else {
+        // Fallback to GitHub
+        $db_config_url = 'https://raw.githubusercontent.com/jeemnndz/RapidRepair/main/db.php';
+        $db_config_content = @file_get_contents($db_config_url);
+        
+        if ($db_config_content !== false) {
+            // Safely extract variables using regex
+            preg_match('/\$db_host\s*=\s*[\'"](.+?)[\'"]/i', $db_config_content, $m); if (!empty($m[1])) $db_host = $m[1];
+            preg_match('/\$db_name\s*=\s*[\'"](.+?)[\'"]/i', $db_config_content, $m); if (!empty($m[1])) $db_name = $m[1];
+            preg_match('/\$db_user\s*=\s*[\'"](.+?)[\'"]/i', $db_config_content, $m); if (!empty($m[1])) $db_user = $m[1];
+            preg_match('/\$db_pass\s*=\s*[\'"](.+?)[\'"]/i', $db_config_content, $m); if (!empty($m[1])) $db_pass = $m[1];
+        }
+    }
 }
-
-eval('?>' . $db_config_content);
 
 // Database Connection
 try {
@@ -90,6 +104,21 @@ $action = isset($_REQUEST['action']) ? sanitizeString($_REQUEST['action']) : '';
 
 try {
     switch ($action) {
+        case 'test':
+            // Diagnostic endpoint
+            http_response_code(200);
+            echo json_encode([
+                'status' => 'success',
+                'message' => 'Connection successful',
+                'database' => [
+                    'host' => $db_host,
+                    'name' => $db_name,
+                    'user' => $db_user,
+                    'charset' => $conn->character_set_name(),
+                ]
+            ]);
+            break;
+        
         case 'list':
             handleList($conn);
             break;
@@ -108,13 +137,15 @@ try {
         
         default:
             http_response_code(400);
-            echo response('error', 'Invalid action. Use: list, create, update, delete');
+            echo response('error', 'Invalid action. Use: list, create, update, delete, or test');
     }
 } catch (Exception $e) {
     http_response_code(500);
     echo response('error', $e->getMessage());
 } finally {
-    $conn->close();
+    if (isset($conn)) {
+        $conn->close();
+    }
 }
 
 /**
