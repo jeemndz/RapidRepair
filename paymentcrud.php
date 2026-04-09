@@ -21,7 +21,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 // Database Configuration - Use GitHub db.php as primary source
 $db_host = 'rapidrepairs.mysql.database.azure.com';
 $db_name = 'rapidrepairs';
-$db_user = 'rradmin1@rapidrepairs';
+$db_user = 'rradmin1';
 $db_pass = 'rradmin123!';  // Update if different
 
 // Try GitHub db.php for credentials (backup)
