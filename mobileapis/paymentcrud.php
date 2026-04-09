@@ -51,48 +51,49 @@ function sendResponse($statusCode, $data)
 
 function normalizeId($value, $fallback = 0)
 {
-    $num = (int)$value;
+    $num = (int) $value;
     return ($num > 0) ? $num : $fallback;
 }
 
 function normalizeMoney($value, $fallback = 0)
 {
-    $num = (float)$value;
+    $num = (float) $value;
     return ($num >= 0) ? round($num, 2) : $fallback;
 }
 
 function normalizeMethod($value)
 {
     $valid = ['Cash', 'GCash', 'Card', 'Bank Transfer'];
-    $value = trim((string)$value);
+    $value = trim((string) $value);
     return in_array($value, $valid, true) ? $value : 'GCash';
 }
 
 function sanitizeString($str)
 {
-    return trim(strip_tags((string)($str ?? '')));
+    return trim(strip_tags((string) ($str ?? '')));
 }
 
 function normalizePayment($row)
 {
     return [
-        'payment_id' => (int)($row['payment_id'] ?? 0),
-        'tenantID' => (int)($row['tenantID'] ?? 0),
-        'user_id' => (int)($row['user_id'] ?? 0),
-        'appointment_id' => (int)($row['appointment_id'] ?? 0),
-        'paymentAmount' => (float)($row['paymentAmount'] ?? 0),
-        'amountPaid' => (float)($row['amountPaid'] ?? 0),
-        'balance' => (float)($row['balance'] ?? 0),
-        'paymentMethod' => (string)($row['paymentMethod'] ?? 'Cash'),
+        'payment_id' => (int) ($row['payment_id'] ?? 0),
+        'tenantID' => (int) ($row['tenantID'] ?? 0),
+        'user_id' => (int) ($row['user_id'] ?? 0),
+        'appointment_id' => (int) ($row['appointment_id'] ?? 0),
+        'paymentAmount' => (float) ($row['paymentAmount'] ?? 0),
+        'amountPaid' => (float) ($row['amountPaid'] ?? 0),
+        'balance' => (float) ($row['balance'] ?? 0),
+        'paymentMethod' => (string) ($row['paymentMethod'] ?? 'Cash'),
         'paymentDate' => $row['paymentDate'] ?? null,
-        'paymentStatus' => (string)($row['paymentStatus'] ?? 'Pending'),
+        'paymentStatus' => (string) ($row['paymentStatus'] ?? 'Pending'),
         'referenceNumber' => $row['referenceNumber'] ?? null,
         'gcashReferenceNumber' => $row['gcashReferenceNumber'] ?? null,
         'remarks' => $row['remarks'] ?? null,
-        'created_at' => (string)($row['created_at'] ?? ''),
-        'updated_at' => (string)($row['updated_at'] ?? ''),
+        'created_at' => (string) ($row['created_at'] ?? ''),
+        'updated_at' => (string) ($row['updated_at'] ?? ''),
         'appointment_date' => $row['appointment_date'] ?? '',
         'appointment_time' => $row['appointment_time'] ?? '',
+        'appointment_status' => (string)($row['appointment_status'] ?? ''),
     ];
 }
 
@@ -186,32 +187,32 @@ function handleList($conn, $jsonInput = [])
     }
 
     $user_id = normalizeId($data['user_id'] ?? 0);
-    $limit = min(max((int)($data['limit'] ?? 50), 1), 100);
-    $offset = max((int)($data['offset'] ?? 0), 0);
+    $limit = min(max((int) ($data['limit'] ?? 50), 1), 100);
+    $offset = max((int) ($data['offset'] ?? 0), 0);
     $paymentStatus = sanitizeString($data['paymentStatus'] ?? '');
 
     $query = "SELECT 
-        p.payment_id,
-        p.tenantID,
-        p.user_id,
-        p.appointment_id,
-        p.paymentAmount,
-        p.amountPaid,
-        p.balance,
-        p.paymentMethod,
-        p.paymentDate,
-        p.paymentStatus,
-        p.referenceNumber,
-        p.gcashReferenceNumber,
-        p.remarks,
-        p.created_at,
-        p.updated_at,
-        a.appointment_date,
-        a.appointment_time
-    FROM payments p
-    LEFT JOIN appointments a 
-        ON p.appointment_id = a.appointment_id
-    WHERE p.tenantID = ?";
+    p.payment_id,
+    p.tenantID,
+    p.user_id,
+    p.appointment_id,
+    p.paymentAmount,
+    p.amountPaid,
+    p.balance,
+    p.paymentMethod,
+    p.paymentDate,
+    p.paymentStatus,
+    p.referenceNumber,
+    p.gcashReferenceNumber,
+    p.remarks,
+    p.created_at,
+    p.updated_at,
+    a.appointment_date,
+    a.appointment_time,
+    a.status AS appointment_status
+FROM payments p
+LEFT JOIN appointments a ON p.appointment_id = a.appointment_id
+WHERE p.tenantID = ?";
 
     $types = 'i';
     $params = [$tenantID];
@@ -331,8 +332,8 @@ function handlePay($conn, $jsonInput = [])
         ]);
     }
 
-    $paymentAmount = round((float)$payment['paymentAmount'], 2);
-    $newAmountPaid = round((float)$amountPaid, 2);
+    $paymentAmount = round((float) $payment['paymentAmount'], 2);
+    $newAmountPaid = round((float) $amountPaid, 2);
 
     if ($newAmountPaid > $paymentAmount) {
         $newAmountPaid = $paymentAmount;
