@@ -40,12 +40,14 @@ if (!is_array($data)) {
 
 $firstName = trim((string) ($data['firstName'] ?? ''));
 $lastName = trim((string) ($data['lastName'] ?? ''));
+$usernameInput = trim((string) ($data['username'] ?? ''));
 $email = trim((string) ($data['email'] ?? ''));
+$address = trim((string) ($data['address'] ?? ''));
 $phone = trim((string) ($data['phone'] ?? ''));
 $password = (string) ($data['password'] ?? '');
 $inviteCode = normalizeInviteCode($data['invite_code'] ?? $data['inviteCode'] ?? $data['code'] ?? '');
 
-if ($firstName === '' || $lastName === '' || $email === '' || $phone === '' || $password === '' || $inviteCode === '') {
+if ($firstName === '' || $lastName === '' || $email === '' || $phone === '' || $password === '' || $inviteCode === '' || $address === '') {
     respond(400, [
         'status' => 'error',
         'message' => 'Please fill all fields.',
@@ -118,14 +120,14 @@ try {
     }
 
     $fullName = trim($firstName . ' ' . $lastName);
-    $username = strtolower(preg_replace('/[^a-z0-9]+/', '.', strstr($email, '@', true) ?: $fullName));
+    $usernameBase = $usernameInput !== '' ? $usernameInput : (strstr($email, '@', true) ?: $fullName);
+    $username = strtolower(preg_replace('/[^a-z0-9._-]+/', '.', $usernameBase));
     $username = trim($username, '.');
     if ($username === '') {
         $username = strtolower(preg_replace('/\s+/', '.', $fullName));
         $username = trim($username, '.');
     }
 
-    $address = trim((string) ($data['address'] ?? ''));
     $hashedPassword = password_hash($password, PASSWORD_DEFAULT);
 
     $stmt = $conn->prepare("INSERT INTO users (tenantID, fullName, username, address, email, password, contactNumber, role) VALUES (?, ?, ?, ?, ?, ?, ?, 'client')");
