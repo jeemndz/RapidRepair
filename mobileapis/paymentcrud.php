@@ -94,7 +94,7 @@ function normalizePayment($row)
         'appointment_date' => $row['appointment_date'] ?? '',
         'appointment_time' => $row['appointment_time'] ?? '',
         'appointment_status' => (string)($row['appointment_status'] ?? ''),
-        'job_status' => $row['job_status'] !== null ? (string)$row['job_status'] : null,
+        'job_status' => (string)($row['job_status'] ?? 'Pending'),
     ];
 }
 
@@ -185,6 +185,44 @@ function handleList($conn, $jsonInput = [])
             'status' => 'error',
             'message' => 'Invalid or missing tenantID'
         ]);
+    }
+
+    // Auto-populate repair_jobs for appointments without them
+    $appointmentQuery = "
+        SELECT DISTINCT p.appointment_id, a.tenantID, a.user_id, a.vehicle_id
+        FROM payments p
+        LEFT JOIN appointments a ON p.appointment_id = a.appointment_id
+        WHERE p.tenantID = ?
+        AND NOT EXISTS (
+            SELECT 1 FROM repair_jobs rj WHERE rj.appointment_id = p.appointment_id
+        )
+    ";
+    
+    $stmt = $conn->prepare($appointmentQuery);
+    if ($stmt) {
+        $stmt->bind_param('i', $tenantID);
+        $stmt->execute();
+        $result = $stmt->get_result();
+        
+        while ($row = $result->fetch_assoc()) {
+            $appointmentId = $row['appointment_id'];
+            $appointTenantID = $row['tenantID'] ?? $tenantID;
+            $userId = $row['user_id'] ?? 0;
+            $vehicleId = $row['vehicle_id'] ?? 0;
+            
+            $createStmt = $conn->prepare("
+                INSERT INTO repair_jobs (appointment_id, tenantID, user_id, vehicle_id, job_status, priority, created_at, updated_at)
+                VALUES (?, ?, ?, ?, 'Queued', 'Normal', NOW(), NOW())
+                ON DUPLICATE KEY UPDATE updated_at = NOW()
+            ");
+            
+            if ($createStmt) {
+                $createStmt->bind_param('iiii', $appointmentId, $appointTenantID, $userId, $vehicleId);
+                $createStmt->execute();
+                $createStmt->close();
+            }
+        }
+        $stmt->close();
     }
 
     $user_id = normalizeId($data['user_id'] ?? 0);
