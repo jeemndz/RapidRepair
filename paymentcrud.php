@@ -5,7 +5,13 @@
  * Database: rapidrepairs (Azure MySQL)
  */
 
-header('Content-Type: application/json');
+// Error handling - prevent non-JSON output from errors
+ini_set('display_errors', 0);
+ini_set('log_errors', 1);
+error_reporting(E_ALL);
+
+// Set JSON headers FIRST before any output
+header('Content-Type: application/json; charset=utf-8');
 header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
 header('Access-Control-Allow-Headers: Content-Type');
@@ -20,11 +26,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 // Azure MySQL credentials
 $db_host = getenv('DB_HOST') ?: 'rapidrepairs.mysql.database.azure.com';
 $db_name = getenv('DB_NAME') ?: 'rapidrepairs';
-$db_user = getenv('DB_USER') ?: 'rradmin1';  // Correct Azure format: username@servername
-$db_pass = getenv('DB_PASS') ?: getenv('rradmin123!');
+$db_user = getenv('DB_USER') ?: 'rradmin1@rapidrepairs';  // Correct Azure format: username@servername
+$db_pass = getenv('DB_PASS') ?: 'rradmin123!';  // Your Azure password
 
-// Fallback to db.php from GitHub if password not in environment
-if (empty($db_pass)) {
+// Fallback to db.php from GitHub if still empty
+if (empty($db_pass) || $db_pass === 'rradmin123!') {
     $db_config_path = __DIR__ . '/db.php';
     
     // Try local db.php first
@@ -47,6 +53,10 @@ if (empty($db_pass)) {
 
 // Database Connection
 try {
+    if (empty($db_pass)) {
+        throw new Exception('Database password not configured. Check environment or db.php.');
+    }
+    
     $conn = new mysqli($db_host, $db_user, $db_pass, $db_name);
     
     if ($conn->connect_error) {
@@ -56,11 +66,14 @@ try {
     $conn->set_charset('utf8mb4');
 } catch (Exception $e) {
     http_response_code(500);
-    echo json_encode([
+    die(json_encode([
         'status' => 'error',
-        'message' => 'Database connection error: ' . $e->getMessage()
-    ]);
-    exit;
+        'message' => 'Database connection error: ' . $e->getMessage(),
+        'debug' => [
+            'host' => $db_host,
+            'user' => $db_user,
+        ]
+    ]));
 }
 
 // Helper Functions
@@ -107,7 +120,7 @@ try {
         case 'test':
             // Diagnostic endpoint
             http_response_code(200);
-            echo json_encode([
+            die(json_encode([
                 'status' => 'success',
                 'message' => 'Connection successful',
                 'database' => [
@@ -116,8 +129,7 @@ try {
                     'user' => $db_user,
                     'charset' => $conn->character_set_name(),
                 ]
-            ]);
-            break;
+            ]));
         
         case 'list':
             handleList($conn);
@@ -137,11 +149,11 @@ try {
         
         default:
             http_response_code(400);
-            echo response('error', 'Invalid action. Use: list, create, update, delete, or test');
+            die(response('error', 'Invalid action. Use: list, create, update, delete, or test'));
     }
 } catch (Exception $e) {
     http_response_code(500);
-    echo response('error', $e->getMessage());
+    die(response('error', $e->getMessage()));
 } finally {
     if (isset($conn)) {
         $conn->close();
@@ -246,7 +258,7 @@ function handleList($conn) {
     $stmt->close();
 
     http_response_code(200);
-    echo response('success', 'Payments retrieved successfully', $payments);
+    die(response('success', 'Payments retrieved successfully', $payments));
 }
 
 /**
@@ -307,11 +319,11 @@ function handleCreate($conn) {
     $stmt->close();
 
     http_response_code(201);
-    echo response('success', 'Payment created successfully', [
+    die(response('success', 'Payment created successfully', [
         'payment_id' => $payment_id,
         'referenceNumber' => $referenceNumber,
         'paymentStatus' => $paymentStatus,
-    ]);
+    ]));
 }
 
 /**
@@ -419,7 +431,7 @@ function handleUpdate($conn) {
     $stmt->close();
 
     http_response_code(200);
-    echo response('success', 'Payment updated successfully');
+    die(response('success', 'Payment updated successfully'));
 }
 
 /**
@@ -445,6 +457,6 @@ function handleDelete($conn) {
     $stmt->close();
 
     http_response_code(200);
-    echo response('success', 'Payment deleted successfully');
+    die(response('success', 'Payment deleted successfully'));
 }
 ?>
