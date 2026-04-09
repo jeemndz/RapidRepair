@@ -20,7 +20,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 // Azure MySQL credentials
 $db_host = getenv('DB_HOST') ?: 'rapidrepairs.mysql.database.azure.com';
 $db_name = getenv('DB_NAME') ?: 'rapidrepairs';
-$db_user = getenv('DB_USER') ?: 'rfadmin1@rapidrepairs';  // Correct Azure format: username@servername
+$db_user = getenv('DB_USER') ?: 'rradmin1';  // Correct Azure format: username@servername
 $db_pass = getenv('DB_PASS') ?: getenv('rradmin123!');
 
 // Fallback to db.php from GitHub if password not in environment
