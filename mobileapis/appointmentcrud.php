@@ -1,13 +1,12 @@
 <?php
 /**
- * Appointment CRUD API
- * Handles list, create, update, and delete operations for appointments
- * Database Tables: appointments, appointment_services, payments, repair_jobs
+ * Customer Appointment API
+ * Allows customer mobile app to create bookings only
  */
 
 header('Content-Type: application/json; charset=utf-8');
 header('Access-Control-Allow-Origin: *');
-header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
+header('Access-Control-Allow-Methods: POST, OPTIONS');
 header('Access-Control-Allow-Headers: Content-Type, Authorization');
 
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
@@ -68,9 +67,7 @@ function getRequestData()
 {
     $data = [];
 
-    if ($_SERVER['REQUEST_METHOD'] === 'GET') {
-        $data = $_GET;
-    } elseif ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $data = $_POST;
 
         if (empty($data)) {
@@ -119,135 +116,6 @@ function normalizeServiceIds($value)
     $ids = array_values(array_unique(array_filter($ids, fn($v) => $v > 0)));
 
     return $ids;
-}
-
-function normalizeAppointment($row)
-{
-    return [
-        'appointment_id' => (int) $row['appointment_id'],
-        'tenantID' => (int) $row['tenantID'],
-        'user_id' => (int) $row['user_id'],
-        'vehicle_id' => (int) $row['vehicle_id'],
-        'appointment_date' => (string) $row['appointment_date'],
-        'appointment_time' => (string) $row['appointment_time'],
-        'status' => (string) $row['status'],
-        'notes' => $row['notes'] !== null ? (string) $row['notes'] : '',
-        'total_amount' => (float) $row['total_amount'],
-        'created_at' => (string) $row['created_at'],
-        'updated_at' => (string) $row['updated_at'],
-    ];
-}
-
-function fetchAppointmentById($conn, $appointment_id, $tenantID)
-{
-    $query = "SELECT * FROM appointments WHERE appointment_id = ? AND tenantID = ? LIMIT 1";
-    $stmt = $conn->prepare($query);
-
-    if (!$stmt) {
-        errorResponse('Query error: ' . $conn->error, 500);
-    }
-
-    $stmt->bind_param('ii', $appointment_id, $tenantID);
-    $stmt->execute();
-
-    $result = $stmt->get_result();
-    $appointment = $result->fetch_assoc();
-
-    $stmt->close();
-
-    if (!$appointment) {
-        errorResponse('Appointment not found.', 404);
-    }
-
-    return normalizeAppointment($appointment);
-}
-
-function handleListAppointments($conn, $data)
-{
-    $tenantID = isset($data['tenantID']) ? (int) $data['tenantID'] : 0;
-    $user_id = isset($data['user_id']) ? (int) $data['user_id'] : 0;
-    $limit = max(1, min((int) ($data['limit'] ?? 50), 100));
-    $offset = max(0, (int) ($data['offset'] ?? 0));
-
-    if ($tenantID <= 0) {
-        errorResponse('Invalid tenantID.');
-    }
-
-    if ($user_id > 0) {
-        $query = "
-            SELECT 
-                a.*,
-                p.referenceNumber,
-                rj.job_order_no,
-                rj.job_status
-            FROM appointments a
-            LEFT JOIN payments p 
-                ON p.appointment_id = a.appointment_id AND p.tenantID = a.tenantID
-            LEFT JOIN repair_jobs rj 
-                ON rj.appointment_id = a.appointment_id AND rj.tenantID = a.tenantID
-            WHERE a.tenantID = ? AND a.user_id = ?
-            ORDER BY a.appointment_date DESC, a.appointment_time DESC
-            LIMIT ? OFFSET ?
-        ";
-        $stmt = $conn->prepare($query);
-
-        if (!$stmt) {
-            errorResponse('Query error: ' . $conn->error, 500);
-        }
-
-        $stmt->bind_param('iiii', $tenantID, $user_id, $limit, $offset);
-    } else {
-        $query = "
-            SELECT 
-                a.*,
-                p.referenceNumber,
-                rj.job_order_no,
-                rj.job_status
-            FROM appointments a
-            LEFT JOIN payments p 
-                ON p.appointment_id = a.appointment_id AND p.tenantID = a.tenantID
-            LEFT JOIN repair_jobs rj 
-                ON rj.appointment_id = a.appointment_id AND rj.tenantID = a.tenantID
-            WHERE a.tenantID = ?
-            ORDER BY a.appointment_date DESC, a.appointment_time DESC
-            LIMIT ? OFFSET ?
-        ";
-        $stmt = $conn->prepare($query);
-
-        if (!$stmt) {
-            errorResponse('Query error: ' . $conn->error, 500);
-        }
-
-        $stmt->bind_param('iii', $tenantID, $limit, $offset);
-    }
-
-    $stmt->execute();
-
-    $result = $stmt->get_result();
-    $appointments = [];
-
-    while ($row = $result->fetch_assoc()) {
-        $appointments[] = [
-            'appointment_id' => (int) $row['appointment_id'],
-            'tenantID' => (int) $row['tenantID'],
-            'user_id' => (int) $row['user_id'],
-            'vehicle_id' => (int) $row['vehicle_id'],
-            'appointment_date' => (string) $row['appointment_date'],
-            'appointment_time' => (string) $row['appointment_time'],
-            'status' => (string) $row['status'],
-            'notes' => $row['notes'] !== null ? (string) $row['notes'] : '',
-            'total_amount' => (float) $row['total_amount'],
-            'referenceNumber' => $row['referenceNumber'] !== null ? (string) $row['referenceNumber'] : null,
-            'job_order_no' => $row['job_order_no'] !== null ? (string) $row['job_order_no'] : null,
-            'job_status' => $row['job_status'] !== null ? (string) $row['job_status'] : null,
-            'created_at' => (string) $row['created_at'],
-            'updated_at' => (string) $row['updated_at'],
-        ];
-    }
-
-    $stmt->close();
-
-    successResponse('Appointments fetched successfully.', $appointments);
 }
 
 function handleCreateAppointment($conn, $data)
@@ -416,22 +284,22 @@ function handleCreateAppointment($conn, $data)
         $remarks = '';
 
         $paymentInsertStmt = $conn->prepare("
-    INSERT INTO payments (
-        appointment_id,
-        tenantID,
-        user_id,
-        paymentMethod,
-        paymentAmount,
-        amountPaid,
-        balance,
-        paymentStatus,
-        referenceNumber,
-        remarks,
-        created_at,
-        updated_at
-    )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
-");
+            INSERT INTO payments (
+                appointment_id,
+                tenantID,
+                user_id,
+                paymentMethod,
+                paymentAmount,
+                amountPaid,
+                balance,
+                paymentStatus,
+                referenceNumber,
+                remarks,
+                created_at,
+                updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+        ");
 
         if (!$paymentInsertStmt) {
             throw new Exception('Query error: ' . $conn->error);
@@ -508,182 +376,13 @@ function handleCreateAppointment($conn, $data)
     }
 }
 
-function handleUpdateAppointment($conn, $data)
-{
-    if (!isset($data['appointment_id']) || !isset($data['tenantID'])) {
-        errorResponse('Missing appointment_id or tenantID.');
-    }
-
-    $appointment_id = (int) $data['appointment_id'];
-    $tenantID = (int) $data['tenantID'];
-
-    if ($appointment_id <= 0 || $tenantID <= 0) {
-        errorResponse('Invalid appointment_id or tenantID.');
-    }
-
-    $verifyStmt = $conn->prepare("SELECT appointment_id FROM appointments WHERE appointment_id = ? AND tenantID = ? LIMIT 1");
-    if (!$verifyStmt) {
-        errorResponse('Query error: ' . $conn->error, 500);
-    }
-
-    $verifyStmt->bind_param('ii', $appointment_id, $tenantID);
-    $verifyStmt->execute();
-    $verifyResult = $verifyStmt->get_result();
-    if ($verifyResult->num_rows === 0) {
-        $verifyStmt->close();
-        errorResponse('Appointment not found or you do not have permission to update it.', 403);
-    }
-    $verifyStmt->close();
-
-    $fieldTypes = [
-        'status' => 's',
-        'appointment_date' => 's',
-        'appointment_time' => 's',
-        'notes' => 's',
-        'total_amount' => 'd',
-    ];
-
-    $updateFields = [];
-    $updateValues = [];
-    $types = '';
-
-    foreach ($fieldTypes as $field => $type) {
-        if (array_key_exists($field, $data) && $data[$field] !== '') {
-            $value = $type === 'd' ? (float) $data[$field] : sanitize($data[$field]);
-
-            if ($field === 'status') {
-                $allowedStatuses = ['Pending', 'Confirmed', 'In Progress', 'Completed', 'Cancelled'];
-                if (!in_array($value, $allowedStatuses, true)) {
-                    errorResponse('Invalid status value.');
-                }
-            }
-
-            if ($field === 'appointment_date' && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $value)) {
-                errorResponse('Appointment date must be in YYYY-MM-DD format.');
-            }
-
-            if ($field === 'appointment_time' && !preg_match('/^\d{2}:\d{2}(:\d{2})?$/', $value)) {
-                errorResponse('Appointment time must be in HH:MM or HH:MM:SS format.');
-            }
-
-            $updateFields[] = "{$field} = ?";
-            $updateValues[] = $value;
-            $types .= $type;
-        }
-    }
-
-    if (empty($updateFields)) {
-        errorResponse('No updateable fields provided.');
-    }
-
-    $updateValues[] = $appointment_id;
-    $updateValues[] = $tenantID;
-    $types .= 'ii';
-
-    $query = "UPDATE appointments SET " . implode(', ', $updateFields) . ", updated_at = NOW() WHERE appointment_id = ? AND tenantID = ?";
-
-    $stmt = $conn->prepare($query);
-
-    if (!$stmt) {
-        errorResponse('Query error: ' . $conn->error, 500);
-    }
-
-    $stmt->bind_param($types, ...$updateValues);
-
-    if (!$stmt->execute()) {
-        $error = $stmt->error;
-        $stmt->close();
-        errorResponse('Failed to update appointment: ' . $error, 500);
-    }
-
-    $stmt->close();
-
-    $appointment = fetchAppointmentById($conn, $appointment_id, $tenantID);
-    successResponse('Appointment updated successfully.', $appointment);
-}
-
-function handleDeleteAppointment($conn, $data)
-{
-    if (!isset($data['appointment_id']) || !isset($data['tenantID'])) {
-        errorResponse('Missing appointment_id or tenantID.');
-    }
-
-    $appointment_id = (int) $data['appointment_id'];
-    $tenantID = (int) $data['tenantID'];
-
-    if ($appointment_id <= 0 || $tenantID <= 0) {
-        errorResponse('Invalid appointment_id or tenantID.');
-    }
-
-    $verifyStmt = $conn->prepare("SELECT appointment_id FROM appointments WHERE appointment_id = ? AND tenantID = ? LIMIT 1");
-    if (!$verifyStmt) {
-        errorResponse('Query error: ' . $conn->error, 500);
-    }
-
-    $verifyStmt->bind_param('ii', $appointment_id, $tenantID);
-    $verifyStmt->execute();
-    $verifyResult = $verifyStmt->get_result();
-    if ($verifyResult->num_rows === 0) {
-        $verifyStmt->close();
-        errorResponse('Appointment not found or you do not have permission to delete it.', 403);
-    }
-    $verifyStmt->close();
-
-    $conn->begin_transaction();
-
-    try {
-        $deleteRepairJobStmt = $conn->prepare("DELETE FROM repair_jobs WHERE appointment_id = ? AND tenantID = ?");
-        if (!$deleteRepairJobStmt) {
-            throw new Exception('Query error: ' . $conn->error);
-        }
-        $deleteRepairJobStmt->bind_param('ii', $appointment_id, $tenantID);
-        if (!$deleteRepairJobStmt->execute()) {
-            throw new Exception('Failed to delete repair job: ' . $deleteRepairJobStmt->error);
-        }
-        $deleteRepairJobStmt->close();
-
-        $deleteServicesStmt = $conn->prepare("DELETE FROM appointment_services WHERE appointment_id = ? AND tenantID = ?");
-        if (!$deleteServicesStmt) {
-            throw new Exception('Query error: ' . $conn->error);
-        }
-        $deleteServicesStmt->bind_param('ii', $appointment_id, $tenantID);
-        if (!$deleteServicesStmt->execute()) {
-            throw new Exception('Failed to delete appointment services: ' . $deleteServicesStmt->error);
-        }
-        $deleteServicesStmt->close();
-
-        $deletePaymentsStmt = $conn->prepare("DELETE FROM payments WHERE appointment_id = ? AND tenantID = ?");
-        if (!$deletePaymentsStmt) {
-            throw new Exception('Query error: ' . $conn->error);
-        }
-        $deletePaymentsStmt->bind_param('ii', $appointment_id, $tenantID);
-        if (!$deletePaymentsStmt->execute()) {
-            throw new Exception('Failed to delete payments: ' . $deletePaymentsStmt->error);
-        }
-        $deletePaymentsStmt->close();
-
-        $deleteStmt = $conn->prepare("DELETE FROM appointments WHERE appointment_id = ? AND tenantID = ?");
-        if (!$deleteStmt) {
-            throw new Exception('Query error: ' . $conn->error);
-        }
-        $deleteStmt->bind_param('ii', $appointment_id, $tenantID);
-        if (!$deleteStmt->execute()) {
-            throw new Exception('Failed to delete appointment: ' . $deleteStmt->error);
-        }
-        $deleteStmt->close();
-
-        $conn->commit();
-
-        successResponse('Appointment deleted successfully.');
-    } catch (Exception $e) {
-        $conn->rollback();
-        errorResponse('Transaction failed: ' . $e->getMessage(), 500);
-    }
-}
-
 try {
     $conn = getConnection();
     $data = getRequestData();
+
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+        errorResponse('Only POST requests are allowed.', 405);
+    }
 
     $action = isset($data['action']) ? sanitize($data['action']) : '';
 
@@ -691,26 +390,11 @@ try {
         errorResponse('Missing action parameter.');
     }
 
-    switch ($action) {
-        case 'list':
-            handleListAppointments($conn, $data);
-            break;
-
-        case 'create':
-            handleCreateAppointment($conn, $data);
-            break;
-
-        case 'update':
-            handleUpdateAppointment($conn, $data);
-            break;
-
-        case 'delete':
-            handleDeleteAppointment($conn, $data);
-            break;
-
-        default:
-            errorResponse('Unknown action: ' . $action);
+    if ($action !== 'create') {
+        errorResponse('Only create action is allowed for this endpoint.', 403);
     }
+
+    handleCreateAppointment($conn, $data);
 
     $conn->close();
 } catch (Throwable $e) {

@@ -1,49 +1,80 @@
 <?php
-require_once __DIR__ . '/../db.php';
+ob_start();
+
+ini_set('display_errors', 0);
+ini_set('log_errors', 1);
+error_reporting(E_ALL);
 
 header('Content-Type: application/json; charset=utf-8');
 header('Access-Control-Allow-Origin: *');
-header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
+header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
 header('Access-Control-Allow-Headers: Content-Type, Authorization');
 
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
+    ob_end_clean();
     http_response_code(200);
     exit;
 }
 
-function sendResponse($statusCode, $data) {
-    http_response_code($statusCode);
-    echo json_encode($data, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+if (!file_exists(__DIR__ . '/../db.php')) {
+    ob_end_clean();
+    http_response_code(500);
+    echo json_encode([
+        'status' => 'error',
+        'message' => 'Database configuration file not found',
+    ]);
     exit;
 }
 
-function normalizeId($value, $fallback = 0) {
+require_once __DIR__ . '/../db.php';
+
+function sendResponse($statusCode, $data)
+{
+    while (ob_get_level() > 0) {
+        ob_end_clean();
+    }
+
+    http_response_code($statusCode);
+
+    $json = json_encode($data, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+    if ($json === false) {
+        http_response_code(500);
+        echo json_encode([
+            'status' => 'error',
+            'message' => 'JSON encoding failed: ' . json_last_error_msg()
+        ]);
+    } else {
+        echo $json;
+    }
+    exit;
+}
+
+function normalizeId($value, $fallback = 0)
+{
     $num = (int)$value;
     return ($num > 0) ? $num : $fallback;
 }
 
-function normalizeMoney($value, $fallback = 0) {
+function normalizeMoney($value, $fallback = 0)
+{
     $num = (float)$value;
     return ($num >= 0) ? round($num, 2) : $fallback;
 }
 
-function normalizeStatus($value) {
-    $valid = ['Pending', 'Partial', 'Paid', 'Failed', 'Refunded'];
-    $value = trim((string)$value);
-    return in_array($value, $valid, true) ? $value : 'Pending';
-}
-
-function normalizeMethod($value) {
+function normalizeMethod($value)
+{
     $valid = ['Cash', 'GCash', 'Card', 'Bank Transfer'];
     $value = trim((string)$value);
-    return in_array($value, $valid, true) ? $value : 'Cash';
+    return in_array($value, $valid, true) ? $value : 'GCash';
 }
 
-function sanitizeString($str) {
+function sanitizeString($str)
+{
     return trim(strip_tags((string)($str ?? '')));
 }
 
-function normalizePayment($row) {
+function normalizePayment($row)
+{
     return [
         'payment_id' => (int)($row['payment_id'] ?? 0),
         'tenantID' => (int)($row['tenantID'] ?? 0),
@@ -68,34 +99,30 @@ function normalizePayment($row) {
 if (!isset($conn) || $conn->connect_error) {
     sendResponse(500, [
         'status' => 'error',
-        'message' => 'Database connection failed'
+        'message' => 'Database connection failed',
     ]);
 }
 
-// Parse JSON input with better error handling
 $rawInput = file_get_contents('php://input');
 $jsonInput = [];
 $contentType = $_SERVER['CONTENT_TYPE'] ?? '';
 
 if (stripos($contentType, 'application/json') !== false && !empty($rawInput)) {
     $jsonInput = json_decode($rawInput, true);
+
     if (json_last_error() !== JSON_ERROR_NONE) {
         sendResponse(400, [
             'status' => 'error',
             'message' => 'Invalid JSON format',
             'json_error' => json_last_error_msg(),
-            'debug' => [
-                'raw_input' => substr($rawInput, 0, 200),
-                'content_type' => $contentType
-            ]
         ]);
     }
 }
+
 if (!is_array($jsonInput)) {
     $jsonInput = [];
 }
 
-// Extract action from multiple sources with priority
 $action = '';
 if (!empty($jsonInput['action'])) {
     $action = sanitizeString($jsonInput['action']);
@@ -110,42 +137,25 @@ if ($action === '') {
     sendResponse(400, [
         'status' => 'error',
         'message' => 'Missing action parameter',
-        'available_actions' => ['list', 'create', 'update', 'delete'],
-        'examples' => [
-            'GET' => 'GET /paymentcrud.php?action=list&tenantID=1',
-            'POST_JSON' => 'POST /paymentcrud.php with Content-Type: application/json and body: {"action":"list","tenantID":1}',
-            'POST_FORM' => 'POST /paymentcrud.php with Content-Type: application/x-www-form-urlencoded and body: action=list&tenantID=1'
-        ],
-        'debug' => [
-            'method' => $_SERVER['REQUEST_METHOD'],
-            'content_type' => $_SERVER['CONTENT_TYPE'] ?? 'not set',
-            'get_params' => !empty($_GET) ? array_keys($_GET) : [],
-            'post_params' => !empty($_POST) ? array_keys($_POST) : [],
-            'json_params' => !empty($jsonInput) ? array_keys($jsonInput) : [],
-            'raw_input_length' => strlen($rawInput ?? ''),
-        ]
+        'available_actions' => ['list', 'pay'],
     ]);
 }
 
 try {
     switch ($action) {
         case 'list':
-            handleList($conn);
+            handleList($conn, $jsonInput);
             break;
-        case 'create':
-            handleCreate($conn, $jsonInput);
+
+        case 'pay':
+            handlePay($conn, $jsonInput);
             break;
-        case 'update':
-            handleUpdate($conn, $jsonInput);
-            break;
-        case 'delete':
-            handleDelete($conn);
-            break;
+
         default:
-            sendResponse(400, [
+            sendResponse(403, [
                 'status' => 'error',
-                'message' => 'Invalid action: ' . $action,
-                'available_actions' => ['list', 'create', 'update', 'delete'],
+                'message' => 'Only list and pay actions are allowed for this endpoint',
+                'available_actions' => ['list', 'pay'],
             ]);
     }
 } catch (Throwable $e) {
@@ -154,22 +164,31 @@ try {
         'message' => $e->getMessage(),
     ]);
 } finally {
+    while (ob_get_level() > 0) {
+        ob_end_clean();
+    }
+
     if (isset($conn) && $conn) {
         $conn->close();
     }
 }
 
-function handleList($conn) {
-    $tenantID = normalizeId($_GET['tenantID'] ?? $_POST['tenantID'] ?? 0);
+function handleList($conn, $jsonInput = [])
+{
+    $data = !empty($jsonInput) ? $jsonInput : array_merge($_GET, $_POST);
 
+    $tenantID = normalizeId($data['tenantID'] ?? 0);
     if ($tenantID <= 0) {
-        sendResponse(400, ['status' => 'error', 'message' => 'Invalid or missing tenantID']);
+        sendResponse(400, [
+            'status' => 'error',
+            'message' => 'Invalid or missing tenantID'
+        ]);
     }
 
-    $user_id = normalizeId($_GET['user_id'] ?? $_POST['user_id'] ?? 0);
-    $limit = min(max((int)($_GET['limit'] ?? $_POST['limit'] ?? 50), 1), 100);
-    $offset = max((int)($_GET['offset'] ?? $_POST['offset'] ?? 0), 0);
-    $paymentStatus = sanitizeString($_GET['paymentStatus'] ?? $_POST['paymentStatus'] ?? '');
+    $user_id = normalizeId($data['user_id'] ?? 0);
+    $limit = min(max((int)($data['limit'] ?? 50), 1), 100);
+    $offset = max((int)($data['offset'] ?? 0), 0);
+    $paymentStatus = sanitizeString($data['paymentStatus'] ?? '');
 
     $query = "SELECT 
         p.payment_id,
@@ -190,7 +209,8 @@ function handleList($conn) {
         a.appointment_date,
         a.appointment_time
     FROM payments p
-    LEFT JOIN appointments a ON p.appointment_id = a.appointment_id
+    LEFT JOIN appointments a 
+        ON p.appointment_id = a.appointment_id
     WHERE p.tenantID = ?";
 
     $types = 'i';
@@ -215,13 +235,21 @@ function handleList($conn) {
 
     $stmt = $conn->prepare($query);
     if (!$stmt) {
-        sendResponse(500, ['status' => 'error', 'message' => 'Failed to prepare statement', 'error' => $conn->error]);
+        sendResponse(500, [
+            'status' => 'error',
+            'message' => 'Failed to prepare statement',
+            'error' => $conn->error
+        ]);
     }
 
     $stmt->bind_param($types, ...$params);
 
     if (!$stmt->execute()) {
-        sendResponse(500, ['status' => 'error', 'message' => 'Query execution failed', 'error' => $stmt->error]);
+        sendResponse(500, [
+            'status' => 'error',
+            'message' => 'Query execution failed',
+            'error' => $stmt->error
+        ]);
     }
 
     $result = $stmt->get_result();
@@ -241,183 +269,142 @@ function handleList($conn) {
     ]);
 }
 
-function handleCreate($conn, $jsonInput = []) {
-    $data = !empty($jsonInput) ? $jsonInput : $_REQUEST;
-
-    $tenantID = normalizeId($data['tenantID'] ?? 0, 1);
-    $user_id = normalizeId($data['user_id'] ?? 0);
-    $appointment_id = normalizeId($data['appointment_id'] ?? 0);
-    $paymentAmount = normalizeMoney($data['paymentAmount'] ?? 0);
-    $amountPaid = normalizeMoney($data['amountPaid'] ?? 0);
-    $paymentMethod = normalizeMethod($data['paymentMethod'] ?? 'Cash');
-    $paymentStatus = normalizeStatus($data['paymentStatus'] ?? 'Pending');
-    $referenceNumber = sanitizeString($data['referenceNumber'] ?? '');
-    $gcashReferenceNumber = sanitizeString($data['gcashReferenceNumber'] ?? '');
-    $remarks = sanitizeString($data['remarks'] ?? '');
-
-    if ($user_id <= 0) sendResponse(400, ['status' => 'error', 'message' => 'Invalid user_id']);
-    if ($appointment_id <= 0) sendResponse(400, ['status' => 'error', 'message' => 'Invalid appointment_id']);
-    if ($paymentAmount <= 0) sendResponse(400, ['status' => 'error', 'message' => 'Invalid paymentAmount']);
-
-    $balance = round($paymentAmount - $amountPaid, 2);
-
-    if ($referenceNumber === '') {
-        $referenceNumber = 'RR-' . date('YmdHis');
-    }
-
-    $query = "INSERT INTO payments (
-        tenantID, user_id, appointment_id, paymentAmount,
-        amountPaid, balance, paymentMethod, paymentStatus,
-        referenceNumber, gcashReferenceNumber, remarks
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
-
-    $stmt = $conn->prepare($query);
-    if (!$stmt) {
-        sendResponse(500, ['status' => 'error', 'message' => 'Failed to prepare statement', 'error' => $conn->error]);
-    }
-
-    $stmt->bind_param(
-        'iiidddsssss',
-        $tenantID, $user_id, $appointment_id, $paymentAmount,
-        $amountPaid, $balance, $paymentMethod, $paymentStatus,
-        $referenceNumber, $gcashReferenceNumber, $remarks
-    );
-
-    if (!$stmt->execute()) {
-        sendResponse(500, ['status' => 'error', 'message' => 'Failed to create payment', 'error' => $stmt->error]);
-    }
-
-    $payment_id = $stmt->insert_id;
-    $stmt->close();
-
-    sendResponse(201, [
-        'status' => 'success',
-        'message' => 'Payment created successfully',
-        'data' => [
-            'payment_id' => $payment_id,
-            'referenceNumber' => $referenceNumber,
-            'paymentStatus' => $paymentStatus
-        ]
-    ]);
-}
-
-function handleUpdate($conn, $jsonInput = []) {
+function handlePay($conn, $jsonInput = [])
+{
     $data = !empty($jsonInput) ? $jsonInput : $_REQUEST;
 
     $payment_id = normalizeId($data['payment_id'] ?? 0);
+    $tenantID = normalizeId($data['tenantID'] ?? 0);
+    $user_id = normalizeId($data['user_id'] ?? 0);
+    $amountPaid = normalizeMoney($data['amountPaid'] ?? 0);
+    $paymentMethod = normalizeMethod($data['paymentMethod'] ?? 'GCash');
+    $gcashReferenceNumber = sanitizeString($data['gcashReferenceNumber'] ?? '');
+    $remarks = sanitizeString($data['remarks'] ?? '');
+
     if ($payment_id <= 0) {
         sendResponse(400, ['status' => 'error', 'message' => 'Invalid payment_id']);
     }
 
-    $stmt = $conn->prepare("SELECT paymentAmount FROM payments WHERE payment_id = ?");
-    $stmt->bind_param('i', $payment_id);
+    if ($tenantID <= 0) {
+        sendResponse(400, ['status' => 'error', 'message' => 'Invalid tenantID']);
+    }
+
+    if ($user_id <= 0) {
+        sendResponse(400, ['status' => 'error', 'message' => 'Invalid user_id']);
+    }
+
+    if ($amountPaid <= 0) {
+        sendResponse(400, ['status' => 'error', 'message' => 'Amount paid must be greater than 0']);
+    }
+
+    $stmt = $conn->prepare("
+        SELECT payment_id, tenantID, user_id, paymentAmount, amountPaid, paymentStatus
+        FROM payments
+        WHERE payment_id = ? AND tenantID = ? AND user_id = ?
+        LIMIT 1
+    ");
+    if (!$stmt) {
+        sendResponse(500, [
+            'status' => 'error',
+            'message' => 'Failed to prepare statement',
+            'error' => $conn->error
+        ]);
+    }
+
+    $stmt->bind_param('iii', $payment_id, $tenantID, $user_id);
     $stmt->execute();
     $result = $stmt->get_result();
     $payment = $result->fetch_assoc();
     $stmt->close();
 
     if (!$payment) {
-        sendResponse(404, ['status' => 'error', 'message' => 'Payment not found']);
+        sendResponse(404, [
+            'status' => 'error',
+            'message' => 'Payment not found for this user'
+        ]);
     }
 
-    $updates = [];
-    $types = '';
-    $params = [];
-
-    if (isset($data['amountPaid'])) {
-        $amountPaid = normalizeMoney($data['amountPaid']);
-        $balance = round($payment['paymentAmount'] - $amountPaid, 2);
-
-        $updates[] = 'amountPaid = ?';
-        $types .= 'd';
-        $params[] = $amountPaid;
-
-        $updates[] = 'balance = ?';
-        $types .= 'd';
-        $params[] = $balance;
-
-        if ($amountPaid <= 0) {
-            $status = 'Pending';
-        } elseif ($amountPaid < $payment['paymentAmount']) {
-            $status = 'Partial';
-        } else {
-            $status = 'Paid';
-        }
-
-        $updates[] = 'paymentStatus = ?';
-        $types .= 's';
-        $params[] = $status;
-
-        if ($status === 'Paid') {
-            $updates[] = 'paymentDate = NOW()';
-        }
+    if (($payment['paymentStatus'] ?? '') === 'Paid') {
+        sendResponse(400, [
+            'status' => 'error',
+            'message' => 'This payment is already fully paid'
+        ]);
     }
 
-    if (isset($data['paymentMethod'])) {
-        $paymentMethod = normalizeMethod($data['paymentMethod']);
-        $updates[] = 'paymentMethod = ?';
-        $types .= 's';
-        $params[] = $paymentMethod;
+    $paymentAmount = round((float)$payment['paymentAmount'], 2);
+    $newAmountPaid = round((float)$amountPaid, 2);
+
+    if ($newAmountPaid > $paymentAmount) {
+        $newAmountPaid = $paymentAmount;
     }
 
-    if (isset($data['gcashReferenceNumber'])) {
-        $gcashReferenceNumber = sanitizeString($data['gcashReferenceNumber']);
-        $updates[] = 'gcashReferenceNumber = ?';
-        $types .= 's';
-        $params[] = $gcashReferenceNumber;
+    $balance = round($paymentAmount - $newAmountPaid, 2);
+
+    if ($newAmountPaid <= 0) {
+        $status = 'Pending';
+    } elseif ($newAmountPaid < $paymentAmount) {
+        $status = 'Partial';
+    } else {
+        $status = 'Paid';
+        $balance = 0;
     }
 
-    if (isset($data['remarks'])) {
-        $remarks = sanitizeString($data['remarks']);
-        $updates[] = 'remarks = ?';
-        $types .= 's';
-        $params[] = $remarks;
-    }
+    $query = "
+        UPDATE payments
+        SET amountPaid = ?,
+            balance = ?,
+            paymentStatus = ?,
+            paymentMethod = ?,
+            gcashReferenceNumber = ?,
+            remarks = ?,
+            paymentDate = NOW(),
+            updated_at = NOW()
+        WHERE payment_id = ? AND tenantID = ? AND user_id = ?
+    ";
 
-    if (empty($updates)) {
-        sendResponse(400, ['status' => 'error', 'message' => 'No fields to update']);
-    }
-
-    $types .= 'i';
-    $params[] = $payment_id;
-
-    $query = "UPDATE payments SET " . implode(', ', $updates) . ", updated_at = NOW() WHERE payment_id = ?";
     $stmt = $conn->prepare($query);
-    $stmt->bind_param($types, ...$params);
+    if (!$stmt) {
+        sendResponse(500, [
+            'status' => 'error',
+            'message' => 'Failed to prepare statement',
+            'error' => $conn->error
+        ]);
+    }
+
+    $stmt->bind_param(
+        'ddssssiii',
+        $newAmountPaid,
+        $balance,
+        $status,
+        $paymentMethod,
+        $gcashReferenceNumber,
+        $remarks,
+        $payment_id,
+        $tenantID,
+        $user_id
+    );
 
     if (!$stmt->execute()) {
-        sendResponse(500, ['status' => 'error', 'message' => 'Failed to update payment', 'error' => $stmt->error]);
+        sendResponse(500, [
+            'status' => 'error',
+            'message' => 'Failed to record payment',
+            'error' => $stmt->error
+        ]);
     }
 
     $stmt->close();
 
     sendResponse(200, [
         'status' => 'success',
-        'message' => 'Payment updated successfully',
-        'data' => ['payment_id' => $payment_id]
+        'message' => 'Payment recorded successfully',
+        'data' => [
+            'payment_id' => $payment_id,
+            'amountPaid' => $newAmountPaid,
+            'balance' => $balance,
+            'paymentStatus' => $status,
+            'paymentMethod' => $paymentMethod,
+            'gcashReferenceNumber' => $gcashReferenceNumber ?: null,
+        ]
     ]);
-}
-
-function handleDelete($conn) {
-    $payment_id = normalizeId($_GET['payment_id'] ?? $_POST['payment_id'] ?? 0);
-
-    if ($payment_id <= 0) {
-        sendResponse(400, ['status' => 'error', 'message' => 'Invalid payment_id']);
-    }
-
-    $stmt = $conn->prepare("DELETE FROM payments WHERE payment_id = ?");
-    $stmt->bind_param('i', $payment_id);
-
-    if (!$stmt->execute()) {
-        sendResponse(500, ['status' => 'error', 'message' => 'Failed to delete payment', 'error' => $stmt->error]);
-    }
-
-    if ($stmt->affected_rows === 0) {
-        sendResponse(404, ['status' => 'error', 'message' => 'Payment not found']);
-    }
-
-    $stmt->close();
-
-    sendResponse(200, ['status' => 'success', 'message' => 'Payment deleted successfully']);
 }
 ?>
