@@ -18,23 +18,47 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     die('{}');
 }
 
-// Database Configuration - Use GitHub db.php as primary source
-$db_host = 'rapidrepairs.mysql.database.azure.com';
-$db_name = 'rapidrepairs';
-$db_user = 'rradmin1';
-$db_pass = 'rradmin123!';  // Update if different
+// Database Configuration
+$db_host = null;
+$db_name = null;
+$db_user = null;
+$db_pass = null;
 
-// Try GitHub db.php for credentials (backup)
-$github_url = 'https://raw.githubusercontent.com/jeemnndz/RapidRepair/main/db.php';
-$github_content = @file_get_contents($github_url);
-if ($github_content && strpos($github_content, '$db_pass') !== false) {
-    preg_match('/\$db_pass\s*=\s*[\'"](.+?)[\'"]/i', $github_content, $m);
-    if (!empty($m[1])) {
-        $db_pass = $m[1];
-    }
+// Try to load db.php from parent or current directory
+$dbFileFound = false;
+if (file_exists(__DIR__ . '/../db.php')) {
+    require_once __DIR__ . '/../db.php';
+    $dbFileFound = true;
+} elseif (file_exists(__DIR__ . '/db.php')) {
+    require_once __DIR__ . '/db.php';
+    $dbFileFound = true;
+}
+
+// Fallback if db.php not found
+if (!$dbFileFound) {
+    $db_host = 'rapidrepairs.mysql.database.azure.com';
+    $db_name = 'rapidrepairs';
+    $db_user = 'rradmin1@rapidrepairs';
+    $db_pass = 'Rr2024Admin!';
 }
 
 // Database Connection
+if (!$db_host || !$db_name || !$db_user || !$db_pass) {
+    ob_end_clean();
+    http_response_code(500);
+    die(json_encode([
+        'status' => 'error',
+        'message' => 'Database configuration incomplete',
+        'debug' => [
+            'dbFileFound' => $dbFileFound,
+            'hasHost' => !empty($db_host),
+            'hasName' => !empty($db_name),
+            'hasUser' => !empty($db_user),
+            'hasPass' => !empty($db_pass)
+        ]
+    ]));
+}
+
 $conn = @new mysqli($db_host, $db_user, $db_pass, $db_name);
 
 if ($conn->connect_error) {
