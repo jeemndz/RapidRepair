@@ -22,7 +22,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 $db_host = 'rapidrepairs.mysql.database.azure.com';
 $db_name = 'rapidrepairs';
 $db_user = 'rradmin1@rapidrepairs';
-$db_pass = 'Rr2024Admin!';  // Your MySQL password
+$db_pass = 'rradmin123!';  // Your MySQL password
 
 // Try environment variables first (if set)
 if (!empty(getenv('DB_PASS'))) {
