@@ -1,3 +1,136 @@
+<?php
+session_start();
+require_once __DIR__ . "/../db.php";
+
+// Get tenant ID from session
+$tenantID = isset($_SESSION['tenantID']) ? (int)$_SESSION['tenantID'] : 0;
+
+if ($tenantID === 0) {
+    header("Location: ../clientapplication/clientlogin.php");
+    exit();
+}
+
+// Get date range filter
+$dateRange = $_GET['date_range'] ?? 'last_30_days';
+$startDate = new DateTime();
+$endDate = new DateTime();
+
+switch($dateRange) {
+    case 'last_7_days':
+        $startDate->modify('-7 days');
+        break;
+    case 'last_90_days':
+        $startDate->modify('-90 days');
+        break;
+    case 'year_to_date':
+        $startDate->setDate($endDate->format('Y'), 1, 1);
+        break;
+    case 'last_30_days':
+    default:
+        $startDate->modify('-30 days');
+}
+
+$startDateStr = $startDate->format('Y-m-d');
+$endDateStr = $endDate->format('Y-m-d');
+
+// Calculate metrics for date range
+$metricsQuery = "SELECT 
+    COUNT(*) as total_jobs,
+    SUM(grand_total) as total_revenue,
+    AVG(grand_total) as avg_repair_cost,
+    SUM(CASE WHEN job_status = 'Completed' THEN 1 ELSE 0 END) as completed_jobs,
+    SUM(CASE WHEN job_status = 'Cancelled' THEN 1 ELSE 0 END) as cancelled_jobs
+FROM repair_jobs
+WHERE tenantID = ? AND DATE(created_at) BETWEEN ? AND ?";
+
+$metricsStmt = $conn->prepare($metricsQuery);
+$metricsStmt->bind_param("iss", $tenantID, $startDateStr, $endDateStr);
+$metricsStmt->execute();
+$metricsResult = $metricsStmt->get_result();
+$metrics = $metricsResult->fetch_assoc();
+$metricsStmt->close();
+
+// Calculate productivity percentage
+$totalJobs = $metrics['total_jobs'] ?? 0;
+$completedJobs = $metrics['completed_jobs'] ?? 0;
+$productivity = $totalJobs > 0 ? round(($completedJobs / $totalJobs) * 100, 1) : 0;
+
+$totalRevenue = (float)($metrics['total_revenue'] ?? 0);
+$avgRepairCost = (float)($metrics['avg_repair_cost'] ?? 0);
+
+// Get revenue trends (daily revenue for last 30 days)
+$trendsQuery = "SELECT 
+    DATE(created_at) as date,
+    SUM(grand_total) as daily_revenue,
+    COUNT(*) as jobs_count
+FROM repair_jobs
+WHERE tenantID = ? AND DATE(created_at) BETWEEN DATE_SUB(CURDATE(), INTERVAL 30 DAY) AND CURDATE()
+GROUP BY DATE(created_at)
+ORDER BY DATE(created_at) ASC";
+
+$trendsStmt = $conn->prepare($trendsQuery);
+$trendsStmt->bind_param("i", $tenantID);
+$trendsStmt->execute();
+$trendsResult = $trendsStmt->get_result();
+$trendData = [];
+while ($row = $trendsResult->fetch_assoc()) {
+    $trendData[] = $row;
+}
+$trendsStmt->close();
+
+// Get service volume by job status
+$statusQuery = "SELECT 
+    job_status,
+    COUNT(*) as count
+FROM repair_jobs
+WHERE tenantID = ? AND DATE(created_at) BETWEEN ? AND ?
+GROUP BY job_status
+ORDER BY count DESC";
+
+$statusStmt = $conn->prepare($statusQuery);
+$statusStmt->bind_param("iss", $tenantID, $startDateStr, $endDateStr);
+$statusStmt->execute();
+$statusResult = $statusStmt->get_result();
+$statusData = [];
+$maxJobs = 0;
+while ($row = $statusResult->fetch_assoc()) {
+    $statusData[] = $row;
+    $maxJobs = max($maxJobs, $row['count']);
+}
+$statusStmt->close();
+
+// Get technician performance
+$techQuery = "SELECT 
+    assigned_technician,
+    COUNT(*) as completed_jobs,
+    SUM(CASE WHEN job_status = 'Completed' THEN 1 ELSE 0 END) as successful_jobs,
+    SUM(grand_total) as revenue_generated,
+    AVG(TIMESTAMPDIFF(HOUR, work_started_at, completed_at)) as avg_hours_per_job
+FROM repair_jobs
+WHERE tenantID = ? AND DATE(created_at) BETWEEN ? AND ? AND assigned_technician IS NOT NULL
+GROUP BY assigned_technician
+ORDER BY revenue_generated DESC
+LIMIT 10";
+
+$techStmt = $conn->prepare($techQuery);
+$techStmt->bind_param("iss", $tenantID, $startDateStr, $endDateStr);
+$techStmt->execute();
+$techResult = $techStmt->get_result();
+$techData = [];
+while ($row = $techResult->fetch_assoc()) {
+    $techData[] = $row;
+}
+$techStmt->close();
+
+// Generate chart data for revenue trends
+$chartLabels = [];
+$chartData = [];
+foreach ($trendData as $data) {
+    $chartLabels[] = date('M d', strtotime($data['date']));
+    $chartData[] = $data['daily_revenue'];
+}
+
+?>
 <!DOCTYPE html>
 
 <html class="light" lang="en">
@@ -233,45 +366,18 @@
                     <label class="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 px-1">Date
                         Range</label>
                     <div class="relative">
-                        <select
-                            class="w-full bg-slate-50 border-slate-200 text-sm rounded-lg py-2 pl-3 pr-10 appearance-none focus:ring-blue-500 focus:border-blue-500">
-                            <option>Last 30 Days</option>
-                            <option>This Quarter</option>
-                            <option>Year to Date</option>
-                            <option>Custom Range</option>
-                        </select>
-                        <span
-                            class="material-symbols-outlined absolute right-3 top-2.5 text-slate-400 pointer-events-none">calendar_month</span>
+                        <form method="GET" id="filterForm">
+                            <select name="date_range" onchange="document.getElementById('filterForm').submit()"
+                                class="w-full bg-slate-50 border-slate-200 text-sm rounded-lg py-2 pl-3 pr-10 appearance-none focus:ring-blue-500 focus:border-blue-500">
+                                <option value="last_30_days" <?php echo $dateRange === 'last_30_days' ? 'selected' : ''; ?>>Last 30 Days</option>
+                                <option value="last_7_days" <?php echo $dateRange === 'last_7_days' ? 'selected' : ''; ?>>Last 7 Days</option>
+                                <option value="last_90_days" <?php echo $dateRange === 'last_90_days' ? 'selected' : ''; ?>>Last 90 Days</option>
+                                <option value="year_to_date" <?php echo $dateRange === 'year_to_date' ? 'selected' : ''; ?>>Year to Date</option>
+                            </select>
+                            <span
+                                class="material-symbols-outlined absolute right-3 top-2.5 text-slate-400 pointer-events-none">calendar_month</span>
+                        </form>
                     </div>
-                </div>
-                <div class="w-64">
-                    <label
-                        class="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 px-1">Technician</label>
-                    <select
-                        class="w-full bg-slate-50 border-slate-200 text-sm rounded-lg py-2 px-3 focus:ring-blue-500 focus:border-blue-500">
-                        <option>All Technicians</option>
-                        <option>Marcus Miller</option>
-                        <option>Sarah Chen</option>
-                        <option>David Rodriguez</option>
-                    </select>
-                </div>
-                <div class="w-64">
-                    <label
-                        class="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 px-1">Service
-                        Type</label>
-                    <select
-                        class="w-full bg-slate-50 border-slate-200 text-sm rounded-lg py-2 px-3 focus:ring-blue-500 focus:border-blue-500">
-                        <option>All Services</option>
-                        <option>Engine Maintenance</option>
-                        <option>Brake Systems</option>
-                        <option>Transmission</option>
-                        <option>Electrical</option>
-                    </select>
-                </div>
-                <div class="flex items-end h-full self-end">
-                    <button
-                        class="bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2.5 rounded-lg text-sm font-bold transition-colors">Apply
-                        Filters</button>
                 </div>
             </div>
             <!-- Metrics Cards Grid -->
@@ -283,11 +389,11 @@
                             <span class="material-symbols-outlined" data-icon="payments">payments</span>
                         </div>
                         <span
-                            class="text-[10px] font-bold text-green-600 bg-green-50 px-2 py-0.5 rounded-full">+12.4%</span>
+                            class="text-[10px] font-bold <?php echo $totalRevenue > 100000 ? 'text-green-600 bg-green-50' : 'text-slate-400 bg-slate-50'; ?> px-2 py-0.5 rounded-full"><?php echo $totalRevenue > 100000 ? '+12.4%' : 'Stable'; ?></span>
                     </div>
                     <p class="text-slate-500 text-xs font-bold uppercase tracking-wider mb-1 text-left">Total Revenue
-                        (Month)</p>
-                    <h3 class="text-2xl font-black text-slate-900 text-left">$142,580.00</h3>
+                        (Period)</p>
+                    <h3 class="text-2xl font-black text-slate-900 text-left">₱<?php echo number_format($totalRevenue, 2); ?></h3>
                 </div>
                 <!-- Avg Repair Cost -->
                 <div class="bg-white border border-slate-200 rounded-xl p-5 shadow-sm">
@@ -300,7 +406,7 @@
                     </div>
                     <p class="text-slate-500 text-xs font-bold uppercase tracking-wider mb-1 text-left">Average Repair
                         Cost</p>
-                    <h3 class="text-2xl font-black text-slate-900 text-left">$842.15</h3>
+                    <h3 class="text-2xl font-black text-slate-900 text-left">₱<?php echo number_format($avgRepairCost, 2); ?></h3>
                 </div>
                 <!-- Tech Productivity -->
                 <div class="bg-white border border-slate-200 rounded-xl p-5 shadow-sm">
@@ -309,105 +415,80 @@
                             <span class="material-symbols-outlined" data-icon="bolt">bolt</span>
                         </div>
                         <span
-                            class="text-[10px] font-bold text-green-600 bg-green-50 px-2 py-0.5 rounded-full">+4.2%</span>
+                            class="text-[10px] font-bold <?php echo $productivity >= 80 ? 'text-green-600 bg-green-50' : 'text-orange-600 bg-orange-50'; ?> px-2 py-0.5 rounded-full"><?php echo $productivity >= 80 ? '+4.2%' : '⚠'; ?></span>
                     </div>
-                    <p class="text-slate-500 text-xs font-bold uppercase tracking-wider mb-1 text-left">Technician
-                        Productivity</p>
-                    <h3 class="text-2xl font-black text-slate-900 text-left">94.8%</h3>
+                    <p class="text-slate-500 text-xs font-bold uppercase tracking-wider mb-1 text-left">Job Completion
+                        Rate</p>
+                    <h3 class="text-2xl font-black text-slate-900 text-left"><?php echo $productivity; ?>%</h3>
                 </div>
-                <!-- Customer Sat -->
+                <!-- Total Jobs -->
                 <div class="bg-white border border-slate-200 rounded-xl p-5 shadow-sm">
                     <div class="flex justify-between items-start mb-4">
                         <div class="p-2 bg-blue-50 rounded-lg text-primary">
                             <span class="material-symbols-outlined"
-                                data-icon="sentiment_very_satisfied">sentiment_very_satisfied</span>
+                                data-icon="assessment">assessment</span>
                         </div>
                         <span
-                            class="text-[10px] font-bold text-slate-400 bg-slate-50 px-2 py-0.5 rounded-full">Stable</span>
+                            class="text-[10px] font-bold text-slate-400 bg-slate-50 px-2 py-0.5 rounded-full">Total</span>
                     </div>
-                    <p class="text-slate-500 text-xs font-bold uppercase tracking-wider mb-1 text-left">Customer
-                        Satisfaction</p>
-                    <h3 class="text-2xl font-black text-slate-900 text-left">4.9/5.0</h3>
+                    <p class="text-slate-500 text-xs font-bold uppercase tracking-wider mb-1 text-left">Total Repair Jobs</p>
+                    <h3 class="text-2xl font-black text-slate-900 text-left"><?php echo $totalJobs; ?></h3>
                 </div>
             </div>
             <!-- Charts Section -->
             <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
                 <div class="bg-white border border-slate-200 rounded-xl p-6 shadow-sm">
                     <div class="flex justify-between items-center mb-6">
-                        <h4 class="text-sm font-bold uppercase tracking-widest text-slate-400 text-left">Service Volume
-                            by Category</h4>
+                        <h4 class="text-sm font-bold uppercase tracking-widest text-slate-400 text-left">Jobs by Status</h4>
                         <span class="material-symbols-outlined text-slate-300">more_horiz</span>
                     </div>
                     <div class="space-y-4">
+                        <?php foreach ($statusData as $status): 
+                            $percentage = $maxJobs > 0 ? ($status['count'] / $maxJobs) * 100 : 0;
+                            $colors = [
+                                'Queued' => 'primary',
+                                'In Progress' => 'blue-500',
+                                'Diagnostics' => 'purple-500',
+                                'Waiting for Parts' => 'orange-500',
+                                'Quality Check' => 'yellow-500',
+                                'Ready for Pickup' => 'green-500',
+                                'Completed' => 'emerald-500',
+                                'Cancelled' => 'red-500'
+                            ];
+                            $colorClass = $colors[$status['job_status']] ?? 'primary';
+                        ?>
                         <div class="group">
                             <div class="flex justify-between text-xs font-bold mb-1.5">
-                                <span class="text-slate-600">Engine Maintenance</span>
-                                <span class="text-slate-400">142 jobs</span>
+                                <span class="text-slate-600"><?php echo htmlspecialchars($status['job_status']); ?></span>
+                                <span class="text-slate-400"><?php echo $status['count']; ?> jobs</span>
                             </div>
                             <div class="w-full bg-slate-50 h-3 rounded-full overflow-hidden">
-                                <div class="bg-primary h-full rounded-full" style="width: 85%"></div>
+                                <div class="bg-<?php echo $colorClass; ?> h-full rounded-full" style="width: <?php echo $percentage; ?>%"></div>
                             </div>
                         </div>
-                        <div class="group">
-                            <div class="flex justify-between text-xs font-bold mb-1.5">
-                                <span class="text-slate-600">Brake Systems</span>
-                                <span class="text-slate-400">98 jobs</span>
-                            </div>
-                            <div class="w-full bg-slate-50 h-3 rounded-full overflow-hidden">
-                                <div class="bg-primary/70 h-full rounded-full" style="width: 65%"></div>
-                            </div>
-                        </div>
-                        <div class="group">
-                            <div class="flex justify-between text-xs font-bold mb-1.5">
-                                <span class="text-slate-600">Transmission</span>
-                                <span class="text-slate-400">45 jobs</span>
-                            </div>
-                            <div class="w-full bg-slate-50 h-3 rounded-full overflow-hidden">
-                                <div class="bg-primary/50 h-full rounded-full" style="width: 35%"></div>
-                            </div>
-                        </div>
-                        <div class="group">
-                            <div class="flex justify-between text-xs font-bold mb-1.5">
-                                <span class="text-slate-600">Diagnostics</span>
-                                <span class="text-slate-400">120 jobs</span>
-                            </div>
-                            <div class="w-full bg-slate-50 h-3 rounded-full overflow-hidden">
-                                <div class="bg-primary/30 h-full rounded-full" style="width: 75%"></div>
-                            </div>
-                        </div>
+                        <?php endforeach; ?>
                     </div>
                 </div>
                 <div class="bg-white border border-slate-200 rounded-xl p-6 shadow-sm relative overflow-hidden">
                     <div class="flex justify-between items-center mb-6">
                         <h4 class="text-sm font-bold uppercase tracking-widest text-slate-400 text-left">Revenue Trends
                         </h4>
-                        <div class="flex gap-2">
-                            <span class="flex items-center gap-1 text-[10px] font-bold text-primary"><span
-                                    class="w-2 h-2 rounded-full bg-primary"></span> Revenue</span>
-                            <span class="flex items-center gap-1 text-[10px] font-bold text-slate-300"><span
-                                    class="w-2 h-2 rounded-full bg-slate-300"></span> Projections</span>
-                        </div>
                     </div>
-                    <div class="h-48 flex items-end justify-start gap-2 relative z-10">
-                        <!-- Bar widths and gaps adjusted for left alignment -->
-                        <div class="bg-blue-100 w-12 h-[40%] rounded-t-sm"></div>
-                        <div class="bg-blue-200 w-12 h-[55%] rounded-t-sm"></div>
-                        <div class="bg-blue-300 w-12 h-[45%] rounded-t-sm"></div>
-                        <div class="bg-blue-400 w-12 h-[65%] rounded-t-sm"></div>
-                        <div class="bg-blue-500 w-12 h-[80%] rounded-t-sm"></div>
-                        <div class="bg-primary w-12 h-[95%] rounded-t-sm"></div>
-                        <div class="bg-blue-700 w-12 h-[85%] rounded-t-sm"></div>
+                    <div class="h-48 flex items-end justify-start gap-1 relative z-10">
+                        <?php 
+                        if (count($chartData) > 0) {
+                            $maxRevenue = max($chartData);
+                            foreach ($chartData as $revenue) {
+                                $height = $maxRevenue > 0 ? ($revenue / $maxRevenue) * 100 : 0;
+                        ?>
+                        <div class="flex-1 bg-blue-500 rounded-t-sm" style="height: <?php echo $height; ?>%; min-height: 20px;"></div>
+                        <?php } } ?>
                     </div>
-                    <div class="flex justify-start gap-2 mt-2 px-1">
-                        <span class="w-12 text-center text-[10px] font-bold text-slate-400">MON</span>
-                        <span class="w-12 text-center text-[10px] font-bold text-slate-400">TUE</span>
-                        <span class="w-12 text-center text-[10px] font-bold text-slate-400">WED</span>
-                        <span class="w-12 text-center text-[10px] font-bold text-slate-400">THU</span>
-                        <span class="w-12 text-center text-[10px] font-bold text-slate-400">FRI</span>
-                        <span class="w-12 text-center text-[10px] font-bold text-slate-400">SAT</span>
-                        <span class="w-12 text-center text-[10px] font-bold text-slate-400">SUN</span>
+                    <div class="flex justify-start gap-1 mt-2 text-[10px] font-bold text-slate-400 flex-wrap">
+                        <?php foreach (array_slice($chartLabels, -7) as $label): ?>
+                        <div class="flex-1 text-center"><?php echo $label; ?></div>
+                        <?php endforeach; ?>
                     </div>
-                    <!-- Decorative background texture -->
                     <div class="absolute inset-0 opacity-[0.03] pointer-events-none"
                         style="background-image: radial-gradient(#1152d4 1px, transparent 1px); background-size: 20px 20px;">
                     </div>
@@ -418,7 +499,6 @@
                 <div class="px-6 py-5 border-b border-slate-100 flex justify-between items-center">
                     <h4 class="text-sm font-bold uppercase tracking-widest text-slate-900 text-left">Staff Performance
                         Rankings</h4>
-                    <button class="text-primary text-xs font-bold hover:underline">View All Technicians</button>
                 </div>
                 <div class="overflow-x-auto">
                     <table class="w-full text-left">
@@ -432,112 +512,46 @@
                                     Completed Jobs</th>
                                 <th
                                     class="px-6 py-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest text-left">
-                                    Efficiency</th>
+                                    Success Rate</th>
                                 <th
                                     class="px-6 py-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest text-left">
                                     Revenue Generated</th>
                                 <th
-                                    class="px-6 py-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest text-right">
-                                    Action</th>
+                                    class="px-6 py-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest text-left">
+                                    Avg Hours</th>
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-slate-100">
+                            <?php foreach ($techData as $tech): 
+                                $successRate = $tech['completed_jobs'] > 0 ? round(($tech['successful_jobs'] / $tech['completed_jobs']) * 100, 1) : 0;
+                                $avgHours = $tech['avg_hours_per_job'] ? round($tech['avg_hours_per_job'], 1) : 0;
+                            ?>
                             <tr class="hover:bg-slate-50/50 transition-colors">
                                 <td class="px-6 py-4">
-                                    <div class="flex items-center gap-3">
-                                        <div class="h-8 w-8 rounded-full bg-slate-200 overflow-hidden">
-                                            <img alt="Technician"
-                                                data-alt="headshot of a technician wearing a grey workshop uniform with a focused expression"
-                                                src="https://lh3.googleusercontent.com/aida-public/AB6AXuAVwrn3zha0xfxSRheGgWYTcEG6WOD0srvbDxoiXs_i8o4ZAijGPwvorictljs7iGllrh2wcFOFUrgzGr74nOgasY6ca-pTKF3Nr5dJ1djY41ATHVcw12Eooc8FVgUw2ZaBAHeeYqTd3R4-7Om5ifZu1vR6vjIYI39UX0c4wj6rksiVka6hxhHfta-9pFqj6TrBSIUlWmyf5UzuMiMAh1aF2s2mUXi7d31jYvqQNjsxkgowRbwAtkoujhrxo1hin1dvdet_uNkgO5PM" />
-                                        </div>
-                                        <div class="text-left">
-                                            <p class="text-sm font-bold text-slate-900">Marcus Miller</p>
-                                            <p class="text-[10px] text-slate-400">Senior Technician</p>
-                                        </div>
+                                    <div class="text-left">
+                                        <p class="text-sm font-bold text-slate-900"><?php echo htmlspecialchars($tech['assigned_technician']); ?></p>
                                     </div>
                                 </td>
-                                <td class="px-6 py-4 text-sm font-medium text-slate-600 text-left">42 Jobs</td>
+                                <td class="px-6 py-4 text-sm font-medium text-slate-600 text-left"><?php echo $tech['completed_jobs']; ?> Jobs</td>
                                 <td class="px-6 py-4 text-left">
                                     <div class="flex items-center gap-2">
                                         <div class="w-16 bg-slate-100 h-1.5 rounded-full overflow-hidden">
-                                            <div class="bg-green-500 h-full" style="width: 98%"></div>
+                                            <div class="bg-green-500 h-full" style="width: <?php echo $successRate; ?>%"></div>
                                         </div>
-                                        <span class="text-xs font-bold text-green-600">98%</span>
+                                        <span class="text-xs font-bold text-green-600"><?php echo $successRate; ?>%</span>
                                     </div>
                                 </td>
-                                <td class="px-6 py-4 text-sm font-black text-slate-900 text-left">$34,250.00</td>
-                                <td class="px-6 py-4 text-right">
-                                    <button
-                                        class="p-1.5 hover:bg-slate-100 rounded-md transition-colors text-slate-400">
-                                        <span class="material-symbols-outlined text-[18px]"
-                                            data-icon="visibility">visibility</span>
-                                    </button>
+                                <td class="px-6 py-4 text-sm font-black text-slate-900 text-left">₱<?php echo number_format($tech['revenue_generated'], 2); ?></td>
+                                <td class="px-6 py-4 text-sm font-medium text-slate-600 text-left"><?php echo $avgHours; ?>h</td>
+                            </tr>
+                            <?php endforeach; 
+                            if (count($techData) === 0): ?>
+                            <tr>
+                                <td colspan="5" class="px-6 py-8 text-center text-slate-500">
+                                    No technician data available for the selected period.
                                 </td>
                             </tr>
-                            <tr class="hover:bg-slate-50/50 transition-colors">
-                                <td class="px-6 py-4">
-                                    <div class="flex items-center gap-3">
-                                        <div class="h-8 w-8 rounded-full bg-slate-200 overflow-hidden">
-                                            <img alt="Technician"
-                                                data-alt="professional headshot of a female technician with her hair tied back, wearing a workshop overall"
-                                                src="https://lh3.googleusercontent.com/aida-public/AB6AXuBBbVM3aY7k7J8R_z99emn_LJ86namX0oHTWb6kexA4PmKKsAEexU5WVLeOUJb3eUwzm2i-iG7YfGbHLrG0-jAYlc_vMBhsoybLEnD9GQ4Rl3CHM5oyhaOyo1sqbHk8dD7pZh0FLBzzl5wQo4uKImltjW7SWCPyM97vy27FOrqEJs5RbZcCcDUlkLxfCXe-fK6w4XJqP4TsP36TWVivfjFBbLlEkG3ve7TTu2vtYBzkPgvNaQufxFqVHzVvqYrOArritH2Z5GMYW8Up" />
-                                        </div>
-                                        <div class="text-left">
-                                            <p class="text-sm font-bold text-slate-900">Sarah Chen</p>
-                                            <p class="text-[10px] text-slate-400">Master Diagnostic Specialist</p>
-                                        </div>
-                                    </div>
-                                </td>
-                                <td class="px-6 py-4 text-sm font-medium text-slate-600 text-left">38 Jobs</td>
-                                <td class="px-6 py-4 text-left">
-                                    <div class="flex items-center gap-2">
-                                        <div class="w-16 bg-slate-100 h-1.5 rounded-full overflow-hidden">
-                                            <div class="bg-blue-500 h-full" style="width: 92%"></div>
-                                        </div>
-                                        <span class="text-xs font-bold text-blue-600">92%</span>
-                                    </div>
-                                </td>
-                                <td class="px-6 py-4 text-sm font-black text-slate-900 text-left">$29,800.00</td>
-                                <td class="px-6 py-4 text-right">
-                                    <button
-                                        class="p-1.5 hover:bg-slate-100 rounded-md transition-colors text-slate-400">
-                                        <span class="material-symbols-outlined text-[18px]"
-                                            data-icon="visibility">visibility</span>
-                                    </button>
-                                </td>
-                            </tr>
-                            <tr class="hover:bg-slate-50/50 transition-colors">
-                                <td class="px-6 py-4">
-                                    <div class="flex items-center gap-3">
-                                        <div class="h-8 w-8 rounded-full bg-slate-200 overflow-hidden">
-                                            <img alt="Technician"
-                                                data-alt="headshot of a male technician with a friendly smile, short beard, in a dark navy work shirt"
-                                                src="https://lh3.googleusercontent.com/aida-public/AB6AXuB4ljfSe3WH4HXahcTYvEWR1PgXJujMH1_Ke_5yg4zaOs1Se3MfwwcEkzo8Vexeo_IhY6bbbJ90kUa1Lpqpy6vofXiKNwMY-BX07ZIt1eKL0ehxOG52q5olaLr9PQPUix90zGYlNYylYIMUSv7toNw5oblVCWEaCuHtiRX6Oln7fPhj5GRZM4d5k6omTcNFzNrQaFSuhtfbH9xMt10IJo0uxLFjJ4vaKGPNTzVN195JjoCCSZs51niSYQvR7H-J4Rh9tj-PVORujdMa" />
-                                        </div>
-                                        <div class="text-left">
-                                            <p class="text-sm font-bold text-slate-900">David Rodriguez</p>
-                                            <p class="text-[10px] text-slate-400">Service Technician</p>
-                                        </div>
-                                    </div>
-                                </td>
-                                <td class="px-6 py-4 text-sm font-medium text-slate-600 text-left">45 Jobs</td>
-                                <td class="px-6 py-4 text-left">
-                                    <div class="flex items-center gap-2">
-                                        <div class="w-16 bg-slate-100 h-1.5 rounded-full overflow-hidden">
-                                            <div class="bg-orange-500 h-full" style="width: 84%"></div>
-                                        </div>
-                                        <span class="text-xs font-bold text-orange-600">84%</span>
-                                    </div>
-                                </td>
-                                <td class="px-6 py-4 text-sm font-black text-slate-900 text-left">$21,400.00</td>
-                                <td class="px-6 py-4 text-right">
-                                    <button
-                                        class="p-1.5 hover:bg-slate-100 rounded-md transition-colors text-slate-400">
-                                        <span class="material-symbols-outlined text-[18px]"
-                                            data-icon="visibility">visibility</span>
-                                    </button>
-                                </td>
-                            </tr>
+                            <?php endif; ?>
                         </tbody>
                     </table>
                 </div>

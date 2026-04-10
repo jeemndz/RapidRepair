@@ -1,3 +1,49 @@
+<?php
+session_start();
+include __DIR__ . '/../db.php';
+include __DIR__ . '/../session_security.php';
+
+// Check if tenant is logged in
+if (!isset($_SESSION['tenantID'])) {
+    header('Location: tenantlogin.php');
+    exit;
+}
+
+$tenantID = (int) $_SESSION['tenantID'];
+
+// Try session slug first, then URL slug
+$login_slug = '';
+if (isset($_SESSION['login_slug']) && trim((string) $_SESSION['login_slug']) !== '') {
+    $login_slug = trim((string) $_SESSION['login_slug']);
+} elseif (isset($_GET['shop']) && trim((string) $_GET['shop']) !== '') {
+    $login_slug = trim((string) $_GET['shop']);
+    $_SESSION['login_slug'] = $login_slug;
+}
+
+if ($login_slug === '') {
+    session_unset();
+    session_destroy();
+    header('Location: tenantlogin.php');
+    exit;
+}
+
+// Get tenant information
+$stmt = mysqli_prepare($conn, "SELECT * FROM owners WHERE tenantID = ? AND login_slug = ? LIMIT 1");
+mysqli_stmt_bind_param($stmt, "is", $tenantID, $login_slug);
+mysqli_stmt_execute($stmt);
+$result = mysqli_stmt_get_result($stmt);
+$owner = mysqli_fetch_assoc($result);
+mysqli_stmt_close($stmt);
+
+if (!$owner) {
+    session_unset();
+    session_destroy();
+    header('Location: tenantlogin.php');
+    exit;
+}
+
+$shopName = isset($owner['shopName']) && $owner['shopName'] !== '' ? $owner['shopName'] : 'AutoFix Pro';
+?>
 <!DOCTYPE html>
 
 <html class="light" lang="en">
@@ -5,7 +51,7 @@
 <head>
     <meta charset="utf-8" />
     <meta content="width=device-width, initial-scale=1.0" name="viewport" />
-    <title>Cobalt Auto Precision | Professional Auto Repair</title>
+    <title><?php echo htmlspecialchars($shopName); ?> | Professional Auto Repair</title>
     <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&amp;display=swap"
         rel="stylesheet" />
@@ -96,7 +142,7 @@
     <header class="fixed top-0 w-full z-50 bg-white/90 backdrop-blur-md border-b border-slate-200 shadow-sm">
         <nav class="flex justify-between items-center h-16 px-6 md:px-12 max-w-7xl mx-auto">
             <div class="text-xl font-black tracking-tighter text-[#0F4B3C]">
-                Cobalt Auto
+                <?php echo htmlspecialchars($shopName); ?>
             </div>
             <div class="hidden md:flex items-center space-x-8 font-['Inter'] tracking-tight text-sm font-medium">
                 <a class="text-[#0F4B3C] border-b-2 border-[#0F4B3C] pb-1" href="#">Home</a>
@@ -145,7 +191,7 @@
         <section class="py-24 bg-white">
             <div class="max-w-7xl mx-auto px-6 md:px-12">
                 <div class="text-center mb-16">
-                    <span class="text-primary font-bold tracking-widest text-xs uppercase">The Cobalt Advantage</span>
+                    <span class="text-primary font-bold tracking-widest text-xs uppercase">The <?php echo htmlspecialchars($shopName); ?> Advantage</span>
                     <h2 class="text-4xl font-black tracking-tight mt-2">Engineered Excellence</h2>
                 </div>
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-12">
@@ -311,10 +357,10 @@
                 </div>
                 <div>
                     <span class="text-primary font-bold tracking-widest text-xs uppercase">Legacy &amp; Vision</span>
-                    <h2 class="text-4xl font-black tracking-tight mt-2 mb-8">About Our Shop</h2>
+                    <h2 class="text-4xl font-black tracking-tight mt-2 mb-8">About <?php echo htmlspecialchars($shopName); ?></h2>
                     <div class="space-y-6 text-on-surface-variant leading-relaxed">
                         <p>
-                            Founded on the principles of transparency and technical mastery, Cobalt Auto Precision is
+                            Founded on the principles of transparency and technical mastery, <?php echo htmlspecialchars($shopName); ?> is
                             not your typical garage. We operate with the sterility of a laboratory and the passion of a
                             racing team.
                         </p>
@@ -348,27 +394,17 @@
                     <h2 class="text-4xl md:text-5xl font-black tracking-tight mb-6">Manage Your Fleet from Your Pocket
                     </h2>
                     <p class="text-slate-400 text-lg mb-10 leading-relaxed">
-                        Download the Cobalt Precision app to track service history, receive real-time diagnostic alerts,
+                        Download the <?php echo htmlspecialchars($shopName); ?> app to track service history, receive real-time diagnostic alerts,
                         and monitor vehicle health with a single tap.
                     </p>
                     <div class="flex flex-wrap gap-4">
-                        <a class="bg-black border border-slate-700 rounded-xl px-6 py-3 flex items-center gap-3 hover:bg-slate-800 transition-colors"
-                            href="#">
-                            <img alt="App Store" class="w-8 h-8"
-                                src="https://lh3.googleusercontent.com/aida-public/AB6AXuABB5xA6B6XjyS9z9aOS_ndQSEeQzHmfmB0qSGvIWpkKNcpIczp1a_U-BJF86NSuaalrZQMT_G1smcr7ykxirZmrN_ElpKJrx-5cJJqR7bhMxh8EUUVxFBB8RyevOa7-jxajNFzb55ZeaRyr9OfBenYKPcSrZ9DWjMW6pW5lMRAGdfq25-4GjhTnsvF6w_6j-qJWCXzFho198pfZVRoWK5_BTGyz9A7cj85XdkoaY5OI9Y_rOwfyU5wqV1wgpOT0fxpboYDrWB_3QDN" />
+                        <a class="bg-primary text-white border border-primary rounded-xl px-6 py-3 flex items-center gap-3 hover:opacity-90 transition-opacity"
+                            href="https://drive.google.com/drive/folders/1cCq8qRDO60naVL-fchpp8ucmHEX5-8W6?usp=sharing" target="_blank">
+                            <span class="material-symbols-outlined" data-icon="folder">folder</span>
                             <div class="text-left">
-                                <div class="text-[10px] uppercase font-bold opacity-60 leading-none">Download on the
+                                <div class="text-[10px] uppercase font-bold opacity-90 leading-none">Access Our Mobile App
                                 </div>
-                                <div class="text-xl font-bold leading-none">App Store</div>
-                            </div>
-                        </a>
-                        <a class="bg-black border border-slate-700 rounded-xl px-6 py-3 flex items-center gap-3 hover:bg-slate-800 transition-colors"
-                            href="#">
-                            <img alt="Google Play" class="w-8 h-8"
-                                src="https://lh3.googleusercontent.com/aida-public/AB6AXuDE1lFXudJKbSDsgMZvQCBXiZMl7DDwtCpXNW_xucOxROOVzzrZMhbe9Mgi0mIgQZc_gnxjsgIoga_IlJCvEEQeHV6Lc2PGi_C1TpuH36Fr5-G_X6kJkgWjzLxATUhwaiK7WZLrLwziXdIx_x8wXrEWv_r0C5LWjO-CE43fPIZ-xmNgwseyyPmMhGfFD7EPSYU03H3g1_g9GflAcYfazNELkdxbQpFYzLs1yDKtCHp2s7hLAhA_md1110jBm56UuVSffMGu28R43vbU" />
-                            <div class="text-left">
-                                <div class="text-[10px] uppercase font-bold opacity-60 leading-none">Get it on</div>
-                                <div class="text-xl font-bold leading-none">Google Play</div>
+                                <div class="text-xl font-bold leading-none">Download Here</div>
                             </div>
                         </a>
                     </div>
@@ -411,7 +447,7 @@
             <div class="max-w-7xl mx-auto px-6 md:px-12">
                 <div class="text-center max-w-3xl mx-auto mb-16">
                     <span class="text-primary font-bold tracking-widest text-xs uppercase">Owner Satisfaction</span>
-                    <h2 class="text-4xl font-black tracking-tight mt-2">The Cobalt Standard</h2>
+                    <h2 class="text-4xl font-black tracking-tight mt-2">The <?php echo htmlspecialchars($shopName); ?> Standard</h2>
                 </div>
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
                     <div
@@ -518,8 +554,8 @@
     <footer class="w-full border-t border-slate-200 bg-slate-50">
         <div class="flex flex-col md:flex-row justify-between items-center py-12 px-6 md:px-12 max-w-7xl mx-auto">
             <div class="mb-8 md:mb-0">
-                <div class="text-lg font-black text-slate-900 mb-2">Cobalt Auto Precision</div>
-                <div class="font-['Inter'] text-xs font-regular text-slate-500">© 2024 Cobalt Auto Precision. All rights
+                <div class="text-lg font-black text-slate-900 mb-2"><?php echo htmlspecialchars($shopName); ?></div>
+                <div class="font-['Inter'] text-xs font-regular text-slate-500">© 2024 <?php echo htmlspecialchars($shopName); ?>. All rights
                     reserved.</div>
             </div>
             <div class="flex flex-wrap justify-center gap-8 font-['Inter'] text-xs font-regular">

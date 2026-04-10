@@ -994,6 +994,7 @@ if ($mrrResult) {
     <meta http-equiv="Expires" content="0" />
     <title>Subscription Management | RapidRepair</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/html2pdf.js@0.10.1/dist/html2pdf.bundle.min.js"></script>
     <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
     <link
         href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&amp;family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap"
@@ -1473,9 +1474,83 @@ if ($mrrResult) {
             <div class="bg-white border border-slate-200 rounded-xl overflow-hidden">
                 <div class="px-6 py-4 border-b border-slate-100 flex justify-between items-center">
                     <h2 class="text-sm font-bold text-on-surface uppercase tracking-tight">Active Subscriptions</h2>
+                    <button id="exportPdfBtn" type="button" 
+                        class="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white text-xs font-bold rounded-lg hover:bg-emerald-700 transition-colors active:scale-95"
+                        title="Export to PDF">
+                        <span class="material-symbols-outlined text-[18px]">file_download</span>
+                        Export PDF
+                    </button>
                 </div>
+
+                <!-- Subscription Filters -->
+                <div class="px-8 py-6 border-b border-slate-100 bg-white">
+                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
+                        <!-- Date Range Filter -->
+                        <div class="flex flex-col">
+                            <label class="text-xs font-bold text-slate-600 uppercase tracking-widest mb-2">Date Range</label>
+                            <select id="dateRangeFilter" class="border border-slate-300 rounded-lg px-4 py-2.5 text-sm focus:ring-2 focus:ring-primary focus:border-transparent bg-white cursor-pointer">
+                                <option value="last_30_days">Last 30 Days</option>
+                                <option value="last_7_days">Last 7 Days</option>
+                                <option value="last_90_days">Last 90 Days</option>
+                                <option value="last_year">Last Year</option>
+                                <option value="all_time">All Time</option>
+                            </select>
+                        </div>
+
+                        <!-- Tenant Filter -->
+                        <div class="flex flex-col">
+                            <label class="text-xs font-bold text-slate-600 uppercase tracking-widest mb-2">Tenant</label>
+                            <select id="tenantFilter" class="border border-slate-300 rounded-lg px-4 py-2.5 text-sm focus:ring-2 focus:ring-primary focus:border-transparent bg-white cursor-pointer">
+                                <option value="">All Tenants</option>
+                                <?php
+                                $tenantsQuery = "SELECT DISTINCT tenantID, shopName FROM owners WHERE subscription_plan IS NOT NULL ORDER BY shopName ASC";
+                                $tenantsResult = mysqli_query($conn, $tenantsQuery);
+                                if ($tenantsResult) {
+                                    while ($tenant = mysqli_fetch_assoc($tenantsResult)) {
+                                        echo '<option value="' . htmlspecialchars($tenant['tenantID']) . '">' . htmlspecialchars($tenant['shopName']) . '</option>';
+                                    }
+                                }
+                                ?>
+                            </select>
+                        </div>
+
+                        <!-- Status Filter -->
+                        <div class="flex flex-col">
+                            <label class="text-xs font-bold text-slate-600 uppercase tracking-widest mb-2">Status</label>
+                            <select id="statusFilter" class="border border-slate-300 rounded-lg px-4 py-2.5 text-sm focus:ring-2 focus:ring-primary focus:border-transparent bg-white cursor-pointer">
+                                <option value="">All Status</option>
+                                <option value="Active">Active</option>
+                                <option value="Inactive">Inactive</option>
+                                <option value="Suspended">Suspended</option>
+                            </select>
+                        </div>
+
+                        <!-- Granularity/Billing Cycle Filter -->
+                        <div class="flex flex-col">
+                            <label class="text-xs font-bold text-slate-600 uppercase tracking-widest mb-2">Billing Cycle</label>
+                            <select id="billingCycleFilterSelect" class="border border-slate-300 rounded-lg px-4 py-2.5 text-sm focus:ring-2 focus:ring-primary focus:border-transparent bg-white cursor-pointer">
+                                <option value="">All Billing Cycles</option>
+                                <option value="daily">Daily</option>
+                                <option value="weekly">Weekly</option>
+                                <option value="monthly">Monthly</option>
+                                <option value="quarterly">Quarterly</option>
+                                <option value="semiannual">Semi-Annual</option>
+                                <option value="annual">Annual</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="flex justify-end">
+                        <button id="applyFiltersBtn" type="button" 
+                            class="flex items-center gap-2 px-6 py-2.5 bg-red-600 text-white text-sm font-bold rounded-lg hover:bg-red-700 transition-colors active:scale-95">
+                            <span class="material-symbols-outlined text-[18px]">filter_list</span>
+                            Apply Filters
+                        </button>
+                    </div>
+                </div>
+
                 <div class="overflow-x-auto">
-                    <table class="w-full text-sm">
+                    <table class="w-full text-sm" id="subscriptionsTable">
                         <thead>
                             <tr class="border-b border-slate-100 bg-slate-50">
                                 <th class="px-6 py-3 text-left font-bold text-slate-600 uppercase text-[10px]">Tenant
@@ -1528,7 +1603,14 @@ if ($mrrResult) {
                                     $subscriptionSearchHaystack = strtolower(trim((string) ($sub['shopName'] ?? '') . ' ' . $planName . ' ' . $billingCycle . ' ' . $nextBilling));
                                     ?>
                                     <tr class="searchable-subscription border-b border-slate-100 hover:bg-slate-50 transition-colors"
-                                        data-search="<?php echo htmlspecialchars($subscriptionSearchHaystack, ENT_QUOTES, 'UTF-8'); ?>">
+                                        data-search="<?php echo htmlspecialchars($subscriptionSearchHaystack, ENT_QUOTES, 'UTF-8'); ?>"
+                                        data-billing-cycle="<?php echo htmlspecialchars(strtolower($sub['billing_cycle']), ENT_QUOTES, 'UTF-8'); ?>"
+                                        data-tenant="<?php echo htmlspecialchars(strtolower($sub['shopName']), ENT_QUOTES, 'UTF-8'); ?>"
+                                        data-tenant-id="<?php echo htmlspecialchars((string)$sub['tenantID'], ENT_QUOTES, 'UTF-8'); ?>"
+                                        data-monthly-rate="<?php echo htmlspecialchars((string)$monthlyRate, ENT_QUOTES, 'UTF-8'); ?>"
+                                        data-next-billing="<?php echo htmlspecialchars($sub['next_billing_date'], ENT_QUOTES, 'UTF-8'); ?>"
+                                        data-status="<?php echo htmlspecialchars($sub['status'], ENT_QUOTES, 'UTF-8'); ?>"
+                                        data-subscription-start="<?php echo htmlspecialchars($sub['subscription_start'], ENT_QUOTES, 'UTF-8'); ?>">
                                         <td class="px-6 py-4 font-medium text-slate-900">
                                             <?php echo htmlspecialchars($sub['shopName']); ?>
                                         </td>
@@ -2088,6 +2170,208 @@ if ($mrrResult) {
         let currentChart = null;
         const chartLabels = <?php echo json_encode($mrrLabels); ?>;
         const monthlyData = <?php echo json_encode($mrrData); ?>;
+        
+        // Setup Subscription Table Filters
+        (function setupSubscriptionFilters() {
+            const dateRangeSelect = document.getElementById('dateRangeFilter');
+            const tenantSelect = document.getElementById('tenantFilter');
+            const statusSelect = document.getElementById('statusFilter');
+            const billingCycleSelect = document.getElementById('billingCycleFilterSelect');
+            const applyFiltersBtn = document.getElementById('applyFiltersBtn');
+            const subscriptionRows = document.querySelectorAll('.searchable-subscription');
+            const subscriptionsEmpty = document.getElementById('subscriptionsSearchEmpty');
+            
+            let filters = {
+                dateRange: 'last_30_days',
+                tenant: '',
+                status: '',
+                billingCycle: ''
+            };
+            
+            function getDateRange(rangeType) {
+                const today = new Date();
+                const endDate = new Date(today);
+                let startDate = new Date(today);
+                
+                switch(rangeType) {
+                    case 'last_7_days':
+                        startDate.setDate(today.getDate() - 7);
+                        break;
+                    case 'last_30_days':
+                        startDate.setDate(today.getDate() - 30);
+                        break;
+                    case 'last_90_days':
+                        startDate.setDate(today.getDate() - 90);
+                        break;
+                    case 'last_year':
+                        startDate.setFullYear(today.getFullYear() - 1);
+                        break;
+                    case 'all_time':
+                        startDate = new Date('2000-01-01');
+                        break;
+                    default:
+                        startDate.setDate(today.getDate() - 30);
+                }
+                
+                return { startDate, endDate };
+            }
+            
+            function normalizeBillingCycle(cycle) {
+                const normalized = cycle.toLowerCase().trim();
+                const cycleMap = {
+                    'quarterly': 'quarterly',
+                    'quarter': 'quarterly',
+                    'semi-annual': 'semiannual',
+                    'semiannual': 'semiannual',
+                    'semi annual': 'semiannual',
+                    'biannual': 'semiannual',
+                    'annual': 'annual',
+                    'annually': 'annual',
+                    'yearly': 'annual',
+                    'monthly': 'monthly',
+                    'month': 'monthly',
+                    'weekly': 'weekly',
+                    'week': 'weekly',
+                    'daily': 'daily',
+                    'day': 'daily'
+                };
+                return cycleMap[normalized] || normalized;
+            }
+            
+            function applyFilters() {
+                const dateRange = getDateRange(filters.dateRange);
+                let visibleCount = 0;
+                
+                subscriptionRows.forEach(function(row) {
+                    const billingCycle = normalizeBillingCycle(row.getAttribute('data-billing-cycle') || '');
+                    const tenantId = (row.getAttribute('data-tenant-id') || '').toLowerCase();
+                    const status = (row.getAttribute('data-status') || '').toLowerCase();
+                    const subscriptionStart = row.getAttribute('data-subscription-start') || '';
+                    const nextBilling = row.getAttribute('data-next-billing') || '';
+                    
+                    // Check date range filter
+                    let dateMatch = true;
+                    if (filters.dateRange !== 'all_time') {
+                        const startDate = new Date(subscriptionStart);
+                        dateMatch = startDate >= dateRange.startDate && startDate <= dateRange.endDate;
+                    }
+                    
+                    // Check tenant filter
+                    let tenantMatch = filters.tenant === '' || tenantId === filters.tenant.toLowerCase();
+                    
+                    // Check status filter
+                    let statusMatch = filters.status === '' || status === filters.status.toLowerCase();
+                    
+                    // Check billing cycle filter  
+                    let cycleMatch = filters.billingCycle === '' || billingCycle === filters.billingCycle;
+                    
+                    const shouldShow = dateMatch && tenantMatch && statusMatch && cycleMatch;
+                    row.style.display = shouldShow ? '' : 'none';
+                    
+                    if (shouldShow) {
+                        visibleCount++;
+                    }
+                });
+                
+                // Show/hide empty message
+                if (subscriptionsEmpty) {
+                    subscriptionsEmpty.style.display = visibleCount === 0 ? '' : 'none';
+                }
+            }
+            
+            // Setup apply filters button
+            if (applyFiltersBtn) {
+                applyFiltersBtn.addEventListener('click', function() {
+                    filters.dateRange = dateRangeSelect.value;
+                    filters.tenant = tenantSelect.value;
+                    filters.status = statusSelect.value;
+                    filters.billingCycle = billingCycleSelect.value;
+                    applyFilters();
+                });
+            }
+            
+            // Set initial filter application on page load
+            if (dateRangeSelect && tenantSelect && statusSelect && billingCycleSelect) {
+                filters.dateRange = dateRangeSelect.value || 'last_30_days';
+                filters.tenant = tenantSelect.value || '';
+                filters.status = statusSelect.value || '';
+                filters.billingCycle = billingCycleSelect.value || '';
+                applyFilters();
+            }
+        })();
+        
+        // Setup PDF Export
+        (function setupPdfExport() {
+            const exportBtn = document.getElementById('exportPdfBtn');
+            const table = document.querySelector('table');
+            
+            if (!exportBtn || !table) {
+                return;
+            }
+            
+            exportBtn.addEventListener('click', function() {
+                const element = document.createElement('div');
+                const now = new Date();
+                const timestamp = now.toLocaleDateString('en-US', { 
+                    year: 'numeric', 
+                    month: '2-digit', 
+                    day: '2-digit',
+                    hour: '2-digit',
+                    minute: '2-digit'
+                });
+                
+                // Create header
+                const header = '<div style="margin-bottom: 20px; text-align: center;">';
+                const headerContent = '<h1 style="margin: 0; font-size: 24px; font-weight: bold; color: #000;">Active Subscriptions Report</h1>' +
+                    '<p style="margin: 5px 0 0 0; font-size: 12px; color: #666;">Generated on ' + timestamp + '</p></div>';
+                
+                // Clone the visible table rows
+                const tableClone = table.cloneNode(true);
+                
+                // Remove hidden rows
+                const allRows = tableClone.querySelectorAll('tbody tr');
+                allRows.forEach(function(row) {
+                    if (row.style.display === 'none' || row.id === 'subscriptionsSearchEmpty') {
+                        row.remove();
+                    }
+                });
+                
+                // Replace empty cells with N/A
+                const allCells = tableClone.querySelectorAll('td, th');
+                allCells.forEach(function(cell) {
+                    const cellText = cell.textContent.trim();
+                    if (cellText === '' || cellText === '-' || cellText === 'undefined' || cellText === 'null') {
+                        cell.textContent = 'N/A';
+                        cell.style.color = '#999';
+                        cell.style.fontStyle = 'italic';
+                    }
+                });
+                
+                // Add CSS for better PDF styling
+                const styles = '<style>' +
+                    'table { width: 100%; border-collapse: collapse; margin-top: 10px; }' +
+                    'th, td { padding: 10px; border: 1px solid #ddd; text-align: left; font-size: 12px; }' +
+                    'th { background-color: #f3f4f6; font-weight: bold; color: #333; }' +
+                    'tr:nth-child(even) { background-color: #f9fafb; }' +
+                    'tr:nth-child(odd) { background-color: #ffffff; }' +
+                    'td { color: #333; }' +
+                    'td[style*="color: rgb(153, 153, 153)"] { color: #999 !important; }' +
+                    '</style>';
+                
+                element.innerHTML = styles + header + headerContent + '<div>' + tableClone.outerHTML + '</div>';
+                
+                const opt = {
+                    margin: 10,
+                    filename: 'subscriptions-report-' + now.getTime() + '.pdf',
+                    image: { type: 'jpeg', quality: 0.98 },
+                    html2canvas: { scale: 2 },
+                    jsPDF: { orientation: 'landscape', unit: 'mm', format: 'a4' }
+                };
+                
+                html2pdf().set(opt).from(element).save();
+            });
+        })();
+
         
         // Generate quarterly data (multiply monthly by 3 to show actual quarterly rate)
         const quarterlyData = [];
