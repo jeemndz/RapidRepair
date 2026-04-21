@@ -305,9 +305,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['createTenantApplicati
             $insertResult = mysqli_query($conn, $insertSql);
 
             if ($insertResult) {
-                // Redirect to payment page with tenant ID and plan selected
-                header("Location: clientpayment.php?tenantID=" . urlencode($tenantID) . "&plan=" . urlencode($formData['subscriptionPlan']) . "&billingCycle=" . urlencode($formData['billingCycle']));
-                exit();
+                $successMessage = 'Application submitted successfully. It is now in Pending Applications for superadmin approval or rejection.';
+                $formData = [
+                    'shopName' => '',
+                    'shopAddress' => '',
+                    'ownerName' => '',
+                    'countryCode' => 'PH',
+                    'contactNumber' => '',
+                    'email' => '',
+                    'subscriptionPlan' => '',
+                    'billingCycle' => 'monthly'
+                ];
             } else {
                 $errors[] = 'Unable to submit your application right now. Please try again.';
             }
