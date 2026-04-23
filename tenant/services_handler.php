@@ -61,6 +61,9 @@ switch($action) {
     case 'get_single':
         getServiceById($conn, $tenantID);
         break;
+    case 'get_count':
+        getServicesCount($conn, $tenantID);
+        break;
     case 'add':
         addService($conn, $tenantID);
         break;
@@ -103,6 +106,29 @@ function getServices($conn, $tenantID) {
         'success' => true,
         'services' => $services,
         'count' => count($services)
+    ]);
+}
+
+/**
+ * Get count of all services for the tenant
+ */
+function getServicesCount($conn, $tenantID) {
+    $query = "SELECT COUNT(*) as total FROM services WHERE tenantID = ? AND status = 'Active'";
+    $stmt = $conn->prepare($query);
+    
+    if (!$stmt) {
+        jsonResponse(500, ['success' => false, 'message' => 'Database error: ' . $conn->error]);
+    }
+    
+    $stmt->bind_param('i', $tenantID);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    $row = $result->fetch_assoc();
+    $stmt->close();
+    
+    jsonResponse(200, [
+        'success' => true,
+        'count' => (int)$row['total']
     ]);
 }
 

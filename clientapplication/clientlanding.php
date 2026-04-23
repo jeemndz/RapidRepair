@@ -199,6 +199,17 @@ function generateTemporaryPasswordForApplication($length = 12)
     return $password;
 }
 
+function generateInviteCode($length = 6)
+{
+    $digits = '0123456789';
+    $maxIndex = strlen($digits) - 1;
+    $code = '';
+    for ($i = 0; $i < $length; $i++) {
+        $code .= $digits[random_int(0, $maxIndex)];
+    }
+    return $code;
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['createTenantApplication'])) {
     if (!$isClientLoggedIn) {
         $errors[] = 'Please log in first before submitting an application.';
@@ -262,8 +273,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['createTenantApplicati
             $tenantID = str_pad((string) $newNumericId, 3, '0', STR_PAD_LEFT);
             $loginSlug = generateSlugForApplication($conn, $formData['shopName']);
             $temporaryPassword = generateTemporaryPasswordForApplication();
+            $inviteCode = generateInviteCode();
 
-            $insertColumns = ['tenantID', 'ownerName', 'shopName', 'email', 'contactNumber', 'shopAddress', 'password', 'first_login', 'status'];
+            $insertColumns = ['tenantID', 'ownerName', 'shopName', 'email', 'contactNumber', 'shopAddress', 'password', 'first_login', 'status', 'invite_code'];
             $insertValues = [
                 "'" . mysqli_real_escape_string($conn, $tenantID) . "'",
                 "'" . mysqli_real_escape_string($conn, $formData['ownerName']) . "'",
@@ -273,7 +285,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['createTenantApplicati
                 "'" . mysqli_real_escape_string($conn, $formData['shopAddress']) . "'",
                 "'" . mysqli_real_escape_string($conn, $temporaryPassword) . "'",
                 '1',
-                "'Pending'"
+                "'Pending'",
+                "'" . mysqli_real_escape_string($conn, $inviteCode) . "'"
             ];
 
             if (ownersColumnExists($conn, 'login_slug')) {
@@ -305,9 +318,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['createTenantApplicati
             $insertResult = mysqli_query($conn, $insertSql);
 
             if ($insertResult) {
-                // Redirect to payment page with tenant ID and plan selected
-                header("Location: clientpayment.php?tenantID=" . urlencode($tenantID) . "&plan=" . urlencode($formData['subscriptionPlan']) . "&billingCycle=" . urlencode($formData['billingCycle']));
-                exit();
+                // Redirect to payment page with application details
+                $paymentUrl = 'clientpayment.php?tenantID=' . urlencode($tenantID) . 
+                              '&plan=' . urlencode($formData['subscriptionPlan']) . 
+                              '&billingCycle=' . urlencode($formData['billingCycle']);
+                header('Location: ' . $paymentUrl);
+                exit;
             } else {
                 $errors[] = 'Unable to submit your application right now. Please try again.';
             }

@@ -2,6 +2,7 @@
 session_start();
 require_once __DIR__ . '/../db.php';
 include __DIR__ . '/../session_security.php';
+include __DIR__ . '/access_control.php';
 
 if (!isset($_SESSION['tenantID'])) {
     header('Location: tenantlogin.php');
@@ -9,6 +10,18 @@ if (!isset($_SESSION['tenantID'])) {
 }
 
 $tenantID = (int) $_SESSION['tenantID'];
+
+// Enforce access control for this module
+enforceModuleAccess($tenantID, basename(__FILE__));
+
+// Get accessible modules for navigation
+$accessibleModules = getAccessibleModules($tenantID);
+$isStaffUser = isset($_SESSION['userType']) && $_SESSION['userType'] === 'staff';
+
+// Helper function to check if a module should be accessible
+function canAccessModule($moduleFile, $accessibleModules) {
+    return in_array($moduleFile, $accessibleModules);
+}
 
 $loginSlug = '';
 if (isset($_SESSION['login_slug']) && trim((string) $_SESSION['login_slug']) !== '') {
@@ -239,52 +252,70 @@ function getStatusIcon($action): string {
                 </div>
             </div>
             <nav class="space-y-1">
+                <?php if (canAccessModule('dashboardadmin.php', $accessibleModules)): ?>
                 <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 hover:bg-slate-100 transition-colors font-medium"
                     href="dashboardadmin.php?shop=<?php echo h($shopQuery); ?>">
                     <span class="material-symbols-outlined text-[22px]">dashboard</span>
                     Dashboard
                 </a>
+                <?php endif; ?>
+                <?php if (canAccessModule('repairjobsadmin.php', $accessibleModules)): ?>
                 <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 hover:bg-slate-100 transition-colors font-medium"
                     href="repairjobsadmin.php?shop=<?php echo h($shopQuery); ?>">
                     <span class="material-symbols-outlined text-[22px]">build</span>
                     Repair Jobs
                 </a>
+                <?php endif; ?>
+                <?php if (canAccessModule('vehicleadmin.php', $accessibleModules)): ?>
                 <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 hover:bg-slate-100 transition-colors"
                     href="vehicleadmin.php?shop=<?php echo h($shopQuery); ?>">
                     <span class="material-symbols-outlined text-[22px]">directions_car</span>
                     Vehicles
                 </a>
+                <?php endif; ?>
+                <?php if (canAccessModule('appointmentadmin.php', $accessibleModules)): ?>
                 <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 hover:bg-slate-100 transition-colors"
                     href="appointmentadmin.php?shop=<?php echo h($shopQuery); ?>">
                     <span class="material-symbols-outlined text-[22px]">event</span>
                     Appointments
                 </a>
+                <?php endif; ?>
+                <?php if (canAccessModule('reportsadmin.php', $accessibleModules)): ?>
                 <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 hover:bg-slate-100 transition-colors"
                     href="reportsadmin.php?shop=<?php echo h($shopQuery); ?>">
                     <span class="material-symbols-outlined text-[22px]">description</span>
                     Reports
                 </a>
+                <?php endif; ?>
+                <?php if (canAccessModule('inventoryadmin.php', $accessibleModules)): ?>
                 <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 hover:bg-slate-100 transition-colors"
                     href="inventoryadmin.php?shop=<?php echo h($shopQuery); ?>">
                     <span class="material-symbols-outlined text-[22px]">inventory_2</span>
                     Inventory
                 </a>
+                <?php endif; ?>
+                <?php if (canAccessModule('customeradmin.php', $accessibleModules)): ?>
                 <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 hover:bg-slate-100 transition-colors"
                     href="customeradmin.php?shop=<?php echo h($shopQuery); ?>">
                     <span class="material-symbols-outlined text-[22px]">group</span>
                     Customers
                 </a>
+                <?php endif; ?>
+                <?php if (canAccessModule('paymentsadmin.php', $accessibleModules)): ?>
                 <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 hover:bg-slate-100 transition-colors"
                     href="paymentsadmin.php?shop=<?php echo h($shopQuery); ?>">
                     <span class="material-symbols-outlined text-[22px]">payments</span>
                     Payments
                 </a>
+                <?php endif; ?>
                 <div class="pt-4 mt-4 border-t border-slate-100">
+                    <?php if (canAccessModule('settingsadmin.php', $accessibleModules)): ?>
                     <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 hover:bg-slate-100 transition-colors"
                         href="settingsadmin.php?shop=<?php echo h($shopQuery); ?>">
                         <span class="material-symbols-outlined text-[22px]">settings</span>
                         Settings
                     </a>
+                    <?php endif; ?>
                 </div>
             </nav>
         </div>

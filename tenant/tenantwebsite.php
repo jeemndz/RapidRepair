@@ -43,6 +43,27 @@ if (!$owner) {
 }
 
 $shopName = isset($owner['shopName']) && $owner['shopName'] !== '' ? $owner['shopName'] : 'AutoFix Pro';
+
+$apkFileName = 'My-Portfolion-Mobile-App.apk';
+$apkSourcePath = __DIR__ . '/application-8f4b4ec1-dcd9-4910-9902-bbd476535bb3.apk';
+
+if (isset($_GET['download']) && $_GET['download'] === 'app') {
+    if (!is_file($apkSourcePath)) {
+        http_response_code(404);
+        echo 'Application file not found.';
+        exit;
+    }
+
+    header('Content-Description: File Transfer');
+    header('Content-Type: application/vnd.android.package-archive');
+    header('Content-Disposition: attachment; filename="' . $apkFileName . '"');
+    header('Content-Length: ' . filesize($apkSourcePath));
+    header('Cache-Control: no-store, no-cache, must-revalidate');
+    header('Pragma: public');
+    header('Expires: 0');
+    readfile($apkSourcePath);
+    exit;
+}
 ?>
 <!DOCTYPE html>
 
@@ -132,6 +153,10 @@ $shopName = isset($owner['shopName']) && $owner['shopName'] !== '' ? $owner['sho
             font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
         }
 
+        html {
+            scroll-behavior: smooth;
+        }
+
         body {
             font-family: 'Inter', sans-serif;
         }
@@ -145,20 +170,21 @@ $shopName = isset($owner['shopName']) && $owner['shopName'] !== '' ? $owner['sho
                 <?php echo htmlspecialchars($shopName); ?>
             </div>
             <div class="hidden md:flex items-center space-x-8 font-['Inter'] tracking-tight text-sm font-medium">
-                <a class="text-[#0F4B3C] border-b-2 border-[#0F4B3C] pb-1" href="#">Home</a>
-                <a class="text-slate-600 hover:text-[#0F4B3C] transition-colors" href="#">Services</a>
-                <a class="text-slate-600 hover:text-[#0F4B3C] transition-colors" href="#">About</a>
+                <a class="text-[#0F4B3C] border-b-2 border-[#0F4B3C] pb-1" href="#home">Home</a>
+                <a class="text-slate-600 hover:text-[#0F4B3C] transition-colors" href="#services">Services</a>
+                <a class="text-slate-600 hover:text-[#0F4B3C] transition-colors" href="#mobileapp">Mobile App</a>
+                <a class="text-slate-600 hover:text-[#0F4B3C] transition-colors" href="#about">About</a>
             </div>
             <div class="flex items-center gap-4">
-                <button
-                    class="bg-primary text-on-primary px-5 py-2 lg rounded-lg font-semibold text-sm transition-all active:opacity-80 active:scale-[0.98]">
+                <a href="#about"
+                    class="inline-flex items-center bg-primary text-on-primary px-5 py-2 lg rounded-lg font-semibold text-sm transition-all active:opacity-80 active:scale-[0.98] hover:opacity-90">
                     Learn More
-                </button>
+                </a>
             </div>
         </nav>
     </header>
     <main class="pt-16">
-        <section class="relative w-full overflow-hidden bg-[#1A2A2A] py-24 md:py-32">
+        <section id="home" class="relative w-full overflow-hidden bg-[#1A2A2A] py-24 md:py-32 scroll-mt-20">
             <div class="absolute inset-0 opacity-40">
                 <img alt="Modern Auto Repair Shop" class="w-full h-full object-cover"
                     data-alt="dramatic interior of a clean professional auto repair shop with blue neon lighting and high-tech diagnostic equipment on tool benches"
@@ -176,14 +202,14 @@ $shopName = isset($owner['shopName']) && $owner['shopName'] !== '' ? $owner['sho
                         to ensure your vehicle performs at its architectural peak.
                     </p>
                     <div class="flex flex-col sm:flex-row gap-4">
-                        <button
-                            class="bg-primary text-white px-8 py-4 lg rounded-lg font-bold text-base shadow-lg shadow-primary/20 transition-all hover:translate-y-[-2px]">
+                        <a href="#about"
+                            class="inline-flex items-center justify-center bg-primary text-white px-8 py-4 lg rounded-lg font-bold text-base shadow-lg shadow-primary/20 transition-all hover:translate-y-[-2px]">
                             Explore Our Standards
-                        </button>
-                        <button
-                            class="border border-white/20 bg-white/5 backdrop-blur-md text-white px-8 py-4 lg rounded-lg font-bold text-base hover:bg-white/10 transition-all">
+                        </a>
+                        <a href="#services"
+                            class="inline-flex items-center justify-center border border-white/20 bg-white/5 backdrop-blur-md text-white px-8 py-4 lg rounded-lg font-bold text-base hover:bg-white/10 transition-all">
                             View Services
-                        </button>
+                        </a>
                     </div>
                 </div>
             </div>
@@ -267,7 +293,7 @@ $shopName = isset($owner['shopName']) && $owner['shopName'] !== '' ? $owner['sho
                 </div>
             </div>
         </section>
-        <section class="py-24 max-w-7xl mx-auto px-6 md:px-12">
+        <section id="services" class="py-24 max-w-7xl mx-auto px-6 md:px-12 scroll-mt-20">
             <div class="mb-16">
                 <span class="text-primary font-bold tracking-widest text-xs uppercase">Core Capabilities</span>
                 <h2 class="text-4xl font-black tracking-tight mt-2">Expert Maintenance</h2>
@@ -331,9 +357,9 @@ $shopName = isset($owner['shopName']) && $owner['shopName'] !== '' ? $owner['sho
                             Tailored maintenance schedules for business owners. We keep your operations moving with
                             priority scheduling and comprehensive health reporting.
                         </p>
-                        <button
-                            class="bg-white text-primary px-6 py-2 xl rounded-lg font-bold text-xs uppercase tracking-widest">Inquire
-                            Now</button>
+                        <a href="#contact"
+                            class="inline-flex items-center bg-white text-primary px-6 py-2 xl rounded-lg font-bold text-xs uppercase tracking-widest">Inquire
+                            Now</a>
                     </div>
                     <div class="md:w-1/3 flex justify-center">
                         <span class="material-symbols-outlined text-[120px] text-white/20"
@@ -342,7 +368,7 @@ $shopName = isset($owner['shopName']) && $owner['shopName'] !== '' ? $owner['sho
                 </div>
             </div>
         </section>
-        <section class="py-24 bg-white">
+        <section id="about" class="py-24 bg-white scroll-mt-20">
             <div class="max-w-7xl mx-auto px-6 md:px-12 grid md:grid-cols-2 gap-16 items-center">
                 <div class="relative">
                     <div class="aspect-square rounded-xl overflow-hidden border-8 border-surface shadow-xl">
@@ -383,7 +409,7 @@ $shopName = isset($owner['shopName']) && $owner['shopName'] !== '' ? $owner['sho
                 </div>
             </div>
         </section>
-        <section class="py-24 bg-slate-900 overflow-hidden text-white relative">
+        <section id="mobile-app" class="py-24 bg-slate-900 overflow-hidden text-white relative scroll-mt-20">
             <div class="absolute top-0 right-0 w-1/3 h-full opacity-10 pointer-events-none">
                 <span class="material-symbols-outlined text-[400px]" data-icon="smartphone">smartphone</span>
             </div>
@@ -399,10 +425,10 @@ $shopName = isset($owner['shopName']) && $owner['shopName'] !== '' ? $owner['sho
                     </p>
                     <div class="flex flex-wrap gap-4">
                         <a class="bg-primary text-white border border-primary rounded-xl px-6 py-3 flex items-center gap-3 hover:opacity-90 transition-opacity"
-                            href="https://drive.google.com/drive/folders/1cCq8qRDO60naVL-fchpp8ucmHEX5-8W6?usp=sharing" target="_blank">
+                            href="?shop=<?php echo urlencode($login_slug); ?>&download=app" download="<?php echo htmlspecialchars($apkFileName); ?>">
                             <span class="material-symbols-outlined" data-icon="folder">folder</span>
                             <div class="text-left">
-                                <div class="text-[10px] uppercase font-bold opacity-90 leading-none">Access Our Mobile App
+                                <div class="text-[10px] uppercase font-bold opacity-90 leading-none">Get the Mobile App
                                 </div>
                                 <div class="text-xl font-bold leading-none">Download Here</div>
                             </div>
@@ -531,7 +557,7 @@ $shopName = isset($owner['shopName']) && $owner['shopName'] !== '' ? $owner['sho
                 </div>
             </div>
         </section>
-        <section class="py-24 max-w-7xl mx-auto px-6 md:px-12">
+        <section id="services" class="py-24 max-w-7xl mx-auto px-6 md:px-12 scroll-mt-20">
             <div class="bg-[#1A2A2A] rounded-xl p-12 md:p-24 text-center overflow-hidden relative">
                 <div
                     class="absolute inset-0 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-primary/20 via-transparent to-transparent">
@@ -543,10 +569,10 @@ $shopName = isset($owner['shopName']) && $owner['shopName'] !== '' ? $owner['sho
                         Our commitment to technical mastery ensures your vehicle remains in peak performance condition.
                         Explore our facility and expertise today.
                     </p>
-                    <button
-                        class="bg-primary text-white px-10 py-5 lg rounded-lg font-bold text-lg hover:scale-[1.02] transition-transform">
+                    <a href="#home"
+                        class="inline-flex items-center bg-primary text-white px-10 py-5 lg rounded-lg font-bold text-lg hover:scale-[1.02] transition-transform">
                         Explore Our Facility
-                    </button>
+                    </a>
                 </div>
             </div>
         </section>
@@ -555,18 +581,18 @@ $shopName = isset($owner['shopName']) && $owner['shopName'] !== '' ? $owner['sho
         <div class="flex flex-col md:flex-row justify-between items-center py-12 px-6 md:px-12 max-w-7xl mx-auto">
             <div class="mb-8 md:mb-0">
                 <div class="text-lg font-black text-slate-900 mb-2"><?php echo htmlspecialchars($shopName); ?></div>
-                <div class="font-['Inter'] text-xs font-regular text-slate-500">© 2024 <?php echo htmlspecialchars($shopName); ?>. All rights
+                <div class="font-['Inter'] text-xs font-regular text-slate-500">© 2026 <?php echo htmlspecialchars($shopName); ?>. All rights
                     reserved.</div>
             </div>
             <div class="flex flex-wrap justify-center gap-8 font-['Inter'] text-xs font-regular">
                 <a class="text-slate-500 hover:text-[#0F4B3C] underline underline-offset-4 transition-all"
-                    href="#">Privacy Policy</a>
+                    href="#home">Privacy Policy</a>
                 <a class="text-slate-500 hover:text-[#0F4B3C] underline underline-offset-4 transition-all"
-                    href="#">Terms of Service</a>
+                    href="#services">Terms of Service</a>
                 <a class="text-slate-500 hover:text-[#0F4B3C] underline underline-offset-4 transition-all"
-                    href="#">Contact Support</a>
+                    href="#contact">Contact Support</a>
                 <a class="text-slate-500 hover:text-[#0F4B3C] underline underline-offset-4 transition-all"
-                    href="#">Careers</a>
+                    href="#mobile-app">Careers</a>
             </div>
             <div class="mt-8 md:mt-0 flex gap-4">
                 <div

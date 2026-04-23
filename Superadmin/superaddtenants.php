@@ -421,7 +421,7 @@ function buildMailTransports()
     return $mailTransports;
 }
 
-function sendTenantActivationDetailsEmail($ownerRow, $planName, $billingCycle, $subscriptionStart, $subscriptionEnd, $nextBillingDate, $planTotalPrice, $username = '', $tempPassword = '')
+function sendTenantActivationDetailsEmail($ownerRow, $planName, $billingCycle, $subscriptionStart, $subscriptionEnd, $nextBillingDate, $planTotalPrice, $username = '', $tempPassword = '', $inviteCode = '')
 {
     $email = trim((string) ($ownerRow['email'] ?? ''));
     if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
@@ -448,6 +448,7 @@ function sendTenantActivationDetailsEmail($ownerRow, $planName, $billingCycle, $
     $safeLoginLink = htmlspecialchars($loginLink, ENT_QUOTES, 'UTF-8');
     $safeUsername = htmlspecialchars((string) $username, ENT_QUOTES, 'UTF-8');
     $safeTempPassword = htmlspecialchars((string) $tempPassword, ENT_QUOTES, 'UTF-8');
+    $safeInviteCode = htmlspecialchars((string) $inviteCode, ENT_QUOTES, 'UTF-8');
 
     $mail = new \PHPMailer\PHPMailer\PHPMailer(true);
     $mail->isHTML(true);
@@ -491,7 +492,8 @@ function sendTenantActivationDetailsEmail($ownerRow, $planName, $billingCycle, $
                                     <table role='presentation' cellpadding='0' cellspacing='0' border='0' width='100%' style='border:1px solid #d1d5db;border-radius:12px;background:#f8fafc;margin:0 0 18px 0;'>
                                         <tr><td style='padding:14px 16px;font-size:14px;color:#0f172a;'><strong>Email:</strong> {$safeEmail}</td></tr>
                                         <tr><td style='padding:0 16px 14px 16px;font-size:14px;color:#0f172a;'><strong>Username:</strong> {$safeUsername}</td></tr>
-                                        <tr><td style='padding:0 16px 16px 16px;font-size:14px;color:#0f172a;'><strong>Temporary Password:</strong> {$safeTempPassword}</td></tr>
+                                        <tr><td style='padding:0 16px 14px 16px;font-size:14px;color:#0f172a;'><strong>Temporary Password:</strong> {$safeTempPassword}</td></tr>
+                                        <tr><td style='padding:0 16px 16px 16px;font-size:14px;color:#0f172a;'><strong>Invite Code:</strong> {$safeInviteCode}</td></tr>
                                     </table>
 
                                     <p style='margin:0 0 18px 0;font-size:14px;line-height:22px;word-break:break-all;'>
@@ -528,7 +530,8 @@ function sendTenantActivationDetailsEmail($ownerRow, $planName, $billingCycle, $
         . "=== LOGIN CREDENTIALS ===\n"
         . "Email: {$email}\n"
         . "Username: {$username}\n"
-        . "Temporary Password: {$tempPassword}\n\n"
+        . "Temporary Password: {$tempPassword}\n"
+        . "Invite Code: {$inviteCode}\n\n"
         . "Tenant Login Link: {$loginLink}\n\n"
         . "Note: Please change your temporary password on your first login.\n";
 
@@ -711,6 +714,9 @@ if (isset($_POST['updateTenantStatus'])) {
                 mysqli_query($conn, $updatePasswordQuery);
             }
             
+            // Fetch invite code
+            $inviteCode = trim((string) ($ownerRow['invite_code'] ?? ''));
+            
             $emailResult = sendTenantActivationDetailsEmail(
                 $ownerRow,
                 $subscriptionPlans[$subscriptionPlan]['name'],
@@ -720,7 +726,8 @@ if (isset($_POST['updateTenantStatus'])) {
                 $nextBillingDate,
                 $planTotalPrice,
                 $username,
-                $tempPassword
+                $tempPassword,
+                $inviteCode
             );
 
             // Log the applicant approval
@@ -1248,6 +1255,12 @@ if (isset($_POST['createTenant'])) {
         $safeLoginEmail = htmlspecialchars($email, ENT_QUOTES, 'UTF-8');
         $safeUsername = htmlspecialchars($username, ENT_QUOTES, 'UTF-8');
 
+        // Fetch invite code from database
+        $inviteCodeRes = mysqli_query($conn, "SELECT invite_code FROM owners WHERE tenantID = '" . mysqli_real_escape_string($conn, $tenantID) . "' LIMIT 1");
+        $inviteCodeRow = $inviteCodeRes && mysqli_num_rows($inviteCodeRes) > 0 ? mysqli_fetch_assoc($inviteCodeRes) : [];
+        $inviteCode = trim((string) ($inviteCodeRow['invite_code'] ?? ''));
+        $safeInviteCode = htmlspecialchars($inviteCode, ENT_QUOTES, 'UTF-8');
+
         $mail->Body = "
         <!DOCTYPE html>
         <html lang='en'>
@@ -1306,6 +1319,15 @@ if (isset($_POST['createTenant'])) {
                                         </tr>
                                     </table>
 
+                                    <table role='presentation' cellpadding='0' cellspacing='0' border='0' width='100%' style='border:1px solid #fecaca;border-radius:12px;background:#fee2e2;margin:0 0 16px 0;'>
+                                        <tr>
+                                            <td style='padding:16px;'>
+                                                <p style='margin:0 0 6px 0;font-size:14px;line-height:20px;color:#7f1d1d;font-weight:700;'>Invite Code</p>
+                                                <p style='margin:0;font-size:24px;line-height:30px;letter-spacing:2px;color:#991b1b;font-weight:700;'>{$safeInviteCode}</p>
+                                            </td>
+                                        </tr>
+                                    </table>
+
                                     <p style='margin:0 0 8px 0;font-size:25px;line-height:30px;color:#0f172a;font-weight:700;'>Next steps</p>
                                     <ul style='margin:0 0 12px 22px;padding:0;font-size:15px;line-height:24px;color:#0f172a;'>
                                         <li>Open the link above and log in using this username: <strong>{$safeUsername}</strong></li>
@@ -1330,6 +1352,7 @@ if (isset($_POST['createTenant'])) {
             . "Username: {$username}\n"
             . "Login Email: {$email}\n"
             . "Temporary Password: {$tempPassword}\n"
+            . "Invite Code: {$inviteCode}\n"
             . "Status: Active\n\n"
             . "Next steps:\n"
             . "- Open the link above and log in using this username: {$username}\n"

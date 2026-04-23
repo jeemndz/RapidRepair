@@ -58,6 +58,9 @@ switch ($action) {
     case 'get_single':
         getRoleById($conn, $tenantID);
         break;
+    case 'get_count':
+        getRolesCount($conn, $tenantID);
+        break;
     case 'add':
         addRole($conn, $tenantID);
         break;
@@ -101,6 +104,27 @@ function getRoles(mysqli $conn, int $tenantID): void
     ]);
 }
 
+function getRolesCount(mysqli $conn, int $tenantID): void
+{
+    $query = "SELECT COUNT(*) as total FROM roles WHERE tenantID = ? AND status = 'Active'";
+    
+    $stmt = $conn->prepare($query);
+    if (!$stmt) {
+        jsonResponse(500, ['success' => false, 'message' => 'Database error: ' . $conn->error]);
+    }
+    
+    $stmt->bind_param('i', $tenantID);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    $row = $result->fetch_assoc();
+    $stmt->close();
+    
+    jsonResponse(200, [
+        'success' => true,
+        'count' => (int)$row['total']
+    ]);
+}
+
 function getRoleById(mysqli $conn, int $tenantID): void
 {
     $roleId = isset($_GET['role_id']) ? (int) $_GET['role_id'] : 0;
@@ -129,6 +153,8 @@ function getRoleById(mysqli $conn, int $tenantID): void
 
     $role = $result->fetch_assoc();
     $stmt->close();
+
+    error_log('getRoleById - roleId: ' . $roleId . ', access_scope: "' . $role['access_scope'] . '"');
 
     jsonResponse(200, [
         'success' => true,
@@ -160,7 +186,7 @@ function addRole(mysqli $conn, int $tenantID): void
     }
 
     if ($accessScope === '') {
-        $accessScope = 'General';
+        jsonResponse(400, ['success' => false, 'message' => 'At least one module access scope must be selected']);
     }
 
     $hashedPassword = password_hash($password, PASSWORD_DEFAULT);
@@ -224,6 +250,10 @@ function updateRole(mysqli $conn, int $tenantID): void
     $accessScope = trim((string) ($_POST['access_scope'] ?? ''));
     $status = (string) ($_POST['status'] ?? 'Active');
 
+    // Log what we received
+    error_log('updateRole received - roleId: ' . $roleId . ', accessScope: "' . $accessScope . '" (type: ' . gettype($accessScope) . ')');
+    error_log('updateRole POST data: ' . json_encode($_POST));
+
     if ($roleId <= 0 || $firstName === '' || $lastName === '' || $username === '' || $email === '') {
         jsonResponse(400, ['success' => false, 'message' => 'Role ID, first name, last name, username, and email are required']);
     }
@@ -237,7 +267,7 @@ function updateRole(mysqli $conn, int $tenantID): void
     }
 
     if ($accessScope === '') {
-        $accessScope = 'General';
+        jsonResponse(400, ['success' => false, 'message' => 'At least one module access scope must be selected']);
     }
 
     $verifyQuery = "SELECT role_id FROM roles WHERE role_id = ? AND tenantID = ? LIMIT 1";

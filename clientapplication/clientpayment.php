@@ -2,6 +2,7 @@
 session_start();
 include __DIR__ . "/../db.php";
 include __DIR__ . "/../payment_helper.php";
+include __DIR__ . "/../paymongo_helper.php";
 
 $errors = [];
 $successMessage = "";
@@ -34,72 +35,154 @@ if (!$selectedPlan) {
     $selectedPlan = $subscriptionPlans[0];
 }
 
-// Handle payment form submission
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['processPayment'])) {
-    $cardholderName = trim($_POST['cardholderName'] ?? '');
-    $cardNumber = preg_replace('/\D/', '', $_POST['cardNumber'] ?? '');
-    $expiryDate = trim($_POST['expiryDate'] ?? '');
-    $cvv = preg_replace('/\D/', '', $_POST['cvv'] ?? '');
-    $paymentMethod = isset($_POST['paymentMethod']) ? ucfirst(trim($_POST['paymentMethod'])) : '';
-    $gcashReference = trim($_POST['gcashReference'] ?? '');
-    $bankReference = trim($_POST['bankReference'] ?? '');
-    $selectedPlanCodeFromForm = isset($_POST['selectedPlanCode']) ? strtolower(trim($_POST['selectedPlanCode'])) : '';
-    
-    // Re-fetch the selected plan from form submission
-    if ($selectedPlanCodeFromForm !== '') {
-        $selectedPlan = getPlanByCode($conn, $selectedPlanCodeFromForm);
-        if (!$selectedPlan) {
-            $selectedPlan = $subscriptionPlans[0];
-        }
-    }
-    
-    // Validation (Testing Mode - Accepts Any Input)
-    if ($cardholderName === '') {
-        $errors[] = 'Cardholder name is required.';
-    }
-    
-    if ($paymentMethod === 'Card') {
-        // Testing Mode: Accept any card number format
-        if ($cardNumber === '') {
-            $errors[] = 'Card number is required.';
-        }
-        if ($expiryDate === '') {
-            $errors[] = 'Expiry date is required.';
-        }
-        if ($cvv === '') {
-            $errors[] = 'CVV is required.';
-        }
-        // For production, uncomment the strict validation below:
-        // if (!validateCardNumber($cardNumber)) { $errors[] = 'Card number is invalid.'; }
-        // if (!validateExpiryDate($expiryDate)) { $errors[] = 'Expiry date is invalid or expired.'; }
-        // if (!validateCVV($cvv)) { $errors[] = 'CVV must be 3-4 digits.'; }
-    } elseif ($paymentMethod === 'Gcash') {
-        // Testing Mode: Accept any reference number
-        if ($gcashReference === '') {
-            $errors[] = 'GCash reference number is required.';
-        }
-    } elseif ($paymentMethod === 'Bank transfer') {
-        // Testing Mode: Accept any reference number
-        if ($bankReference === '') {
-            $errors[] = 'Bank transfer reference is required.';
-        }
-    } elseif ($paymentMethod !== 'Cash') {
-        $errors[] = 'Invalid payment method selected.';
-    }
-    
-    if (count($errors) === 0 && $tenant) {
-        // Generate transaction reference
-        $transactionRef = generateTransactionReference($paymentMethod, $cardholderName, $gcashReference, $bankReference);
+// Handle payment form submission with card details
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    // Check if this is a payment submission with card details
+    if (isset($_POST['card_number']) && isset($_POST['card_expiry']) && isset($_POST['card_cvv'])) {
+        $cardNumber = isset($_POST['card_number']) ? preg_replace('/\s+/', '', trim($_POST['card_number'])) : '';
+        $cardExpiry = isset($_POST['card_expiry']) ? trim($_POST['card_expiry']) : '';
+        $cardCVV = isset($_POST['card_cvv']) ? trim($_POST['card_cvv']) : '';
+        $cardholderName = trim($_POST['cardholderName'] ?? '');
+        $selectedPlanCodeFromForm = isset($_POST['selectedPlanCode']) ? strtolower(trim($_POST['selectedPlanCode'])) : '';
+        $billingCycleFromForm = isset($_POST['billingCycle']) ? strtolower(trim($_POST['billingCycle'])) : 'monthly';
         
-        // Create payment record
-        $result = createPaymentRecord($conn, $tenantID, $selectedPlan['plan_id'], $selectedPlan['monthly_price'], $paymentMethod, $transactionRef, $gcashReference, $bankReference);
+        // Re-fetch the selected plan from form submission
+        if ($selectedPlanCodeFromForm !== '') {
+            $selectedPlan = getPlanByCode($conn, $selectedPlanCodeFromForm);
+            if (!$selectedPlan) {
+                $selectedPlan = $subscriptionPlans[0];
+            }
+        }
+        $billingCycle = $billingCycleFromForm;
         
-        if ($result['success']) {
-            $successMessage = 'Payment received! Your application is now pending review. We will send you an email notification once it is approved.';
-            $_SESSION['payment_success'] = true;
-            $_SESSION['tenant_id'] = $tenantID;
-        } else {
-            $errors[] = $result['error'] ?? 'Failed to process payment. Please try again.';
+        // Validation
+        if ($cardNumber === '' || strlen($cardNumber) < 13) {
+            $errors[] = 'Valid card number is required.';
+        }
+        
+        if ($cardExpiry === '' || !preg_match('/^\d{2}\/\d{2}$/', $cardExpiry)) {
+            $errors[] = 'Valid expiry date (MM/YY) is required.';
+        }
+        
+        if ($cardCVV === '' || strlen($cardCVV) < 3) {
+            $errors[] = 'Valid CVV is required.';
+        }
+        
+        if ($cardholderName === '' || strlen($cardholderName) < 2) {
+            $errors[] = 'Valid cardholder name is required.';
+        }
+        
+        if (count($errors) === 0 && $tenant && isset($_SESSION['paymongo_payment_id'])) {
+            // Parse expiry date
+            list($expMonth, $expYear) = explode('/', $cardExpiry);
+            $expYear = '20' . $expYear; // Convert YY to 20YY
+            
+            // Create payment source with card details
+            $gateway = initializePaymongoGateway();
+            $sourceData = [
+                'type' => 'card',
+                'details' => [
+                    'card_number' => $cardNumber,
+                    'cvc' => $cardCVV,
+                    'exp_month' => (int)$expMonth,
+                    'exp_year' => (int)$expYear
+                ]
+            ];
+            
+            $sourceResponse = $gateway->createPaymentSource('card', $sourceData['details']);
+            
+            if (!$sourceResponse['success'] || !isset($sourceResponse['data']['data']['id'])) {
+                $errors[] = 'Failed to process card. Please check your card details and try again.';
+                if (isset($sourceResponse['data']['errors'])) {
+                    foreach ($sourceResponse['data']['errors'] as $error) {
+                        $errors[] = $error['detail'] ?? 'Card processing error';
+                    }
+                }
+            } else {
+                $sourceId = $sourceResponse['data']['data']['id'];
+                $paymentId = $_SESSION['paymongo_payment_id'];
+                
+                // Attach source to payment and charge
+                $attachResponse = $gateway->attachSourceToPayment($paymentId, $sourceId);
+                
+                if ($attachResponse['success']) {
+                    // Payment successful
+                    $paymentData = $attachResponse['data']['data'] ?? [];
+                    $status = $paymentData['attributes']['status'] ?? 'paid';
+                    
+                    // Update payment record with final status and cardholder info
+                    $updatePaymentSql = "UPDATE subscription_payments SET 
+                        payment_status = '" . mysqli_real_escape_string($conn, $status) . "',
+                        cardholder_name = '" . mysqli_real_escape_string($conn, $cardholderName) . "',
+                        payment_method = 'Paymongo',
+                        billing_cycle = '" . mysqli_real_escape_string($conn, $billingCycle) . "',
+                        paid_at = NOW()
+                        WHERE tenantID = " . $tenantID . " 
+                        AND transaction_reference = '" . mysqli_real_escape_string($conn, $paymentId) . "' 
+                        LIMIT 1";
+                    mysqli_query($conn, $updatePaymentSql);
+                    
+                    // Redirect to success page
+                    header('Location: payment_success.php?tenantID=' . urlencode($tenantID) . '&paymentID=' . urlencode($paymentId));
+                    exit();
+                } else {
+                    $errors[] = 'Payment processing failed. Please try again.';
+                    if (isset($attachResponse['data']['errors'])) {
+                        foreach ($attachResponse['data']['errors'] as $error) {
+                            $errors[] = $error['detail'] ?? 'Payment error';
+                        }
+                    }
+                }
+            }
+        } else if (!isset($_SESSION['paymongo_payment_id'])) {
+            $errors[] = 'Payment session expired. Please refresh and try again.';
+        }
+    } else if (isset($_POST['processPayment'])) {
+        // Initial payment form submission to initialize Paymongo
+        $cardholderName = trim($_POST['cardholderName'] ?? '');
+        $selectedPlanCodeFromForm = isset($_POST['selectedPlanCode']) ? strtolower(trim($_POST['selectedPlanCode'])) : '';
+        $billingCycleFromForm = isset($_POST['billingCycle']) ? strtolower(trim($_POST['billingCycle'])) : 'monthly';
+        
+        // Re-fetch the selected plan from form submission
+        if ($selectedPlanCodeFromForm !== '') {
+            $selectedPlan = getPlanByCode($conn, $selectedPlanCodeFromForm);
+            if (!$selectedPlan) {
+                $selectedPlan = $subscriptionPlans[0];
+            }
+        }
+        $billingCycle = $billingCycleFromForm;
+        
+        // Validation
+        if ($cardholderName === '' || strlen($cardholderName) < 2) {
+            $errors[] = 'Valid cardholder name is required (at least 2 characters).';
+        }
+        
+        if (count($errors) === 0 && $tenant) {
+            // Initiate Paymongo payment
+            $amount = $selectedPlan['monthly_price'];
+            
+            // Apply billing cycle multiplier for subscription
+            if ($billingCycle === 'quarterly') {
+                $amount = $amount * 3;
+            } else if ($billingCycle === 'yearly') {
+                $amount = $amount * 12;
+            }
+            
+            $description = $selectedPlan['plan_name'] . ' Plan - ' . ucfirst($billingCycle) . ' Billing';
+            $email = $tenant['email'] ?? '';
+            
+            $paymentResult = processPaymongoPayment($conn, $tenantID, $amount, 'PHP', $description, $email);
+            
+            if ($paymentResult['success']) {
+                // Store the payment ID in session for later retrieval
+                $_SESSION['paymongo_payment_id'] = $paymentResult['paymentId'];
+                $_SESSION['paymongo_cardholder'] = $cardholderName;
+                $_SESSION['paymongo_amount'] = $amount;
+                $_SESSION['paymongo_billing_cycle'] = $billingCycle;
+                $successMessage = 'Payment system initialized. Please enter your card details and complete payment.';
+            } else {
+                $errors[] = $paymentResult['error'] ?? 'Failed to initialize payment. Please try again.';
+            }
         }
     }
 }
@@ -192,6 +275,110 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['processPayment'])) {
         }
     </script>
     <script>
+        // Simple payment form handler - uses server-side processing
+        document.addEventListener('DOMContentLoaded', function() {
+            const paymentButton = document.getElementById('paymentButton');
+            
+            if (paymentButton) {
+                paymentButton.addEventListener('click', async function(e) {
+                    e.preventDefault();
+                    
+                    const cardholderName = document.querySelector('input[name="cardholderName"]').value.trim();
+                    const cardNumber = document.querySelector('input[name="cardNumber"]').value.replace(/\s+/g, '');
+                    const expiryDate = document.querySelector('input[name="expiryDate"]').value.trim();
+                    const cvv = document.querySelector('input[name="cvv"]').value.trim();
+                    const form = document.querySelector('form');
+                    const errorDiv = document.getElementById('card-error');
+
+                    // Validation
+                    if (!cardholderName || cardholderName.length < 2) {
+                        errorDiv.textContent = 'Please enter a valid cardholder name (at least 2 characters)';
+                        return;
+                    }
+
+                    if (!cardNumber || cardNumber.length < 13) {
+                        errorDiv.textContent = 'Please enter a valid card number';
+                        return;
+                    }
+
+                    if (!expiryDate || !expiryDate.match(/^\d{2}\/\d{2}$/)) {
+                        errorDiv.textContent = 'Please enter expiry date in MM/YY format';
+                        return;
+                    }
+
+                    if (!cvv || cvv.length < 3) {
+                        errorDiv.textContent = 'Please enter a valid CVV';
+                        return;
+                    }
+
+                    // Disable button during processing
+                    paymentButton.disabled = true;
+                    paymentButton.textContent = 'Processing Payment...';
+                    errorDiv.textContent = '';
+
+                    try {
+                        // Add card details to form for server processing
+                        const cardNumberInput = document.createElement('input');
+                        cardNumberInput.type = 'hidden';
+                        cardNumberInput.name = 'card_number';
+                        cardNumberInput.value = cardNumber;
+                        form.appendChild(cardNumberInput);
+
+                        const expiryInput = document.createElement('input');
+                        expiryInput.type = 'hidden';
+                        expiryInput.name = 'card_expiry';
+                        expiryInput.value = expiryDate;
+                        form.appendChild(expiryInput);
+
+                        const cvvInput = document.createElement('input');
+                        cvvInput.type = 'hidden';
+                        cvvInput.name = 'card_cvv';
+                        cvvInput.value = cvv;
+                        form.appendChild(cvvInput);
+
+                        // Submit form to server for processing
+                        form.submit();
+                    } catch (error) {
+                        console.error('Payment error:', error);
+                        errorDiv.textContent = error.message || 'An error occurred. Please try again.';
+                        paymentButton.disabled = false;
+                        paymentButton.textContent = 'Complete Payment with Paymongo';
+                    }
+                });
+            }
+
+            // Format card number with spaces
+            const cardNumberInput = document.querySelector('input[name="cardNumber"]');
+            if (cardNumberInput) {
+                cardNumberInput.addEventListener('input', function(e) {
+                    let value = e.target.value.replace(/\s+/g, '').replace(/[^\d]/g, '');
+                    let formatted = value.match(/.{1,4}/g)?.join(' ') || value;
+                    e.target.value = formatted;
+                });
+            }
+
+            // Format expiry date
+            const expiryInput = document.querySelector('input[name="expiryDate"]');
+            if (expiryInput) {
+                expiryInput.addEventListener('input', function(e) {
+                    let value = e.target.value.replace(/\D/g, '');
+                    if (value.length >= 2) {
+                        value = value.substring(0, 2) + '/' + value.substring(2, 4);
+                    }
+                    e.target.value = value;
+                });
+            }
+
+            // Format CVV (numbers only)
+            const cvvInput = document.querySelector('input[name="cvv"]');
+            if (cvvInput) {
+                cvvInput.addEventListener('input', function(e) {
+                    e.target.value = e.target.value.replace(/\D/g, '').substring(0, 4);
+                });
+            }
+        });
+    </script>
+    <script>
         // Plans data from PHP
         const plansData = <?php echo json_encode(array_map(function($plan) {
             return [
@@ -204,10 +391,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['processPayment'])) {
         }, $subscriptionPlans)); ?>;
 
         function updatePaymentMethodFields() {
-            const method = document.getElementById('paymentMethod').value;
-            document.getElementById('cardFields').style.display = method === 'Card' ? 'block' : 'none';
-            document.getElementById('gcashFields').style.display = method === 'GCash' ? 'block' : 'none';
-            document.getElementById('bankFields').style.display = method === 'Bank Transfer' ? 'block' : 'none';
+            // For Paymongo, only card is available
+            const cardFields = document.getElementById('cardFields');
+            if (cardFields) {
+                cardFields.style.display = 'block';
+            }
         }
 
         function updateSelectedPlan(planCode) {
@@ -339,6 +527,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['processPayment'])) {
                         </div>
                         <p class="mt-3 text-sm text-on-surface-variant" id="planNameDisplay"><?php echo htmlspecialchars($selectedPlan['plan_name']); ?> Plan</p>
                     </div>
+                    <div class="pt-4 border-t border-outline">
+                        <label class="block text-xs font-bold text-on-surface-variant uppercase tracking-tighter mb-2">Billing Cycle</label>
+                        <div class="grid grid-cols-3 gap-3">
+                            <button type="button" class="py-2 px-3 rounded-lg border-2 transition-all text-sm font-semibold <?php echo $billingCycle === 'monthly' ? 'border-primary bg-primary-fixed text-primary' : 'border-slate-200 text-on-surface-variant hover:border-primary'; ?>"
+                                onclick="document.querySelector('input[name=\'billingCycle\']').value='monthly'; this.parentElement.querySelectorAll('button').forEach(b => b.classList.remove('border-primary', 'bg-primary-fixed', 'text-primary')); this.parentElement.querySelectorAll('button').forEach(b => b.classList.add('border-slate-200', 'text-on-surface-variant')); this.classList.remove('border-slate-200', 'text-on-surface-variant'); this.classList.add('border-primary', 'bg-primary-fixed', 'text-primary');">
+                                Monthly
+                            </button>
+                            <button type="button" class="py-2 px-3 rounded-lg border-2 transition-all text-sm font-semibold <?php echo $billingCycle === 'quarterly' ? 'border-primary bg-primary-fixed text-primary' : 'border-slate-200 text-on-surface-variant hover:border-primary'; ?>"
+                                onclick="document.querySelector('input[name=\'billingCycle\']').value='quarterly'; this.parentElement.querySelectorAll('button').forEach(b => b.classList.remove('border-primary', 'bg-primary-fixed', 'text-primary')); this.parentElement.querySelectorAll('button').forEach(b => b.classList.add('border-slate-200', 'text-on-surface-variant')); this.classList.remove('border-slate-200', 'text-on-surface-variant'); this.classList.add('border-primary', 'bg-primary-fixed', 'text-primary');">
+                                Quarterly
+                            </button>
+                            <button type="button" class="py-2 px-3 rounded-lg border-2 transition-all text-sm font-semibold <?php echo $billingCycle === 'yearly' ? 'border-primary bg-primary-fixed text-primary' : 'border-slate-200 text-on-surface-variant hover:border-primary'; ?>"
+                                onclick="document.querySelector('input[name=\'billingCycle\']').value='yearly'; this.parentElement.querySelectorAll('button').forEach(b => b.classList.remove('border-primary', 'bg-primary-fixed', 'text-primary')); this.parentElement.querySelectorAll('button').forEach(b => b.classList.add('border-slate-200', 'text-on-surface-variant')); this.classList.remove('border-slate-200', 'text-on-surface-variant'); this.classList.add('border-primary', 'bg-primary-fixed', 'text-primary');">
+                                Yearly
+                            </button>
+                        </div>
+                    </div>
                 </section>
 
                 <!-- Payment Details -->
@@ -351,6 +556,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['processPayment'])) {
                     <form class="space-y-6" method="post" action="">
                         <input type="hidden" name="processPayment" value="1" />
                         <input type="hidden" id="selectedPlanCode" name="selectedPlanCode" value="<?php echo htmlspecialchars($selectedPlan['plan_code']); ?>" />
+                        <input type="hidden" name="billingCycle" value="<?php echo htmlspecialchars($billingCycle); ?>" />
 
                         <!-- Cardholder Name -->
                         <div class="space-y-2">
@@ -365,52 +571,37 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['processPayment'])) {
                             <label class="block text-xs font-bold text-on-surface-variant uppercase tracking-tighter">Payment Method</label>
                             <select id="paymentMethod" name="paymentMethod" onchange="updatePaymentMethodFields()" required
                                 class="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-3 text-sm focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all">
-                                <option value="Card">Credit / Debit Card</option>
-                                <option value="GCash">GCash</option>
-                                <option value="Bank Transfer">Bank Transfer</option>
-                                <option value="Cash">Cash</option>
+                                <option value="Card">Credit / Debit Card (via Paymongo)</option>
                             </select>
+                            <p class="text-xs text-slate-500 mt-1">Currently only credit/debit card payments are available. We accept Visa, Mastercard, and other major cards.</p>
                         </div>
 
-                        <!-- Card Fields -->
+                        <!-- Card Fields - Traditional Input -->
                         <div id="cardFields" class="space-y-4">
                             <div class="space-y-2">
                                 <label class="block text-xs font-bold text-on-surface-variant uppercase tracking-tighter">Card Number</label>
-                                <input type="text" name="cardNumber" placeholder="0000 0000 0000 0000"
-                                    class="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-3 text-sm focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all placeholder:text-slate-400" />
+                                <input type="text" name="cardNumber" placeholder="0000 0000 0000 0000" maxlength="19"
+                                    class="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-3 text-sm focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all placeholder:text-slate-400" required />
                             </div>
                             <div class="grid grid-cols-2 gap-4">
                                 <div class="space-y-2">
                                     <label class="block text-xs font-bold text-on-surface-variant uppercase tracking-tighter">Expiry Date</label>
-                                    <input type="text" name="expiryDate" placeholder="MM/YY"
-                                        class="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-3 text-sm focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all placeholder:text-slate-400" />
+                                    <input type="text" name="expiryDate" placeholder="MM/YY" maxlength="5"
+                                        class="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-3 text-sm focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all placeholder:text-slate-400" required />
                                 </div>
                                 <div class="space-y-2">
                                     <label class="block text-xs font-bold text-on-surface-variant uppercase tracking-tighter">CVV</label>
-                                    <input type="password" name="cvv" placeholder="***"
-                                        class="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-3 text-sm focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all placeholder:text-slate-400" />
+                                    <input type="text" name="cvv" placeholder="***" maxlength="4"
+                                        class="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-3 text-sm focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all placeholder:text-slate-400" required />
                                 </div>
                             </div>
-                        </div>
-
-                        <!-- GCash Fields -->
-                        <div id="gcashFields" style="display: none;" class="space-y-2">
-                            <label class="block text-xs font-bold text-on-surface-variant uppercase tracking-tighter">GCash Reference Number</label>
-                            <input type="text" name="gcashReference" placeholder="e.g., G123456789"
-                                class="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-3 text-sm focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all placeholder:text-slate-400" />
-                        </div>
-
-                        <!-- Bank Transfer Fields -->
-                        <div id="bankFields" style="display: none;" class="space-y-2">
-                            <label class="block text-xs font-bold text-on-surface-variant uppercase tracking-tighter">Bank Transfer Reference</label>
-                            <input type="text" name="bankReference" placeholder="e.g., REF123456"
-                                class="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-3 text-sm focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all placeholder:text-slate-400" />
+                            <div id="card-error" class="text-red-600 text-sm mt-2"></div>
                         </div>
 
                         <div class="pt-4 border-t border-slate-200">
-                            <button type="submit"
+                            <button type="button" id="paymentButton"
                                 class="w-full py-4 bg-primary text-white text-sm font-black uppercase tracking-widest rounded-lg shadow-lg hover:shadow-primary/20 hover:brightness-110 transition-all flex items-center justify-center gap-2">
-                                Submit Payment & Application
+                                Complete Payment with Paymongo
                                 <span class="material-symbols-outlined" data-icon="arrow_forward">arrow_forward</span>
                             </button>
                         </div>
@@ -433,7 +624,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['processPayment'])) {
                             <div class="flex justify-between items-start">
                                 <div>
                                     <p class="text-sm font-bold text-white" id="orderSummaryPlanName"><?php echo htmlspecialchars($selectedPlan['plan_name']); ?> Plan</p>
-                                    <p class="text-xs text-slate-400">Monthly subscription</p>
+                                    <p class="text-xs text-slate-400">Billing Cycle: <span class="capitalize font-semibold text-slate-300"><?php echo htmlspecialchars($billingCycle); ?></span></p>
                                 </div>
                                 <span class="text-sm font-bold" id="orderSummaryPrice">₱<?php echo number_format($selectedPlan['monthly_price'], 2); ?></span>
                             </div>
