@@ -2620,6 +2620,7 @@ if (isset($_POST['createTenant'])) {
 
             const form = document.createElement('form');
             form.method = 'POST';
+            form.action = '';
 
             const idInput = document.createElement('input');
             idInput.type = 'hidden';
@@ -2670,6 +2671,7 @@ if (isset($_POST['createTenant'])) {
         function rejectTenant(tenantID) {
             const form = document.createElement('form');
             form.method = 'POST';
+            form.action = '';
 
             const idInput = document.createElement('input');
             idInput.type = 'hidden';
