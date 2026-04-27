@@ -902,48 +902,8 @@ if ($_SESSION['userType'] === 'owner') {
             }
         }
 
-        // Stats Management
-        class StatsManager {
-            async loadStats() {
-                try {
-                    const [rolesResponse, servicesResponse] = await Promise.all([
-                        fetch('roles_handler.php?action=get_count'),
-                        fetch('services_handler.php?action=get_count')
-                    ]);
-                    
-                    const rolesData = await rolesResponse.json();
-                    const servicesData = await servicesResponse.json();
-                    
-                    if (rolesData.success) {
-                        const staffCount = rolesData.count || 0;
-                        document.getElementById('totalStaffCount').textContent = staffCount + ' Members';
-                        
-                        // Update badge
-                        const badge = document.getElementById('staffTrendBadge');
-                        if (staffCount > 0) {
-                            badge.textContent = '✓ Active';
-                            badge.classList.add('text-emerald-600', 'bg-emerald-50');
-                            badge.classList.remove('text-slate-500', 'bg-slate-100');
-                        } else {
-                            badge.textContent = 'No staff';
-                            badge.classList.remove('text-emerald-600', 'bg-emerald-50');
-                            badge.classList.add('text-slate-500', 'bg-slate-100');
-                        }
-                    }
-                    
-                    if (servicesData.success) {
-                        const serviceCount = servicesData.count || 0;
-                        document.getElementById('totalServicesCount').textContent = serviceCount + ' Catalog Items';
-                    }
-                } catch (error) {
-                    console.error('Error loading stats:', error);
-                }
-            }
-        }
-
         // Role Management JavaScript
         class RoleManager {
-            constructor(statsManager) {
             constructor(statsManager) {
                 this.modal = document.getElementById('roleModal');
                 this.form = document.getElementById('roleForm');
@@ -955,7 +915,6 @@ if ($_SESSION['userType'] === 'owner') {
                 this.roleId = document.getElementById('roleId');
                 this.passwordInput = document.getElementById('rolePassword');
                 this.passwordHint = document.getElementById('passwordHint');
-                this.statsManager = statsManager;
                 this.statsManager = statsManager;
             }
 
@@ -969,176 +928,6 @@ if ($_SESSION['userType'] === 'owner') {
                 this.closeBtn.addEventListener('click', () => this.closeModal());
                 this.cancelBtn.addEventListener('click', () => this.closeModal());
                 this.form.addEventListener('submit', (e) => this.handleFormSubmit(e));
-                this.passwordInput.addEventListener('input', () => this.updatePasswordStrength());
-            }
-
-            setupModuleButtons() {
-                const selectAllBtn = document.getElementById('selectAllModules');
-                const clearAllBtn = document.getElementById('clearAllModules');
-                
-                if (selectAllBtn) {
-                    selectAllBtn.addEventListener('click', (e) => {
-                        e.preventDefault();
-                        document.querySelectorAll('input[name="modules"]').forEach(checkbox => {
-                            checkbox.checked = true;
-                        });
-                    });
-                }
-                
-                if (clearAllBtn) {
-                    clearAllBtn.addEventListener('click', (e) => {
-                        e.preventDefault();
-                        document.querySelectorAll('input[name="modules"]').forEach(checkbox => {
-                            checkbox.checked = false;
-                        });
-                    });
-                }
-            }
-
-            setupPasswordHandlers() {
-                const toggleBtn = document.getElementById('togglePasswordVisibility');
-                const generateBtn = document.getElementById('generatePasswordBtn');
-                const copyBtn = document.getElementById('copyPasswordBtn');
-                
-                if (toggleBtn) {
-                    toggleBtn.addEventListener('click', (e) => {
-                        e.preventDefault();
-                        this.togglePasswordVisibility();
-                    });
-                }
-                
-                if (generateBtn) {
-                    generateBtn.addEventListener('click', (e) => {
-                        e.preventDefault();
-                        this.generatePassword();
-                    });
-                }
-                
-                if (copyBtn) {
-                    copyBtn.addEventListener('click', (e) => {
-                        e.preventDefault();
-                        this.copyPassword();
-                    });
-                }
-            }
-
-            togglePasswordVisibility() {
-                const input = this.passwordInput;
-                const icon = document.getElementById('toggleIcon');
-                
-                if (input.type === 'password') {
-                    input.type = 'text';
-                    icon.textContent = 'visibility';
-                } else {
-                    input.type = 'password';
-                    icon.textContent = 'visibility_off';
-                }
-            }
-
-            generatePassword() {
-                const length = 12;
-                const uppercase = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-                const lowercase = 'abcdefghijklmnopqrstuvwxyz';
-                const numbers = '0123456789';
-                const special = '!@#$%^&*';
-                
-                const allChars = uppercase + lowercase + numbers + special;
-                let password = '';
-                
-                // Ensure at least one of each type
-                password += uppercase[Math.floor(Math.random() * uppercase.length)];
-                password += lowercase[Math.floor(Math.random() * lowercase.length)];
-                password += numbers[Math.floor(Math.random() * numbers.length)];
-                password += special[Math.floor(Math.random() * special.length)];
-                
-                // Fill the rest randomly
-                for (let i = password.length; i < length; i++) {
-                    password += allChars[Math.floor(Math.random() * allChars.length)];
-                }
-                
-                // Shuffle the password
-                password = password.split('').sort(() => Math.random() - 0.5).join('');
-                
-                this.passwordInput.value = password;
-                this.passwordInput.type = 'text';
-                document.getElementById('toggleIcon').textContent = 'visibility';
-                
-                this.updatePasswordStrength();
-                
-                // Show success message
-                const generateBtn = document.getElementById('generatePasswordBtn');
-                const originalText = generateBtn.innerHTML;
-                generateBtn.innerHTML = '<span class="material-symbols-outlined text-base">check_circle</span> Generated!';
-                setTimeout(() => {
-                    generateBtn.innerHTML = originalText;
-                }, 2000);
-            }
-
-            copyPassword() {
-                const password = this.passwordInput.value;
-                if (!password) {
-                    alert('No password to copy');
-                    return;
-                }
-                
-                navigator.clipboard.writeText(password).then(() => {
-                    const copyBtn = document.getElementById('copyPasswordBtn');
-                    const originalText = copyBtn.innerHTML;
-                    copyBtn.innerHTML = '<span class="material-symbols-outlined text-base">check_circle</span>';
-                    setTimeout(() => {
-                        copyBtn.innerHTML = originalText;
-                    }, 2000);
-                }).catch(err => {
-                    alert('Failed to copy password');
-                });
-            }
-
-            updatePasswordStrength() {
-                const password = this.passwordInput.value;
-                const strengthContainer = document.getElementById('passwordStrengthContainer');
-                const strengthBar = document.getElementById('passwordStrengthBar');
-                const strengthText = document.getElementById('passwordStrengthText');
-                
-                if (!password) {
-                    strengthContainer.classList.add('hidden');
-                    return;
-                }
-                
-                strengthContainer.classList.remove('hidden');
-                
-                let strength = 0;
-                const checks = {
-                    length: password.length >= 8,
-                    uppercase: /[A-Z]/.test(password),
-                    lowercase: /[a-z]/.test(password),
-                    numbers: /\d/.test(password),
-                    special: /[!@#$%^&*]/.test(password)
-                };
-                
-                Object.values(checks).forEach(check => {
-                    if (check) strength += 20;
-                });
-                
-                let color, text;
-                if (strength <= 40) {
-                    color = '#ef4444'; // red
-                    text = 'Weak';
-                } else if (strength <= 60) {
-                    color = '#f59e0b'; // amber
-                    text = 'Fair';
-                } else if (strength <= 80) {
-                    color = '#eab308'; // yellow
-                    text = 'Good';
-                } else {
-                    color = '#22c55e'; // green
-                    text = 'Strong';
-                }
-                
-                strengthBar.style.width = strength + '%';
-                strengthBar.style.backgroundColor = color;
-                strengthText.textContent = text;
-                strengthText.style.color = color;
-                this.passwordInput.addEventListener('input', () => this.updatePasswordStrength());
             }
 
             setupModuleButtons() {
@@ -1324,29 +1113,7 @@ if ($_SESSION['userType'] === 'owner') {
                     document.getElementById('rolePassword').value = '';
                 }
                 
-                // Don't use form.reset() for edit mode since it would clear checkboxes
-                // Instead, only clear text fields
-                if (!roleId) {
-                    this.form.reset();
-                } else {
-                    // For edit mode, clear text inputs but preserve checkboxes temporarily
-                    document.getElementById('roleFirstName').value = '';
-                    document.getElementById('roleLastName').value = '';
-                    document.getElementById('roleName').value = '';
-                    document.getElementById('roleUsername').value = '';
-                    document.getElementById('roleEmail').value = '';
-                    document.getElementById('rolePassword').value = '';
-                }
-                
                 this.roleId.value = '';
-                this.setupModuleButtons();
-                this.setupPasswordHandlers();
-                
-                // Reset password field appearance
-                this.passwordInput.type = 'password';
-                document.getElementById('toggleIcon').textContent = 'visibility_off';
-                document.getElementById('passwordStrengthContainer').classList.add('hidden');
-                document.getElementById('passwordStrengthBar').style.width = '0%';
                 this.setupModuleButtons();
                 this.setupPasswordHandlers();
                 
@@ -1367,10 +1134,6 @@ if ($_SESSION['userType'] === 'owner') {
                     this.passwordInput.required = true;
                     this.passwordInput.placeholder = 'Enter secure password';
                     this.passwordHint.textContent = '*';
-                    // For new roles, uncheck all modules
-                    document.querySelectorAll('input[name="modules"]').forEach(checkbox => {
-                        checkbox.checked = false;
-                    });
                     // For new roles, uncheck all modules
                     document.querySelectorAll('input[name="modules"]').forEach(checkbox => {
                         checkbox.checked = false;
@@ -1419,8 +1182,6 @@ if ($_SESSION['userType'] === 'owner') {
                         const role = data.role;
                         console.log('Role access_scope from DB:', role.access_scope, 'Type:', typeof role.access_scope);
                         
-                        console.log('Role access_scope from DB:', role.access_scope, 'Type:', typeof role.access_scope);
-                        
                         document.getElementById('roleFirstName').value = role.first_name || '';
                         document.getElementById('roleLastName').value = role.last_name || '';
                         document.getElementById('roleName').value = role.role_name || '';
@@ -1428,41 +1189,6 @@ if ($_SESSION['userType'] === 'owner') {
                         document.getElementById('roleEmail').value = role.email || '';
                         document.getElementById('roleStatus').value = role.status || 'Active';
                         this.roleId.value = role.role_id;
-                        
-                        // Clear password field for editing
-                        this.passwordInput.value = '';
-                        
-                        // First, uncheck ALL module checkboxes
-                        const allCheckboxes = document.querySelectorAll('input[name="modules"]');
-                        console.log('Total checkboxes in modal:', allCheckboxes.length);
-                        allCheckboxes.forEach(checkbox => {
-                            checkbox.checked = false;
-                        });
-                        
-                        // Then check modules based on access_scope (comma-separated)
-                        if (role.access_scope && role.access_scope.trim() !== '' && role.access_scope !== '0') {
-                            const modules = role.access_scope.split(',').map(m => m.trim());
-                            console.log('Parsed modules from access_scope:', modules);
-                            modules.forEach(module => {
-                                // Find the checkbox with matching value and check it
-                                const checkbox = document.querySelector(`input[name="modules"][value="${module}"]`);
-                                console.log(`Looking for module "${module}": ${checkbox ? 'FOUND' : 'NOT FOUND'}`);
-                                if (checkbox) {
-                                    checkbox.checked = true;
-                                    console.log(`Checked box for module: ${module}`);
-                                } else {
-                                    console.warn('Checkbox not found for module:', module);
-                                }
-                            });
-                        } else {
-                            console.log('No valid access_scope to parse. Value was:', role.access_scope);
-                        }
-                        
-                        // Verify checkbox states after loading
-                        console.log('Final checkbox states after loading:');
-                        allCheckboxes.forEach((checkbox, index) => {
-                            console.log(`  Checkbox ${index} (${checkbox.value}): ${checkbox.checked}`);
-                        });
                         
                         // Clear password field for editing
                         this.passwordInput.value = '';
@@ -1530,21 +1256,6 @@ if ($_SESSION['userType'] === 'owner') {
                 console.log('Collected modules:', checkedModules);
                 console.log('Joined access_scope:', checkedModules.join(','));
 
-                // Collect checked modules - use querySelectorAll to ensure we get all checkboxes
-                const checkedModules = [];
-                const allCheckboxes = document.querySelectorAll('input[name="modules"]');
-                
-                console.log('Total checkboxes found:', allCheckboxes.length);
-                allCheckboxes.forEach((checkbox, index) => {
-                    console.log(`Checkbox ${index}: value="${checkbox.value}", checked=${checkbox.checked}`);
-                    if (checkbox.checked) {
-                        checkedModules.push(checkbox.value);
-                    }
-                });
-
-                console.log('Collected modules:', checkedModules);
-                console.log('Joined access_scope:', checkedModules.join(','));
-
                 const data = {
                     action,
                     first_name: (formData.get('first_name') || '').toString().trim(),
@@ -1554,11 +1265,8 @@ if ($_SESSION['userType'] === 'owner') {
                     email: (formData.get('email') || '').toString().trim(),
                     password: (formData.get('password') || '').toString(),
                     access_scope: checkedModules.join(','),
-                    access_scope: checkedModules.join(','),
                     status: (formData.get('status') || 'Active').toString()
                 };
-
-                console.log('Final data object:', data);
 
                 console.log('Final data object:', data);
 
@@ -1576,19 +1284,12 @@ if ($_SESSION['userType'] === 'owner') {
                     return;
                 }
 
-                if (checkedModules.length === 0) {
-                    this.showError('Please select at least one module');
-                    return;
-                }
-
                 if (!isEditing && !data.password) {
                     this.showError('Password is required when creating a user role');
                     return;
                 }
 
                 try {
-                    console.log('Sending data:', new URLSearchParams(data).toString());
-                    
                     console.log('Sending data:', new URLSearchParams(data).toString());
                     
                     const response = await fetch('roles_handler.php', {
@@ -1600,8 +1301,6 @@ if ($_SESSION['userType'] === 'owner') {
                     });
 
                     const rawResponse = await response.text();
-                    console.log('Raw response:', rawResponse);
-                    
                     console.log('Raw response:', rawResponse);
                     
                     let result;
@@ -1653,13 +1352,6 @@ if ($_SESSION['userType'] === 'owner') {
                         <td class="px-6 py-4 text-sm text-slate-700 font-medium">${this.escapeHtml(role.username || '-')}</td>
                         <td class="px-6 py-4">
                             <span class="text-sm font-medium text-slate-700">${this.escapeHtml(role.role_name || '-')}</span>
-                        </td>
-                        <td class="px-6 py-4 text-sm">
-                            <div class="flex flex-wrap gap-1">
-                                ${(role.access_scope || '').split(',').map(module => `
-                                    <span class="inline-block px-2 py-1 bg-blue-100 text-blue-700 rounded text-xs font-medium">${this.escapeHtml(module.trim())}</span>
-                                `).join('')}
-                            </div>
                         </td>
                         <td class="px-6 py-4 text-sm">
                             <div class="flex flex-wrap gap-1">
@@ -1746,8 +1438,6 @@ if ($_SESSION['userType'] === 'owner') {
 
         // Service Management JavaScript
         class ServiceManager {
-            constructor(statsManager) {
-                this.statsManager = statsManager;
             constructor(statsManager) {
                 this.statsManager = statsManager;
                 this.modal = document.getElementById('serviceModal');
@@ -2050,10 +1740,6 @@ if ($_SESSION['userType'] === 'owner') {
 
         // Initialize managers when DOM is ready
         document.addEventListener('DOMContentLoaded', () => {
-            const statsManager = new StatsManager();
-            statsManager.loadStats();
-            
-            const roleManager = new RoleManager(statsManager);
             const statsManager = new StatsManager();
             statsManager.loadStats();
             
