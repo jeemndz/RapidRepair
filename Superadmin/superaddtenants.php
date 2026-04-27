@@ -639,6 +639,46 @@ require __DIR__ . '/../PHPMailer/src/PHPMailer.php';
 require __DIR__ . '/../PHPMailer/src/SMTP.php';
 require __DIR__ . '/../PHPMailer/src/Exception.php';
 
+/**
+ * Map long status names to database-compatible ENUM values
+ * Database ENUM values: 'Pending', 'Active', 'Inactive', 'Suspended'
+ */
+function mapStatusToDb($status) {
+    $cleanStatus = trim($status);
+    
+    // Map to the enum values that actually exist in the database
+    $statusMap = [
+        'Active' => 'Active',
+        'Pending' => 'Pending',
+        'Rejected' => 'Inactive',  // Rejected applications become Inactive
+        'Suspended' => 'Suspended',
+        'Inactive' => 'Inactive'
+    ];
+    
+    $mapped = $statusMap[$cleanStatus] ?? null;
+    if ($mapped !== null) {
+        return $mapped;
+    }
+    
+    // Fallback to Pending for unknown values
+    return 'Pending';
+}
+
+/**
+ * Map database status codes back to long names for display
+ */
+function mapStatusFromDb($status) {
+    $cleanStatus = trim($status);
+    
+    $statusMap = [
+        'Active' => 'Active',
+        'Pending' => 'Pending',
+        'Inactive' => 'Inactive',
+        'Suspended' => 'Suspended'
+    ];
+    return $statusMap[$cleanStatus] ?? $cleanStatus;
+}
+
 // HANDLE QUICK STATUS UPDATE (Approve/Reject)
 if (isset($_POST['updateTenantStatus'])) {
     $tenantID = mysqli_real_escape_string($conn, $_POST['tenantID']);
@@ -666,8 +706,9 @@ if (isset($_POST['updateTenantStatus'])) {
         $planTotalPrice = $subscriptionPlans[$subscriptionPlan]['monthly_price'] * $billingDivisor;
         $resolvedPlanId = resolvePlanIdForSubscription($conn, $subscriptionPlan, $subscriptionPlans[$subscriptionPlan]['name']);
 
+        $dbStatus = mapStatusToDb($status);
         $updateSql = "UPDATE owners SET 
-            status = '$status',
+            status = '$dbStatus',
             subscription_plan = '" . mysqli_real_escape_string($conn, $subscriptionPlan) . "',
             billing_cycle = '" . mysqli_real_escape_string($conn, $billingCycle) . "',
             subscription_start = '" . mysqli_real_escape_string($conn, $subscriptionStart) . "',
@@ -749,7 +790,8 @@ if (isset($_POST['updateTenantStatus'])) {
         }
         exit;
     } else {
-        $updateSql = "UPDATE owners SET status = '$status' WHERE tenantID = '$tenantID'";
+        $dbStatus = mapStatusToDb($status);
+        $updateSql = "UPDATE owners SET status = '$dbStatus' WHERE tenantID = '$tenantID'";
     }
 
     if (mysqli_query($conn, $updateSql)) {
@@ -993,7 +1035,7 @@ if (isset($_POST['updateTenant'])) {
         "ownerName = '$ownerName'",
         "email = '$email'",
         "contactNumber = '$contactNumber'",
-        "status = '$status'"
+        "status = '" . mapStatusToDb($status) . "'"
     ];
 
     if (ownersColumnExists($conn, 'subscription_plan')) {
@@ -1140,7 +1182,7 @@ if (isset($_POST['createTenant'])) {
         "'" . mysqli_real_escape_string($conn, $shopAddress) . "'",
         "'" . mysqli_real_escape_string($conn, $hashedPassword) . "'",
         "1",
-        "'$status'"
+        "'" . mapStatusToDb($status) . "'"
     ];
 
     if (ownersColumnExists($conn, 'subscription_plan')) {
