@@ -856,29 +856,9 @@ $lastRow = min($offset + $perPage, $filteredTotal);
                             class="material-symbols-outlined text-[22px]">payments</span>Payments</a>
                     <?php endif; ?>
                     <div class="pt-4 mt-4 border-t border-slate-100 dark:border-slate-800">
-                        <div class="relative group">
-                            <button class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors w-full text-left settings-dropdown-btn" data-dropdown="settings">
-                                <span class="material-symbols-outlined text-[22px]">settings</span>
-                                <span>Settings</span>
-                                <span class="material-symbols-outlined text-[16px] ml-auto">expand_more</span>
-                            </button>
-                            <div class="absolute left-0 top-full mt-1 w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg shadow-lg hidden z-50 settings-dropdown" data-dropdown="settings">
-                                <?php if (canAccessModule('settingsadmin.php', $accessibleModules)): ?>
-                                <a class="flex items-center gap-3 px-3 py-2.5 rounded-t-lg text-slate-600 dark:text-slate-400 hover:bg-blue-50 dark:hover:bg-slate-800 transition-colors text-sm"
-                                    href="settingsadmin.php?shop=<?php echo $shopQuery; ?>">
-                                    <span class="material-symbols-outlined text-[18px]">settings</span>
-                                    Settings
-                                </a>
-                                <?php endif; ?>
-                                <?php if (canAccessModule('accountbillingadmin.php', $accessibleModules)): ?>
-                                <a class="flex items-center gap-3 px-3 py-2.5 rounded-b-lg text-slate-600 dark:text-slate-400 hover:bg-blue-50 dark:hover:bg-slate-800 transition-colors text-sm border-t border-slate-100 dark:border-slate-700"
-                                    href="accountbillingadmin.php?shop=<?php echo $shopQuery; ?>">
-                                    <span class="material-symbols-outlined text-[18px]">receipt_long</span>
-                                    Account Billing
-                                </a>
-                                <?php endif; ?>
-                            </div>
-                        </div>
+                        <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                            href="settingsadmin.php?shop=<?php echo $shopQuery; ?>"><span
+                                class="material-symbols-outlined text-[22px]">settings</span>Settings</a>
                     </div>
                 </nav>
             </div>

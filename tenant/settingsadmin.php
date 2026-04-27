@@ -151,11 +151,15 @@ if ($_SESSION['userType'] === 'owner') {
             </div>
             <nav class="space-y-1">
                 <?php if (canAccessModule('dashboardadmin.php', $accessibleModules)): ?>
+                <?php if (canAccessModule('dashboardadmin.php', $accessibleModules)): ?>
                 <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
                     href="dashboardadmin.php">
                     <span class="material-symbols-outlined text-[22px]">dashboard</span>
                     Dashboard
                 </a>
+                <?php endif; ?>
+                
+                <?php if (canAccessModule('repairjobsadmin.php', $accessibleModules)): ?>
                 <?php endif; ?>
                 
                 <?php if (canAccessModule('repairjobsadmin.php', $accessibleModules)): ?>
@@ -167,11 +171,17 @@ if ($_SESSION['userType'] === 'owner') {
                 <?php endif; ?>
                 
                 <?php if (canAccessModule('vehicleadmin.php', $accessibleModules)): ?>
+                <?php endif; ?>
+                
+                <?php if (canAccessModule('vehicleadmin.php', $accessibleModules)): ?>
                 <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
                     href="vehicleadmin.php">
                     <span class="material-symbols-outlined text-[22px]">directions_car</span>
                     Vehicles
                 </a>
+                <?php endif; ?>
+                
+                <?php if (canAccessModule('appointmentadmin.php', $accessibleModules)): ?>
                 <?php endif; ?>
                 
                 <?php if (canAccessModule('appointmentadmin.php', $accessibleModules)): ?>
@@ -183,11 +193,17 @@ if ($_SESSION['userType'] === 'owner') {
                 <?php endif; ?>
                 
                 <?php if (canAccessModule('reportsadmin.php', $accessibleModules)): ?>
+                <?php endif; ?>
+                
+                <?php if (canAccessModule('reportsadmin.php', $accessibleModules)): ?>
                 <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
                     href="reportsadmin.php">
                     <span class="material-symbols-outlined text-[22px]">description</span>
                     Reports
                 </a>
+                <?php endif; ?>
+                
+                <?php if (canAccessModule('inventoryadmin.php', $accessibleModules)): ?>
                 <?php endif; ?>
                 
                 <?php if (canAccessModule('inventoryadmin.php', $accessibleModules)): ?>
@@ -199,6 +215,9 @@ if ($_SESSION['userType'] === 'owner') {
                 <?php endif; ?>
                 
                 <?php if (canAccessModule('customeradmin.php', $accessibleModules)): ?>
+                <?php endif; ?>
+                
+                <?php if (canAccessModule('customeradmin.php', $accessibleModules)): ?>
                 <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
                     href="customeradmin.php">
                     <span class="material-symbols-outlined text-[22px]">group</span>
@@ -207,11 +226,16 @@ if ($_SESSION['userType'] === 'owner') {
                 <?php endif; ?>
                 
                 <?php if (canAccessModule('paymentsadmin.php', $accessibleModules)): ?>
+                <?php endif; ?>
+                
+                <?php if (canAccessModule('paymentsadmin.php', $accessibleModules)): ?>
                 <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
                     href="paymentsadmin.php">
                     <span class="material-symbols-outlined text-[22px]">payments</span>
                     Payments
                 </a>
+                <?php endif; ?>
+                
                 <?php endif; ?>
                 
                 <div class="pt-4 mt-4 border-t border-slate-100 dark:border-slate-800">
@@ -285,9 +309,11 @@ if ($_SESSION['userType'] === 'owner') {
                             <span class="material-symbols-outlined text-primary text-xl">group</span>
                         </div>
                         <span class="text-xs font-bold text-emerald-600 bg-emerald-50 px-2 py-1 rounded-full" id="staffTrendBadge">Loading...</span>
+                        <span class="text-xs font-bold text-emerald-600 bg-emerald-50 px-2 py-1 rounded-full" id="staffTrendBadge">Loading...</span>
                     </div>
                     <div>
                         <p class="text-sm font-medium text-slate-500 mb-1">Total Staff</p>
+                        <p class="text-2xl font-black text-slate-900" id="totalStaffCount">Loading...</p>
                         <p class="text-2xl font-black text-slate-900" id="totalStaffCount">Loading...</p>
                     </div>
                 </div>
@@ -299,6 +325,7 @@ if ($_SESSION['userType'] === 'owner') {
                     </div>
                     <div>
                         <p class="text-sm font-medium text-slate-500 mb-1">Active Services</p>
+                        <p class="text-2xl font-black text-slate-900" id="totalServicesCount">Loading...</p>
                         <p class="text-2xl font-black text-slate-900" id="totalServicesCount">Loading...</p>
                     </div>
                 </div>
@@ -616,7 +643,100 @@ if ($_SESSION['userType'] === 'owner') {
 
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
                         <div class="md:col-span-2">
+                        <div class="md:col-span-2">
                             <label for="rolePassword" class="block text-sm font-semibold text-slate-700 mb-2">Password <span id="passwordHint" class="text-xs font-normal text-slate-400">*</span></label>
+                            <div class="space-y-2">
+                                <div class="relative">
+                                    <input type="password" id="rolePassword" name="password"
+                                        class="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary pr-12"
+                                        placeholder="Enter secure password">
+                                    <button type="button" id="togglePasswordVisibility" class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors">
+                                        <span class="material-symbols-outlined text-xl" id="toggleIcon">visibility_off</span>
+                                    </button>
+                                </div>
+                                
+                                <div class="flex gap-2">
+                                    <button type="button" id="generatePasswordBtn" class="flex-1 px-3 py-2 bg-blue-100 hover:bg-blue-200 text-blue-700 font-semibold rounded-lg text-sm transition-colors flex items-center justify-center gap-2">
+                                        <span class="material-symbols-outlined text-base">refresh</span>
+                                        Generate Password
+                                    </button>
+                                    <button type="button" id="copyPasswordBtn" class="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-lg text-sm transition-colors flex items-center justify-center gap-2">
+                                        <span class="material-symbols-outlined text-base">content_copy</span>
+                                    </button>
+                                </div>
+                                
+                                <!-- Password Strength Indicator -->
+                                <div id="passwordStrengthContainer" class="hidden space-y-1">
+                                    <div class="flex items-center gap-2">
+                                        <div class="flex-1 h-2 bg-slate-200 rounded-full overflow-hidden">
+                                            <div id="passwordStrengthBar" class="h-full w-0 bg-red-500 transition-all duration-300"></div>
+                                        </div>
+                                        <span id="passwordStrengthText" class="text-xs font-semibold text-red-600">Weak</span>
+                                    </div>
+                                    <p id="passwordRequirements" class="text-xs text-slate-600">
+                                        • At least 8 characters
+                                        <br>• Mix of uppercase and lowercase
+                                        <br>• At least one number or special character
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="mt-4 p-4 border border-slate-300 rounded-lg bg-slate-50">
+                        <label class="block text-sm font-semibold text-slate-700 mb-3">Module Access <span class="text-red-500">*</span></label>
+                        <p class="text-xs text-slate-500 mb-3">Select which modules this user can access</p>
+                        <div id="modulesCheckboxContainer" class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                            <div class="flex items-center">
+                                <input type="checkbox" id="module_Dashboard" name="modules" value="Dashboard" class="w-4 h-4 rounded border-slate-300">
+                                <label for="module_Dashboard" class="ml-2 text-sm text-slate-700 cursor-pointer">Dashboard</label>
+                            </div>
+                            <div class="flex items-center">
+                                <input type="checkbox" id="module_Appointments" name="modules" value="Appointments" class="w-4 h-4 rounded border-slate-300">
+                                <label for="module_Appointments" class="ml-2 text-sm text-slate-700 cursor-pointer">Appointments</label>
+                            </div>
+                            <div class="flex items-center">
+                                <input type="checkbox" id="module_RepairJobs" name="modules" value="Repair Jobs" class="w-4 h-4 rounded border-slate-300">
+                                <label for="module_RepairJobs" class="ml-2 text-sm text-slate-700 cursor-pointer">Repair Jobs</label>
+                            </div>
+                            <div class="flex items-center">
+                                <input type="checkbox" id="module_Vehicles" name="modules" value="Vehicles" class="w-4 h-4 rounded border-slate-300">
+                                <label for="module_Vehicles" class="ml-2 text-sm text-slate-700 cursor-pointer">Vehicles</label>
+                            </div>
+                            <div class="flex items-center">
+                                <input type="checkbox" id="module_Inventory" name="modules" value="Inventory" class="w-4 h-4 rounded border-slate-300">
+                                <label for="module_Inventory" class="ml-2 text-sm text-slate-700 cursor-pointer">Inventory</label>
+                            </div>
+                            <div class="flex items-center">
+                                <input type="checkbox" id="module_Customers" name="modules" value="Customers" class="w-4 h-4 rounded border-slate-300">
+                                <label for="module_Customers" class="ml-2 text-sm text-slate-700 cursor-pointer">Customers</label>
+                            </div>
+                            <div class="flex items-center">
+                                <input type="checkbox" id="module_Payments" name="modules" value="Payments" class="w-4 h-4 rounded border-slate-300">
+                                <label for="module_Payments" class="ml-2 text-sm text-slate-700 cursor-pointer">Payments</label>
+                            </div>
+                            <div class="flex items-center">
+                                <input type="checkbox" id="module_Billing" name="modules" value="Billing" class="w-4 h-4 rounded border-slate-300">
+                                <label for="module_Billing" class="ml-2 text-sm text-slate-700 cursor-pointer">Billing & Accounts</label>
+                            </div>
+                            <div class="flex items-center">
+                                <input type="checkbox" id="module_Reports" name="modules" value="Reports" class="w-4 h-4 rounded border-slate-300">
+                                <label for="module_Reports" class="ml-2 text-sm text-slate-700 cursor-pointer">Reports</label>
+                            </div>
+                            <div class="flex items-center">
+                                <input type="checkbox" id="module_Settings" name="modules" value="Settings" class="w-4 h-4 rounded border-slate-300">
+                                <label for="module_Settings" class="ml-2 text-sm text-slate-700 cursor-pointer">Settings</label>
+                            </div>
+                            <div class="flex items-center">
+                                <input type="checkbox" id="module_Logs" name="modules" value="Logs" class="w-4 h-4 rounded border-slate-300">
+                                <label for="module_Logs" class="ml-2 text-sm text-slate-700 cursor-pointer">Activity Logs</label>
+                            </div>
+                        </div>
+                        <div class="flex gap-2 mt-3">
+                            <button type="button" id="selectAllModules" class="text-xs font-semibold text-primary hover:underline">Select All</button>
+                            <button type="button" id="clearAllModules" class="text-xs font-semibold text-slate-500 hover:underline">Clear All</button>
+                        </div>
+                        <input type="hidden" id="roleScope" name="access_scope" value="">
                             <div class="space-y-2">
                                 <div class="relative">
                                     <input type="password" id="rolePassword" name="password"
@@ -782,8 +902,48 @@ if ($_SESSION['userType'] === 'owner') {
             }
         }
 
+        // Stats Management
+        class StatsManager {
+            async loadStats() {
+                try {
+                    const [rolesResponse, servicesResponse] = await Promise.all([
+                        fetch('roles_handler.php?action=get_count'),
+                        fetch('services_handler.php?action=get_count')
+                    ]);
+                    
+                    const rolesData = await rolesResponse.json();
+                    const servicesData = await servicesResponse.json();
+                    
+                    if (rolesData.success) {
+                        const staffCount = rolesData.count || 0;
+                        document.getElementById('totalStaffCount').textContent = staffCount + ' Members';
+                        
+                        // Update badge
+                        const badge = document.getElementById('staffTrendBadge');
+                        if (staffCount > 0) {
+                            badge.textContent = '✓ Active';
+                            badge.classList.add('text-emerald-600', 'bg-emerald-50');
+                            badge.classList.remove('text-slate-500', 'bg-slate-100');
+                        } else {
+                            badge.textContent = 'No staff';
+                            badge.classList.remove('text-emerald-600', 'bg-emerald-50');
+                            badge.classList.add('text-slate-500', 'bg-slate-100');
+                        }
+                    }
+                    
+                    if (servicesData.success) {
+                        const serviceCount = servicesData.count || 0;
+                        document.getElementById('totalServicesCount').textContent = serviceCount + ' Catalog Items';
+                    }
+                } catch (error) {
+                    console.error('Error loading stats:', error);
+                }
+            }
+        }
+
         // Role Management JavaScript
         class RoleManager {
+            constructor(statsManager) {
             constructor(statsManager) {
                 this.modal = document.getElementById('roleModal');
                 this.form = document.getElementById('roleForm');
@@ -795,6 +955,7 @@ if ($_SESSION['userType'] === 'owner') {
                 this.roleId = document.getElementById('roleId');
                 this.passwordInput = document.getElementById('rolePassword');
                 this.passwordHint = document.getElementById('passwordHint');
+                this.statsManager = statsManager;
                 this.statsManager = statsManager;
             }
 
@@ -808,6 +969,175 @@ if ($_SESSION['userType'] === 'owner') {
                 this.closeBtn.addEventListener('click', () => this.closeModal());
                 this.cancelBtn.addEventListener('click', () => this.closeModal());
                 this.form.addEventListener('submit', (e) => this.handleFormSubmit(e));
+                this.passwordInput.addEventListener('input', () => this.updatePasswordStrength());
+            }
+
+            setupModuleButtons() {
+                const selectAllBtn = document.getElementById('selectAllModules');
+                const clearAllBtn = document.getElementById('clearAllModules');
+                
+                if (selectAllBtn) {
+                    selectAllBtn.addEventListener('click', (e) => {
+                        e.preventDefault();
+                        document.querySelectorAll('input[name="modules"]').forEach(checkbox => {
+                            checkbox.checked = true;
+                        });
+                    });
+                }
+                
+                if (clearAllBtn) {
+                    clearAllBtn.addEventListener('click', (e) => {
+                        e.preventDefault();
+                        document.querySelectorAll('input[name="modules"]').forEach(checkbox => {
+                            checkbox.checked = false;
+                        });
+                    });
+                }
+            }
+
+            setupPasswordHandlers() {
+                const toggleBtn = document.getElementById('togglePasswordVisibility');
+                const generateBtn = document.getElementById('generatePasswordBtn');
+                const copyBtn = document.getElementById('copyPasswordBtn');
+                
+                if (toggleBtn) {
+                    toggleBtn.addEventListener('click', (e) => {
+                        e.preventDefault();
+                        this.togglePasswordVisibility();
+                    });
+                }
+                
+                if (generateBtn) {
+                    generateBtn.addEventListener('click', (e) => {
+                        e.preventDefault();
+                        this.generatePassword();
+                    });
+                }
+                
+                if (copyBtn) {
+                    copyBtn.addEventListener('click', (e) => {
+                        e.preventDefault();
+                        this.copyPassword();
+                    });
+                }
+            }
+
+            togglePasswordVisibility() {
+                const input = this.passwordInput;
+                const icon = document.getElementById('toggleIcon');
+                
+                if (input.type === 'password') {
+                    input.type = 'text';
+                    icon.textContent = 'visibility';
+                } else {
+                    input.type = 'password';
+                    icon.textContent = 'visibility_off';
+                }
+            }
+
+            generatePassword() {
+                const length = 12;
+                const uppercase = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+                const lowercase = 'abcdefghijklmnopqrstuvwxyz';
+                const numbers = '0123456789';
+                const special = '!@#$%^&*';
+                
+                const allChars = uppercase + lowercase + numbers + special;
+                let password = '';
+                
+                // Ensure at least one of each type
+                password += uppercase[Math.floor(Math.random() * uppercase.length)];
+                password += lowercase[Math.floor(Math.random() * lowercase.length)];
+                password += numbers[Math.floor(Math.random() * numbers.length)];
+                password += special[Math.floor(Math.random() * special.length)];
+                
+                // Fill the rest randomly
+                for (let i = password.length; i < length; i++) {
+                    password += allChars[Math.floor(Math.random() * allChars.length)];
+                }
+                
+                // Shuffle the password
+                password = password.split('').sort(() => Math.random() - 0.5).join('');
+                
+                this.passwordInput.value = password;
+                this.passwordInput.type = 'text';
+                document.getElementById('toggleIcon').textContent = 'visibility';
+                
+                this.updatePasswordStrength();
+                
+                // Show success message
+                const generateBtn = document.getElementById('generatePasswordBtn');
+                const originalText = generateBtn.innerHTML;
+                generateBtn.innerHTML = '<span class="material-symbols-outlined text-base">check_circle</span> Generated!';
+                setTimeout(() => {
+                    generateBtn.innerHTML = originalText;
+                }, 2000);
+            }
+
+            copyPassword() {
+                const password = this.passwordInput.value;
+                if (!password) {
+                    alert('No password to copy');
+                    return;
+                }
+                
+                navigator.clipboard.writeText(password).then(() => {
+                    const copyBtn = document.getElementById('copyPasswordBtn');
+                    const originalText = copyBtn.innerHTML;
+                    copyBtn.innerHTML = '<span class="material-symbols-outlined text-base">check_circle</span>';
+                    setTimeout(() => {
+                        copyBtn.innerHTML = originalText;
+                    }, 2000);
+                }).catch(err => {
+                    alert('Failed to copy password');
+                });
+            }
+
+            updatePasswordStrength() {
+                const password = this.passwordInput.value;
+                const strengthContainer = document.getElementById('passwordStrengthContainer');
+                const strengthBar = document.getElementById('passwordStrengthBar');
+                const strengthText = document.getElementById('passwordStrengthText');
+                
+                if (!password) {
+                    strengthContainer.classList.add('hidden');
+                    return;
+                }
+                
+                strengthContainer.classList.remove('hidden');
+                
+                let strength = 0;
+                const checks = {
+                    length: password.length >= 8,
+                    uppercase: /[A-Z]/.test(password),
+                    lowercase: /[a-z]/.test(password),
+                    numbers: /\d/.test(password),
+                    special: /[!@#$%^&*]/.test(password)
+                };
+                
+                Object.values(checks).forEach(check => {
+                    if (check) strength += 20;
+                });
+                
+                let color, text;
+                if (strength <= 40) {
+                    color = '#ef4444'; // red
+                    text = 'Weak';
+                } else if (strength <= 60) {
+                    color = '#f59e0b'; // amber
+                    text = 'Fair';
+                } else if (strength <= 80) {
+                    color = '#eab308'; // yellow
+                    text = 'Good';
+                } else {
+                    color = '#22c55e'; // green
+                    text = 'Strong';
+                }
+                
+                strengthBar.style.width = strength + '%';
+                strengthBar.style.backgroundColor = color;
+                strengthText.textContent = text;
+                strengthText.style.color = color;
                 this.passwordInput.addEventListener('input', () => this.updatePasswordStrength());
             }
 
@@ -994,7 +1324,29 @@ if ($_SESSION['userType'] === 'owner') {
                     document.getElementById('rolePassword').value = '';
                 }
                 
+                // Don't use form.reset() for edit mode since it would clear checkboxes
+                // Instead, only clear text fields
+                if (!roleId) {
+                    this.form.reset();
+                } else {
+                    // For edit mode, clear text inputs but preserve checkboxes temporarily
+                    document.getElementById('roleFirstName').value = '';
+                    document.getElementById('roleLastName').value = '';
+                    document.getElementById('roleName').value = '';
+                    document.getElementById('roleUsername').value = '';
+                    document.getElementById('roleEmail').value = '';
+                    document.getElementById('rolePassword').value = '';
+                }
+                
                 this.roleId.value = '';
+                this.setupModuleButtons();
+                this.setupPasswordHandlers();
+                
+                // Reset password field appearance
+                this.passwordInput.type = 'password';
+                document.getElementById('toggleIcon').textContent = 'visibility_off';
+                document.getElementById('passwordStrengthContainer').classList.add('hidden');
+                document.getElementById('passwordStrengthBar').style.width = '0%';
                 this.setupModuleButtons();
                 this.setupPasswordHandlers();
                 
@@ -1015,6 +1367,10 @@ if ($_SESSION['userType'] === 'owner') {
                     this.passwordInput.required = true;
                     this.passwordInput.placeholder = 'Enter secure password';
                     this.passwordHint.textContent = '*';
+                    // For new roles, uncheck all modules
+                    document.querySelectorAll('input[name="modules"]').forEach(checkbox => {
+                        checkbox.checked = false;
+                    });
                     // For new roles, uncheck all modules
                     document.querySelectorAll('input[name="modules"]').forEach(checkbox => {
                         checkbox.checked = false;
@@ -1041,6 +1397,7 @@ if ($_SESSION['userType'] === 'owner') {
                     if (data.success) {
                         this.renderRoles(data.roles || []);
                         this.statsManager.loadStats();
+                        this.statsManager.loadStats();
                     } else {
                         this.showError(data.message || 'Failed to load roles');
                     }
@@ -1056,8 +1413,12 @@ if ($_SESSION['userType'] === 'owner') {
 
                     console.log('Loaded role data:', data);
 
+                    console.log('Loaded role data:', data);
+
                     if (data.success) {
                         const role = data.role;
+                        console.log('Role access_scope from DB:', role.access_scope, 'Type:', typeof role.access_scope);
+                        
                         console.log('Role access_scope from DB:', role.access_scope, 'Type:', typeof role.access_scope);
                         
                         document.getElementById('roleFirstName').value = role.first_name || '';
@@ -1102,11 +1463,47 @@ if ($_SESSION['userType'] === 'owner') {
                         allCheckboxes.forEach((checkbox, index) => {
                             console.log(`  Checkbox ${index} (${checkbox.value}): ${checkbox.checked}`);
                         });
+                        
+                        // Clear password field for editing
+                        this.passwordInput.value = '';
+                        
+                        // First, uncheck ALL module checkboxes
+                        const allCheckboxes = document.querySelectorAll('input[name="modules"]');
+                        console.log('Total checkboxes in modal:', allCheckboxes.length);
+                        allCheckboxes.forEach(checkbox => {
+                            checkbox.checked = false;
+                        });
+                        
+                        // Then check modules based on access_scope (comma-separated)
+                        if (role.access_scope && role.access_scope.trim() !== '' && role.access_scope !== '0') {
+                            const modules = role.access_scope.split(',').map(m => m.trim());
+                            console.log('Parsed modules from access_scope:', modules);
+                            modules.forEach(module => {
+                                // Find the checkbox with matching value and check it
+                                const checkbox = document.querySelector(`input[name="modules"][value="${module}"]`);
+                                console.log(`Looking for module "${module}": ${checkbox ? 'FOUND' : 'NOT FOUND'}`);
+                                if (checkbox) {
+                                    checkbox.checked = true;
+                                    console.log(`Checked box for module: ${module}`);
+                                } else {
+                                    console.warn('Checkbox not found for module:', module);
+                                }
+                            });
+                        } else {
+                            console.log('No valid access_scope to parse. Value was:', role.access_scope);
+                        }
+                        
+                        // Verify checkbox states after loading
+                        console.log('Final checkbox states after loading:');
+                        allCheckboxes.forEach((checkbox, index) => {
+                            console.log(`  Checkbox ${index} (${checkbox.value}): ${checkbox.checked}`);
+                        });
                     } else {
                         this.showError(data.message || 'Failed to load role details');
                     }
                 } catch (error) {
                     this.showError('Error loading role: ' + error.message);
+                    console.error('Error loading role data:', error);
                     console.error('Error loading role data:', error);
                 }
             }
@@ -1133,6 +1530,21 @@ if ($_SESSION['userType'] === 'owner') {
                 console.log('Collected modules:', checkedModules);
                 console.log('Joined access_scope:', checkedModules.join(','));
 
+                // Collect checked modules - use querySelectorAll to ensure we get all checkboxes
+                const checkedModules = [];
+                const allCheckboxes = document.querySelectorAll('input[name="modules"]');
+                
+                console.log('Total checkboxes found:', allCheckboxes.length);
+                allCheckboxes.forEach((checkbox, index) => {
+                    console.log(`Checkbox ${index}: value="${checkbox.value}", checked=${checkbox.checked}`);
+                    if (checkbox.checked) {
+                        checkedModules.push(checkbox.value);
+                    }
+                });
+
+                console.log('Collected modules:', checkedModules);
+                console.log('Joined access_scope:', checkedModules.join(','));
+
                 const data = {
                     action,
                     first_name: (formData.get('first_name') || '').toString().trim(),
@@ -1142,8 +1554,11 @@ if ($_SESSION['userType'] === 'owner') {
                     email: (formData.get('email') || '').toString().trim(),
                     password: (formData.get('password') || '').toString(),
                     access_scope: checkedModules.join(','),
+                    access_scope: checkedModules.join(','),
                     status: (formData.get('status') || 'Active').toString()
                 };
+
+                console.log('Final data object:', data);
 
                 console.log('Final data object:', data);
 
@@ -1161,12 +1576,19 @@ if ($_SESSION['userType'] === 'owner') {
                     return;
                 }
 
+                if (checkedModules.length === 0) {
+                    this.showError('Please select at least one module');
+                    return;
+                }
+
                 if (!isEditing && !data.password) {
                     this.showError('Password is required when creating a user role');
                     return;
                 }
 
                 try {
+                    console.log('Sending data:', new URLSearchParams(data).toString());
+                    
                     console.log('Sending data:', new URLSearchParams(data).toString());
                     
                     const response = await fetch('roles_handler.php', {
@@ -1178,6 +1600,8 @@ if ($_SESSION['userType'] === 'owner') {
                     });
 
                     const rawResponse = await response.text();
+                    console.log('Raw response:', rawResponse);
+                    
                     console.log('Raw response:', rawResponse);
                     
                     let result;
@@ -1229,6 +1653,13 @@ if ($_SESSION['userType'] === 'owner') {
                         <td class="px-6 py-4 text-sm text-slate-700 font-medium">${this.escapeHtml(role.username || '-')}</td>
                         <td class="px-6 py-4">
                             <span class="text-sm font-medium text-slate-700">${this.escapeHtml(role.role_name || '-')}</span>
+                        </td>
+                        <td class="px-6 py-4 text-sm">
+                            <div class="flex flex-wrap gap-1">
+                                ${(role.access_scope || '').split(',').map(module => `
+                                    <span class="inline-block px-2 py-1 bg-blue-100 text-blue-700 rounded text-xs font-medium">${this.escapeHtml(module.trim())}</span>
+                                `).join('')}
+                            </div>
                         </td>
                         <td class="px-6 py-4 text-sm">
                             <div class="flex flex-wrap gap-1">
@@ -1317,6 +1748,8 @@ if ($_SESSION['userType'] === 'owner') {
         class ServiceManager {
             constructor(statsManager) {
                 this.statsManager = statsManager;
+            constructor(statsManager) {
+                this.statsManager = statsManager;
                 this.modal = document.getElementById('serviceModal');
                 this.form = document.getElementById('serviceForm');
                 this.container = document.getElementById('servicesContainer');
@@ -1393,6 +1826,7 @@ if ($_SESSION['userType'] === 'owner') {
                     
                     if (data.success) {
                         this.renderServices(data.services);
+                        this.statsManager.loadStats();
                         this.statsManager.loadStats();
                     } else {
                         this.showError(data.message || 'Failed to load services');
@@ -1616,6 +2050,10 @@ if ($_SESSION['userType'] === 'owner') {
 
         // Initialize managers when DOM is ready
         document.addEventListener('DOMContentLoaded', () => {
+            const statsManager = new StatsManager();
+            statsManager.loadStats();
+            
+            const roleManager = new RoleManager(statsManager);
             const statsManager = new StatsManager();
             statsManager.loadStats();
             
