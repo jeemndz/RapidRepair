@@ -74,6 +74,18 @@ if (empty($_SESSION['appointment_csrf'])) {
 }
 $csrfToken = $_SESSION['appointment_csrf'];
 
+// Get logged-in user information
+$loggedInUserName = '';
+$loggedInUserRole = '';
+if ($_SESSION['userType'] === 'owner') {
+    $loggedInUserName = isset($_SESSION['shopName']) ? $_SESSION['shopName'] : 'Shop Owner';
+    $loggedInUserRole = 'Administrator';
+} else {
+    $loggedInUserName = (isset($_SESSION['firstName']) ? $_SESSION['firstName'] : '') . ' ' . (isset($_SESSION['lastName']) ? $_SESSION['lastName'] : '');
+    $loggedInUserName = trim($loggedInUserName) ?: 'User';
+    $loggedInUserRole = isset($_SESSION['userRole']) ? $_SESSION['userRole'] : 'Staff Member';
+}
+
 $allowedStatuses = ['Pending', 'Confirmed', 'In Progress', 'Completed', 'Cancelled'];
 $allowedJobStatuses = ['Queued', 'In Progress', 'Diagnostics', 'Waiting for Parts', 'Quality Check', 'Ready for Pickup', 'Completed', 'Cancelled'];
 $timeSlots = ['09:00', '10:30', '13:00', '14:30', '16:00', '17:30'];
@@ -926,6 +938,14 @@ if (!in_array($historyRange, $allowedHistoryRanges, true)) {
 }
 $historySearch = isset($_GET['history_search']) ? trim((string) $_GET['history_search']) : '';
 
+// Pagination variables
+$itemsPerPage = 5;
+$currentPage = isset($_GET['history_page']) ? (int) $_GET['history_page'] : 1;
+if ($currentPage < 1) {
+    $currentPage = 1;
+}
+$offset = ($currentPage - 1) * $itemsPerPage;
+
 $historyDateFilterSql = '';
 if ($historyRange === 'today') {
     $historyDateFilterSql = ' AND a.appointment_date = CURDATE()';
@@ -936,6 +956,64 @@ if ($historyRange === 'today') {
 }
 
 $completedHistory = [];
+$totalHistoryRecords = 0;
+
+// First, get total count for pagination
+$countHistoryStmt = mysqli_prepare(
+    $conn,
+    "SELECT COUNT(DISTINCT a.appointment_id) as total
+     FROM appointments a
+         LEFT JOIN repair_jobs rj ON rj.appointment_id = a.appointment_id AND rj.tenantID = a.tenantID
+     LEFT JOIN users u ON u.user_id = a.user_id
+     LEFT JOIN vehicleinformation v ON v.vehicle_id = a.vehicle_id AND v.tenantID = a.tenantID
+     LEFT JOIN appointment_services aps ON aps.appointment_id = a.appointment_id AND aps.tenantID = a.tenantID
+     LEFT JOIN services s ON s.service_id = aps.service_id AND s.tenantID = a.tenantID
+     WHERE a.tenantID = ?
+             AND rj.job_status = 'Completed'
+       AND (
+            ? = ''
+            OR u.fullName LIKE CONCAT('%', ?, '%')
+            OR CONCAT(IFNULL(v.year_model, ''), ' ', IFNULL(v.brand, ''), ' ', IFNULL(v.model, '')) LIKE CONCAT('%', ?, '%')
+            OR IFNULL(v.plate_number, '') LIKE CONCAT('%', ?, '%')
+            OR IFNULL(s.service_name, '') LIKE CONCAT('%', ?, '%')
+                        OR IFNULL(a.notes, '') LIKE CONCAT('%', ?, '%')
+                        OR IFNULL(rj.concern, '') LIKE CONCAT('%', ?, '%')
+                        OR IFNULL(rj.diagnosis_notes, '') LIKE CONCAT('%', ?, '%')
+                        OR IFNULL(rj.progress_notes, '') LIKE CONCAT('%', ?, '%')
+       )"
+    . $historyDateFilterSql
+);
+if ($countHistoryStmt) {
+    mysqli_stmt_bind_param(
+        $countHistoryStmt,
+        'isssssssss',
+        $tenantID,
+        $historySearch,
+        $historySearch,
+        $historySearch,
+        $historySearch,
+        $historySearch,
+        $historySearch,
+        $historySearch,
+        $historySearch,
+        $historySearch
+    );
+    mysqli_stmt_execute($countHistoryStmt);
+    $countResult = mysqli_stmt_get_result($countHistoryStmt);
+    if ($countResult && $countRow = mysqli_fetch_assoc($countResult)) {
+        $totalHistoryRecords = (int) $countRow['total'];
+    }
+    mysqli_stmt_close($countHistoryStmt);
+}
+
+// Calculate total pages
+$totalHistoryPages = ceil($totalHistoryRecords / $itemsPerPage);
+if ($currentPage > $totalHistoryPages && $totalHistoryPages > 0) {
+    $currentPage = $totalHistoryPages;
+    $offset = ($currentPage - 1) * $itemsPerPage;
+}
+
+// Now fetch paginated results
 $historyStmt = mysqli_prepare(
     $conn,
     "SELECT
@@ -987,12 +1065,12 @@ $historyStmt = mysqli_prepare(
         v.model,
         v.plate_number
       ORDER BY a.appointment_date DESC, a.appointment_time DESC
-      LIMIT 200"
+      LIMIT ? OFFSET ?"
 );
 if ($historyStmt) {
     mysqli_stmt_bind_param(
         $historyStmt,
-        'isssssssss',
+        'isssssssssii',
         $tenantID,
         $historySearch,
         $historySearch,
@@ -1002,7 +1080,9 @@ if ($historyStmt) {
         $historySearch,
         $historySearch,
         $historySearch,
-        $historySearch
+        $historySearch,
+        $itemsPerPage,
+        $offset
     );
     mysqli_stmt_execute($historyStmt);
     $historyResult = mysqli_stmt_get_result($historyStmt);
@@ -1059,7 +1139,7 @@ if ($historyStmt) {
     </style>
 </head>
 
-<body class="bg-background-light dark:bg-background-dark text-slate-900 dark:text-slate-100 font-display">
+<body class="bg-white text-black antialiased">
     <div class="flex h-screen overflow-hidden">
     <aside class="w-64 flex-shrink-0 border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 h-screen sticky top-0 flex flex-col overflow-y-auto">
         <div class="p-6 flex-1">
@@ -1098,26 +1178,40 @@ if ($historyStmt) {
                 <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 hover:bg-slate-100 transition-colors" href="paymentsadmin.php?shop=<?php echo $shopQuery; ?>"><span class="material-symbols-outlined text-[22px]">payments</span>Payments</a>
                 <?php endif; ?>
                 <div class="pt-4 mt-4 border-t border-slate-100">
-                    <?php if (canAccessModule('accountbillingadmin.php', $accessibleModules)): ?>
-                    <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 hover:bg-slate-100 transition-colors" href="accountbillingadmin.php?shop=<?php echo $shopQuery; ?>"><span class="material-symbols-outlined text-[22px]">receipt_long</span>Account Billing</a>
-                    <?php endif; ?>
-                    <?php if (canAccessModule('settingsadmin.php', $accessibleModules)): ?>
-                    <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 hover:bg-slate-100 transition-colors" href="settingsadmin.php?shop=<?php echo $shopQuery; ?>"><span class="material-symbols-outlined text-[22px]">settings</span>Settings</a>
-                    <?php endif; ?>
+                    <div class="relative group">
+                        <button class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 hover:bg-slate-100 transition-colors w-full text-left settings-dropdown-btn" data-dropdown="settings">
+                            <span class="material-symbols-outlined text-[22px]">settings</span>
+                            <span>Settings</span>
+                            <span class="material-symbols-outlined text-[16px] ml-auto">expand_more</span>
+                        </button>
+                        <div class="absolute left-0 top-full mt-1 w-full bg-white border border-slate-200 rounded-lg shadow-lg hidden z-50 settings-dropdown" data-dropdown="settings">
+                            <?php if (canAccessModule('settingsadmin.php', $accessibleModules)): ?>
+                            <a class="flex items-center gap-3 px-3 py-2.5 rounded-t-lg text-slate-600 hover:bg-blue-50 transition-colors text-sm"
+                                href="settingsadmin.php?shop=<?php echo $shopQuery; ?>">
+                                <span class="material-symbols-outlined text-[18px]">settings</span>
+                                Settings
+                            </a>
+                            <?php endif; ?>
+                            <?php if (canAccessModule('accountbillingadmin.php', $accessibleModules)): ?>
+                            <a class="flex items-center gap-3 px-3 py-2.5 rounded-b-lg text-slate-600 hover:bg-blue-50 transition-colors text-sm border-t border-slate-100"
+                                href="accountbillingadmin.php?shop=<?php echo $shopQuery; ?>">
+                                <span class="material-symbols-outlined text-[18px]">receipt_long</span>
+                                Account Billing
+                            </a>
+                            <?php endif; ?>
+                        </div>
+                    </div>
                 </div>
             </nav>
         </div>
         <div class="p-4 border-t border-slate-200 dark:border-slate-800">
             <div class="flex items-center gap-3">
-                <div
-                    class="size-10 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center overflow-hidden">
-                    <img alt="Admin Profile" class="w-full h-full object-cover"
-                        data-alt="User avatar for admin profile picture"
-                        src="https://lh3.googleusercontent.com/aida-public/AB6AXuDeh_igjzq55wP-MQUqlN5a7g7ERzT91RAZllys2xTPdmr_K6ugTc7NEPOG48E87bvkhiEKuMOE9TZ0njKOCLQ7Nhccix3HVxsYdR2tXeyTCkjam7s1q8ngQOzslzdGRLROqouBtkGpnSewuAyIscdu673vBatOqI9TKHP1RCzarhxH8GqVYpWDnccgDrczUMroOqof3VFA7U9HLzMcDyURIrkC9dU2KtSkusqfbOvLaUs_zR14qlpZVSgASdGK8sw1SCeDf4A38q-8" />
+                <div class="size-10 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center overflow-hidden">
+                    <span class="material-symbols-outlined text-slate-500">person</span>
                 </div>
                 <div class="flex-1 min-w-0">
-                    <p class="text-sm font-semibold truncate">Marcus Smith</p>
-                    <p class="text-xs text-slate-500 truncate">Shop Manager</p>
+                    <p class="text-sm font-semibold truncate"><?php echo h($loggedInUserName); ?></p>
+                    <p class="text-xs text-slate-500 truncate"><?php echo h($loggedInUserRole); ?></p>
                 </div>
                 <form id="logoutForm" method="post" action="../logout/logout.php" class="inline">
                     <input type="hidden" name="action" value="confirm" />
@@ -1132,16 +1226,7 @@ if ($historyStmt) {
 
     <main class="flex-1 overflow-y-auto">
         <header class="sticky top-0 z-40 w-full border-b border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md flex items-center justify-between px-8 h-16">
-            <div class="flex items-center gap-6">
-                <h2 class="text-lg font-black text-slate-900 dark:white tracking-tight">Appointment Management</h2>
-                <div class="relative hidden lg:block">
-                    <span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">search</span>
-                    <input class="bg-surface-variant border-none rounded-lg pl-10 pr-4 py-1.5 text-sm w-64 focus:ring-2 focus:ring-primary/20" placeholder="Search appointments..." type="text" />
-                </div>
-                <span class="hidden xl:inline-flex items-center px-2.5 py-1 rounded-full bg-blue-50 text-blue-700 text-[11px] font-bold uppercase tracking-wide">
-                    <?php echo h($shopSlug); ?>
-                </span>
-            </div>
+            <h2 class="text-lg font-black text-slate-900 dark:text-white tracking-tight">Appointment Management</h2>
             <div class="flex items-center gap-4">
                 <button class="p-2 text-slate-500 hover:text-primary transition-all">
                     <span class="material-symbols-outlined">notifications</span>
@@ -1149,16 +1234,6 @@ if ($historyStmt) {
                 <button class="p-2 text-slate-500 hover:text-primary transition-all">
                     <span class="material-symbols-outlined">help_outline</span>
                 </button>
-                <div class="h-8 w-px bg-slate-200 mx-2"></div>
-                <div class="flex items-center gap-3">
-                    <div class="text-right hidden sm:block">
-                        <p class="text-xs font-bold text-on-background"><?php echo h($shopName); ?></p>
-                        <p class="text-[10px] text-slate-500 uppercase font-semibold">Slug: <?php echo h($shopSlug); ?></p>
-                    </div>
-                    <img alt="Manager Avatar" class="h-10 w-10 rounded-full border-2 border-primary/20 object-cover"
-                        data-alt="professional male service manager portrait in modern automotive office environment"
-                        src="https://lh3.googleusercontent.com/aida-public/AB6AXuC_w4TZYv-DoCr0hxBNhV2Z-nUsRKiJWSSjgi__Y4oVCvZsEnAXH-GvsZk4qUV8VfyOd_rN5mqWnBeNlMb7An_00pBDPbF7FGZDqw2HhZ4MbeNkgRRsmuE6r3t2yOO4P5sHcWAMkVgXaheA3Z2LKA0Fo_mIUP0qh9KRyragtZ_zvLR-U7pm-kWc645Yi3rN0Mm0P9km9Kt3Fp4fKCU5i33aRJsonLoG5k45EuFpDDTP2CbZiarn81pTDjiPcRHLtpdJg1O47dGsJUD2" />
-                </div>
             </div>
         </header>
 
@@ -1491,24 +1566,48 @@ if ($historyStmt) {
             <?php endif; ?>
 
             <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
-                    <p class="text-xs font-bold text-slate-500 uppercase">Today's Load</p>
-                    <p class="text-2xl font-black mt-2"><?php echo h($todayLoad); ?></p>
+                <!-- Today's Load -->
+                <div class="bg-white border border-slate-200 rounded-xl p-5 shadow-sm">
+                    <div class="flex justify-between items-start mb-4">
+                        <div class="p-2 bg-blue-50 rounded-lg text-blue-600">
+                            <span class="material-symbols-outlined text-[20px]">today</span>
+                        </div>
+                    </div>
+                    <p class="text-slate-500 text-xs font-bold uppercase tracking-wider mb-1">Today's Load</p>
+                    <h3 class="text-2xl font-black text-black"><?php echo h($todayLoad); ?></h3>
                     <p class="text-xs text-slate-400 mt-1">Appointments for today</p>
                 </div>
-                <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
-                    <p class="text-xs font-bold text-slate-500 uppercase">Completed Today</p>
-                    <p class="text-2xl font-black mt-2"><?php echo h($todayCompleted); ?></p>
+                <!-- Completed Today -->
+                <div class="bg-white border border-slate-200 rounded-xl p-5 shadow-sm">
+                    <div class="flex justify-between items-start mb-4">
+                        <div class="p-2 bg-green-50 rounded-lg text-green-600">
+                            <span class="material-symbols-outlined text-[20px]">check_circle</span>
+                        </div>
+                    </div>
+                    <p class="text-slate-500 text-xs font-bold uppercase tracking-wider mb-1">Completed Today</p>
+                    <h3 class="text-2xl font-black text-black"><?php echo h($todayCompleted); ?></h3>
                     <p class="text-xs text-slate-400 mt-1">Finished service visits</p>
                 </div>
-                <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
-                    <p class="text-xs font-bold text-slate-500 uppercase">Pending Bookings</p>
-                    <p class="text-2xl font-black mt-2 text-blue-700"><?php echo h($pendingCount); ?></p>
+                <!-- Pending Bookings -->
+                <div class="bg-white border border-slate-200 rounded-xl p-5 shadow-sm">
+                    <div class="flex justify-between items-start mb-4">
+                        <div class="p-2 bg-amber-50 rounded-lg text-amber-600">
+                            <span class="material-symbols-outlined text-[20px]">schedule</span>
+                        </div>
+                    </div>
+                    <p class="text-slate-500 text-xs font-bold uppercase tracking-wider mb-1">Pending Bookings</p>
+                    <h3 class="text-2xl font-black text-black"><?php echo h($pendingCount); ?></h3>
                     <p class="text-xs text-slate-400 mt-1">Need action</p>
                 </div>
-                <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
-                    <p class="text-xs font-bold text-slate-500 uppercase">Next Available</p>
-                    <p class="text-sm font-bold mt-2"><?php echo h($nextAvailable); ?></p>
+                <!-- Next Available -->
+                <div class="bg-white border border-slate-200 rounded-xl p-5 shadow-sm">
+                    <div class="flex justify-between items-start mb-4">
+                        <div class="p-2 bg-purple-50 rounded-lg text-purple-600">
+                            <span class="material-symbols-outlined text-[20px]">calendar_month</span>
+                        </div>
+                    </div>
+                    <p class="text-slate-500 text-xs font-bold uppercase tracking-wider mb-1">Next Available</p>
+                    <h3 class="text-sm font-bold text-black mt-2"><?php echo h($nextAvailable); ?></h3>
                     <p class="text-xs text-slate-400 mt-1">This week total: <?php echo h($weekCount); ?></p>
                 </div>
             </div>
@@ -1516,7 +1615,7 @@ if ($historyStmt) {
             <section class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
                 <div class="p-5 border-b border-slate-100">
                     <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
-                        <h3 class="font-bold text-slate-900">Appointments List</h3>
+                        <h3 class="font-bold text-black text-lg">Appointments List</h3>
                         <a href="appointmentadmin.php?shop=<?php echo h($shopQuery); ?>&create_appointment=1" class="inline-flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700 transition-colors">
                             <span class="material-symbols-outlined text-base">add</span>
                             Create Appointment
@@ -1537,15 +1636,15 @@ if ($historyStmt) {
                             </select>
                         </div>
                         <div class="flex gap-2">
-                            <button class="w-full px-4 py-2.5 bg-blue-600 text-white rounded-lg text-sm font-semibold" type="submit">Apply</button>
-                            <a href="appointmentadmin.php?shop=<?php echo $shopQuery; ?>" class="px-4 py-2.5 border border-slate-300 rounded-lg text-sm text-slate-600">Reset</a>
+                            <button class="w-full px-4 py-2.5 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700 transition-colors" type="submit">Apply</button>
+                            <a href="appointmentadmin.php?shop=<?php echo $shopQuery; ?>" class="px-4 py-2.5 border border-slate-300 rounded-lg text-sm text-slate-600 hover:bg-slate-50 transition-colors">Reset</a>
                         </div>
                     </form>
                 </div>
 
                 <div class="overflow-x-auto">
                     <table class="w-full text-left text-sm">
-                        <thead class="bg-slate-50 text-slate-500 uppercase text-xs">
+                        <thead class="bg-gray-100 text-black uppercase text-xs">
                             <tr>
                                 <th class="px-5 py-3">Customer</th>
                                 <th class="px-5 py-3">Vehicle</th>
@@ -1556,7 +1655,7 @@ if ($historyStmt) {
                                 <th class="px-5 py-3 text-right">Actions</th>
                             </tr>
                         </thead>
-                        <tbody class="divide-y divide-slate-100">
+                        <tbody class="divide-y divide-gray-200">
                             <?php if (count($appointments) === 0): ?>
                                 <tr>
                                     <td colspan="7" class="px-5 py-10 text-center text-slate-500">No appointments found for this filter.</td>
@@ -1583,24 +1682,24 @@ if ($historyStmt) {
                                             $badge = 'bg-red-100 text-red-700';
                                         }
                                     ?>
-                                    <tr class="hover:bg-slate-50">
+                                    <tr class="hover:bg-gray-50">
                                         <td class="px-5 py-4">
-                                            <div class="font-semibold text-slate-900"><?php echo h($row['customer_name']); ?></div>
+                                            <div class="font-semibold text-black"><?php echo h($row['customer_name']); ?></div>
                                             <div class="text-xs text-slate-500">Appointment #<?php echo h($row['appointment_id']); ?></div>
                                         </td>
                                         <td class="px-5 py-4">
-                                            <div class="text-slate-700"><?php echo h($vehicleText); ?></div>
+                                            <div class="text-black"><?php echo h($vehicleText); ?></div>
                                             <div class="text-xs text-slate-500"><?php echo $plate !== '' ? h($plate) : 'No plate'; ?></div>
                                         </td>
-                                        <td class="px-5 py-4 text-slate-700 max-w-xs"><?php echo h($row['requested_services']); ?></td>
+                                        <td class="px-5 py-4 text-black max-w-xs"><?php echo h($row['requested_services']); ?></td>
                                         <td class="px-5 py-4">
-                                            <div class="font-semibold"><?php echo h(date('M d, Y', strtotime((string) $row['appointment_date']))); ?></div>
+                                            <div class="font-semibold text-black"><?php echo h(date('M d, Y', strtotime((string) $row['appointment_date']))); ?></div>
                                             <div class="text-xs text-slate-500"><?php echo h(date('h:i A', strtotime((string) $row['appointment_time']))); ?></div>
                                         </td>
                                         <td class="px-5 py-4">
                                             <span class="px-2.5 py-1.5 rounded-full text-xs font-bold <?php echo h($badge); ?>"><?php echo h($status); ?></span>
                                         </td>
-                                        <td class="px-5 py-4 font-semibold">
+                                        <td class="px-5 py-4 font-semibold text-black">
                                             <?php
                                                 $amount = $row['total_amount'];
                                                 echo $amount !== null ? '₱' . number_format((float) $amount, 2) : 'N/A';
@@ -1659,7 +1758,7 @@ if ($historyStmt) {
             <section class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
                 <div class="p-5 border-b border-slate-100 flex flex-wrap items-center justify-between gap-3">
                     <h3 class="font-bold text-slate-900">Appointment History (Completed)</h3>
-                    <span class="text-xs text-slate-500"><?php echo number_format(count($completedHistory)); ?> record(s)</span>
+                    <span class="text-xs text-slate-500"><?php echo number_format($totalHistoryRecords); ?> total record(s) - Page <?php echo $currentPage; ?> of <?php echo max(1, $totalHistoryPages); ?></span>
                 </div>
 
                 <div class="px-5 py-4 border-b border-slate-100 bg-slate-50/40">
@@ -1761,6 +1860,78 @@ if ($historyStmt) {
                         </tbody>
                     </table>
                 </div>
+
+                <!-- Pagination Controls -->
+                <?php if ($totalHistoryPages > 1): ?>
+                <div class="px-5 py-4 border-t border-slate-100 bg-slate-50/40 flex flex-wrap items-center justify-between gap-4">
+                    <div class="text-xs text-slate-600">
+                        Showing <?php echo (($currentPage - 1) * $itemsPerPage) + 1; ?> to <?php echo min($currentPage * $itemsPerPage, $totalHistoryRecords); ?> of <?php echo $totalHistoryRecords; ?> records
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <?php
+                            $baseParams = [
+                                'shop' => $loginSlug,
+                                'search' => $search,
+                                'status' => $statusFilter,
+                                'history_range' => $historyRange,
+                                'history_search' => $historySearch,
+                            ];
+                            $prevPage = $currentPage - 1;
+                            $nextPage = $currentPage + 1;
+                            $prevParams = array_filter(array_merge($baseParams, ['history_page' => $prevPage]), static fn ($value) => $value !== '');
+                            $nextParams = array_filter(array_merge($baseParams, ['history_page' => $nextPage]), static fn ($value) => $value !== '');
+                        ?>
+                        
+                        <?php if ($currentPage > 1): ?>
+                            <a href="appointmentadmin.php?<?php echo h(http_build_query($prevParams)); ?>" class="px-3 py-2 border border-slate-300 rounded-lg text-sm font-medium text-slate-600 hover:bg-slate-100 transition-colors">
+                                <span class="material-symbols-outlined text-lg">chevron_left</span>
+                            </a>
+                        <?php else: ?>
+                            <button disabled class="px-3 py-2 border border-slate-200 rounded-lg text-sm font-medium text-slate-400 cursor-not-allowed opacity-50">
+                                <span class="material-symbols-outlined text-lg">chevron_left</span>
+                            </button>
+                        <?php endif; ?>
+
+                        <div class="flex items-center gap-1">
+                            <?php
+                                $startPage = max(1, $currentPage - 2);
+                                $endPage = min($totalHistoryPages, $currentPage + 2);
+                                
+                                if ($startPage > 1): ?>
+                                    <a href="appointmentadmin.php?<?php echo h(http_build_query(array_filter(array_merge($baseParams, ['history_page' => 1]), static fn ($value) => $value !== ''))); ?>" class="px-2.5 py-1.5 rounded text-sm text-slate-600 hover:bg-slate-100">1</a>
+                                    <?php if ($startPage > 2): ?>
+                                        <span class="text-slate-400">...</span>
+                                    <?php endif; ?>
+                                <?php endif; ?>
+
+                                <?php for ($page = $startPage; $page <= $endPage; $page++): ?>
+                                    <?php if ($page === $currentPage): ?>
+                                        <button disabled class="px-2.5 py-1.5 rounded text-sm font-semibold bg-blue-600 text-white"><?php echo $page; ?></button>
+                                    <?php else: ?>
+                                        <a href="appointmentadmin.php?<?php echo h(http_build_query(array_filter(array_merge($baseParams, ['history_page' => $page]), static fn ($value) => $value !== ''))); ?>" class="px-2.5 py-1.5 rounded text-sm text-slate-600 hover:bg-slate-100"><?php echo $page; ?></a>
+                                    <?php endif; ?>
+                                <?php endfor; ?>
+
+                                <?php if ($endPage < $totalHistoryPages): ?>
+                                    <?php if ($endPage < $totalHistoryPages - 1): ?>
+                                        <span class="text-slate-400">...</span>
+                                    <?php endif; ?>
+                                    <a href="appointmentadmin.php?<?php echo h(http_build_query(array_filter(array_merge($baseParams, ['history_page' => $totalHistoryPages]), static fn ($value) => $value !== ''))); ?>" class="px-2.5 py-1.5 rounded text-sm text-slate-600 hover:bg-slate-100"><?php echo $totalHistoryPages; ?></a>
+                                <?php endif; ?>
+                        </div>
+
+                        <?php if ($currentPage < $totalHistoryPages): ?>
+                            <a href="appointmentadmin.php?<?php echo h(http_build_query($nextParams)); ?>" class="px-3 py-2 border border-slate-300 rounded-lg text-sm font-medium text-slate-600 hover:bg-slate-100 transition-colors">
+                                <span class="material-symbols-outlined text-lg">chevron_right</span>
+                            </a>
+                        <?php else: ?>
+                            <button disabled class="px-3 py-2 border border-slate-200 rounded-lg text-sm font-medium text-slate-400 cursor-not-allowed opacity-50">
+                                <span class="material-symbols-outlined text-lg">chevron_right</span>
+                            </button>
+                        <?php endif; ?>
+                    </div>
+                </div>
+                <?php endif; ?>
             </section>
         </div>
     </main>
@@ -1871,6 +2042,26 @@ if ($historyStmt) {
         setSelectedTimeSlot(appointmentTimeInput.value);
     }
     updateSlotAvailability();
+
+    // Dropdown menu click handler
+    document.querySelectorAll('.settings-dropdown-btn').forEach(button => {
+        button.addEventListener('click', function(e) {
+            e.preventDefault();
+            const dropdown = document.querySelector('[data-dropdown="settings"].settings-dropdown');
+            if (dropdown) {
+                dropdown.classList.toggle('hidden');
+            }
+        });
+    });
+
+    // Close dropdown when clicking outside
+    document.addEventListener('click', function(e) {
+        const dropdownBtn = document.querySelector('.settings-dropdown-btn');
+        const dropdown = document.querySelector('[data-dropdown="settings"].settings-dropdown');
+        if (dropdown && dropdownBtn && !dropdownBtn.contains(e.target) && !dropdown.contains(e.target)) {
+            dropdown.classList.add('hidden');
+        }
+    });
 </script>
 
 </html>

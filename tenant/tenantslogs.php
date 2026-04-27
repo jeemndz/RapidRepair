@@ -309,13 +309,29 @@ function getStatusIcon($action): string {
                 </a>
                 <?php endif; ?>
                 <div class="pt-4 mt-4 border-t border-slate-100">
-                    <?php if (canAccessModule('settingsadmin.php', $accessibleModules)): ?>
-                    <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 hover:bg-slate-100 transition-colors"
-                        href="settingsadmin.php?shop=<?php echo h($shopQuery); ?>">
-                        <span class="material-symbols-outlined text-[22px]">settings</span>
-                        Settings
-                    </a>
-                    <?php endif; ?>
+                    <div class="relative group">
+                        <button class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 hover:bg-slate-100 transition-colors w-full text-left settings-dropdown-btn" data-dropdown="settings">
+                            <span class="material-symbols-outlined text-[22px]">settings</span>
+                            <span>Settings</span>
+                            <span class="material-symbols-outlined text-[16px] ml-auto">expand_more</span>
+                        </button>
+                        <div class="absolute left-0 top-full mt-1 w-full bg-white border border-slate-200 rounded-lg shadow-lg hidden z-50 settings-dropdown" data-dropdown="settings">
+                            <?php if (canAccessModule('settingsadmin.php', $accessibleModules)): ?>
+                            <a class="flex items-center gap-3 px-3 py-2.5 rounded-t-lg text-slate-600 hover:bg-blue-50 transition-colors text-sm"
+                                href="settingsadmin.php?shop=<?php echo h($shopQuery); ?>">
+                                <span class="material-symbols-outlined text-[18px]">settings</span>
+                                Settings
+                            </a>
+                            <?php endif; ?>
+                            <?php if (canAccessModule('accountbillingadmin.php', $accessibleModules)): ?>
+                            <a class="flex items-center gap-3 px-3 py-2.5 rounded-b-lg text-slate-600 hover:bg-blue-50 transition-colors text-sm border-t border-slate-100"
+                                href="accountbillingadmin.php?shop=<?php echo h($shopQuery); ?>">
+                                <span class="material-symbols-outlined text-[18px]">receipt_long</span>
+                                Account Billing
+                            </a>
+                            <?php endif; ?>
+                        </div>
+                    </div>
                 </div>
             </nav>
         </div>
@@ -345,7 +361,7 @@ function getStatusIcon($action): string {
         <header
             class="sticky top-0 z-40 w-full border-b border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md flex items-center justify-between px-8 h-16">
         <div class="flex items-center gap-6">
-            <h2 class="text-lg font-black text-slate-900 dark:white tracking-tight">System Logs</h2>
+            <h2 class="text-lg font-black text-slate-900 dark:text-white tracking-tight">System Logs</h2>
             <span class="hidden xl:inline-flex items-center px-2.5 py-1 rounded-full bg-blue-50 text-blue-700 text-[11px] font-bold uppercase tracking-wide"><?php echo h($loginSlug); ?></span>
         </div>
         <div class="flex items-center gap-4">
@@ -541,6 +557,27 @@ function getStatusIcon($action): string {
         </div>
     </div>
     </div>
+    <script>
+        // Dropdown menu click handler
+        document.querySelectorAll('.settings-dropdown-btn').forEach(button => {
+            button.addEventListener('click', function(e) {
+                e.preventDefault();
+                const dropdown = document.querySelector('[data-dropdown="settings"].settings-dropdown');
+                if (dropdown) {
+                    dropdown.classList.toggle('hidden');
+                }
+            });
+        });
+
+        // Close dropdown when clicking outside
+        document.addEventListener('click', function(e) {
+            const dropdownBtn = document.querySelector('.settings-dropdown-btn');
+            const dropdown = document.querySelector('[data-dropdown="settings"].settings-dropdown');
+            if (dropdown && dropdownBtn && !dropdownBtn.contains(e.target) && !dropdown.contains(e.target)) {
+                dropdown.classList.add('hidden');
+            }
+        });
+    </script>
 </body>
 
 </html>

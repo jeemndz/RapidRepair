@@ -390,7 +390,7 @@ if (isset($_POST['login'])) {
                     <div class="space-y-2">
                         <div class="flex justify-between items-center">
                             <label class="text-sm font-semibold text-slate-700">Password</label>
-                            <a class="text-xs font-bold text-primary hover:underline" href="#">
+                            <a class="text-xs font-bold text-primary hover:underline" href="tenant_forgot_password.php?shop=<?php echo urlencode($requestedShop); ?>">
                                 Forgot password?
                             </a>
                         </div>
@@ -432,19 +432,7 @@ if (isset($_POST['login'])) {
 
                 </form>
 
-                <div class="mt-8 text-center">
 
-                    <p class="text-sm text-slate-600">
-
-                        New partner shop?
-
-                        <a class="text-primary font-bold hover:underline" href="#">
-                            Start your 14-day free trial
-                        </a>
-
-                    </p>
-
-                </div>
 
                 <div class="mt-12 flex justify-center gap-6">
 

@@ -24,6 +24,41 @@ function canAccessModule($moduleFile, $accessibleModules) {
     return in_array($moduleFile, $accessibleModules);
 }
 
+// HTML escape helper function
+function h($value) {
+    return htmlspecialchars((string) $value, ENT_QUOTES, 'UTF-8');
+}
+
+// Get logged-in user information
+$loggedInUserName = '';
+$loggedInUserRole = '';
+if ($_SESSION['userType'] === 'owner') {
+    $loggedInUserName = isset($_SESSION['shopName']) ? $_SESSION['shopName'] : 'Shop Owner';
+    $loggedInUserRole = 'Administrator';
+} else {
+    $loggedInUserName = (isset($_SESSION['firstName']) ? $_SESSION['firstName'] : '') . ' ' . (isset($_SESSION['lastName']) ? $_SESSION['lastName'] : '');
+    $loggedInUserName = trim($loggedInUserName) ?: 'User';
+    $loggedInUserRole = isset($_SESSION['userRole']) ? $_SESSION['userRole'] : 'Staff Member';
+}
+
+// Get shop name
+$shopName = 'Repair Shop';
+if ($_SESSION['userType'] === 'owner') {
+    $shopName = isset($_SESSION['shopName']) ? $_SESSION['shopName'] : 'Repair Shop';
+} else {
+    // For staff, try to get from session or database
+    $ownerStmt = $conn->prepare('SELECT shopName FROM owners WHERE tenantID = ? LIMIT 1');
+    if ($ownerStmt) {
+        $ownerStmt->bind_param('i', $tenantID);
+        $ownerStmt->execute();
+        $ownerResult = $ownerStmt->get_result();
+        if ($ownerResult && $ownerRow = $ownerResult->fetch_assoc()) {
+            $shopName = $ownerRow['shopName'] ?: 'Repair Shop';
+        }
+        $ownerStmt->close();
+    }
+}
+
 // Get date range filter
 $dateRange = $_GET['date_range'] ?? 'last_30_days';
 $startDate = new DateTime();
@@ -250,8 +285,8 @@ foreach ($trendData as $data) {
                     <span class="material-symbols-outlined">directions_car</span>
                 </div>
                 <div>
-                    <h1 class="text-lg font-bold leading-none">AutoFix Pro</h1>
-                    <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Repair Management</p>
+                    <h1 class="text-lg font-bold leading-none"><?php echo h($shopName); ?></h1>
+                    <p class="text-xs text-slate-500 mt-1">Repair Management</p>
                 </div>
             </div>
             <nav class="space-y-1">
@@ -320,26 +355,34 @@ foreach ($trendData as $data) {
                     </a>
                     <?php endif; ?>
                     <?php if (canAccessModule('settingsadmin.php', $accessibleModules)): ?>
-                    <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-                        href="settingsadmin.php">
-                        <span class="material-symbols-outlined text-[22px]">settings</span>
-                        <span class="font-medium">Settings</span>
-                    </a>
+                    <div class="relative group">
+                        <button class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors w-full text-left settings-dropdown-btn" data-dropdown="settings">
+                            <span class="material-symbols-outlined text-[22px]">settings</span>
+                            <span>Settings</span>
+                            <span class="material-symbols-outlined text-[16px] ml-auto">expand_more</span>
+                        </button>
+                        <div class="absolute left-0 top-full mt-1 w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg shadow-lg hidden z-50 settings-dropdown" data-dropdown="settings">
+                            <?php if (canAccessModule('accountbillingadmin.php', $accessibleModules)): ?>
+                            <a href="accountbillingadmin.php" class="flex items-center gap-2 px-4 py-2.5 text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors border-b border-slate-100 dark:border-slate-800 last:border-b-0">
+                                <span class="material-symbols-outlined text-[18px]">receipt_long</span>
+                                <span>Account Billing</span>
+                            </a>
+                            <?php endif; ?>
+                        </div>
+                    </div>
                     <?php endif; ?>
                 </div>
             </nav>
         </div>
-        <div class="mt-auto w-full p-4 border-t border-slate-200 dark:border-slate-800">
+        <div class="mt-auto w-full p-4 border-t border-slate-200">
             <div class="flex items-center gap-3">
                 <div
-                    class="size-10 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center overflow-hidden">
-                    <img alt="Admin Profile" class="w-full h-full object-cover"
-                        data-alt="User avatar for admin profile picture"
-                        src="https://lh3.googleusercontent.com/aida-public/AB6AXuDeh_igjzq55wP-MQUqlN5a7g7ERzT91RAZllys2xTPdmr_K6ugTc7NEPOG48E87bvkhiEKuMOE9TZ0njKOCLQ7Nhccix3HVxsYdR2tXeyTCkjam7s1q8ngQOzslzdGRLROqouBtkGpnSewuAyIscdu673vBatOqI9TKHP1RCzarhxH8GqVYpWDnccgDrczUMroOqof3VFA7U9HLzMcDyURIrkC9dU2KtSkusqfbOvLaUs_zR14qlpZVSgASdGK8sw1SCeDf4A38q-8" />
+                    class="size-10 rounded-full bg-slate-200 flex items-center justify-center overflow-hidden">
+                    <span class="material-symbols-outlined text-slate-500">person</span>
                 </div>
                 <div class="flex-1 min-w-0">
-                    <p class="text-sm font-semibold truncate">Marcus Smith</p>
-                    <p class="text-xs text-slate-500 truncate">Shop Manager</p>
+                    <p class="text-sm font-semibold truncate"><?php echo h($loggedInUserName); ?></p>
+                    <p class="text-xs text-slate-500 truncate"><?php echo h($loggedInUserRole); ?></p>
                 </div>
                 <form method="post" action="../logout/logout.php" class="inline">
                     <input type="hidden" name="action" value="confirm" />
@@ -355,16 +398,7 @@ foreach ($trendData as $data) {
         <!-- Top Nav Bar -->
         <header
             class="sticky top-0 z-40 w-full border-b border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md flex items-center justify-between px-8 h-16">
-            <div class="flex items-center gap-6">
-                <h2 class="text-lg font-black text-slate-900 dark:white tracking-tight">Reports Management</h2>
-                <div class="relative hidden lg:block">
-                    <span
-                        class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">search</span>
-                    <input
-                        class="bg-surface-variant border-none rounded-lg pl-10 pr-4 py-1.5 text-sm w-64 focus:ring-2 focus:ring-primary/20"
-                        placeholder="Search reports..." type="text" />
-                </div>
-            </div>
+            <h2 class="text-lg font-black text-slate-900 dark:text-white tracking-tight">Reports Management</h2>
             <div class="flex items-center gap-4">
                 <button class="p-2 text-slate-500 hover:text-primary transition-all">
                     <span class="material-symbols-outlined">notifications</span>
@@ -372,16 +406,6 @@ foreach ($trendData as $data) {
                 <button class="p-2 text-slate-500 hover:text-primary transition-all">
                     <span class="material-symbols-outlined">help_outline</span>
                 </button>
-                <div class="h-8 w-px bg-slate-200 mx-2"></div>
-                <div class="flex items-center gap-3">
-                    <div class="text-right hidden sm:block">
-                        <p class="text-xs font-bold text-on-background">Alex Rivet</p>
-                        <p class="text-[10px] text-slate-500 uppercase font-semibold">Service Lead</p>
-                    </div>
-                    <img alt="Manager Avatar" class="h-10 w-10 rounded-full border-2 border-primary/20 object-cover"
-                        data-alt="professional male service manager portrait in modern automotive office environment"
-                        src="https://lh3.googleusercontent.com/aida-public/AB6AXuC_w4TZYv-DoCr0hxBNhV2Z-nUsRKiJWSSjgi__Y4oVCvZsEnAXH-GvsZk4qUV8VfyOd_rN5mqWnBeNlMb7An_00pBDPbF7FGZDqw2HhZ4MbeNkgRRsmuE6r3t2yOO4P5sHcWAMkVgXaheA3Z2LKA0Fo_mIUP0qh9KRyragtZ_zvLR-U7pm-kWc645Yi3rN0Mm0P9km9Kt3Fp4fKCU5i33aRJsonLoG5k45EuFpDDTP2CbZiarn81pTDjiPcRHLtpdJg1O47dGsJUD2" />
-                </div>
             </div>
         </header>
         <!-- Changed max-w-7xl mx-auto to max-w-none and removed centering -->
@@ -597,6 +621,27 @@ foreach ($trendData as $data) {
             </div>
         </div>
     </main>
+    <script>
+        // Dropdown menu click handler
+        document.querySelectorAll('.settings-dropdown-btn').forEach(button => {
+            button.addEventListener('click', function(e) {
+                e.preventDefault();
+                const dropdown = document.querySelector('[data-dropdown="settings"].settings-dropdown');
+                if (dropdown) {
+                    dropdown.classList.toggle('hidden');
+                }
+            });
+        });
+
+        // Close dropdown when clicking outside
+        document.addEventListener('click', function(e) {
+            const dropdownBtn = document.querySelector('.settings-dropdown-btn');
+            const dropdown = document.querySelector('[data-dropdown="settings"].settings-dropdown');
+            if (dropdown && dropdownBtn && !dropdownBtn.contains(e.target) && !dropdown.contains(e.target)) {
+                dropdown.classList.add('hidden');
+            }
+        });
+    </script>
 </body>
 
 </html>

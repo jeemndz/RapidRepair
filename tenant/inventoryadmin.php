@@ -23,6 +23,23 @@ function canAccessModule($moduleFile, $accessibleModules) {
     return in_array($moduleFile, $accessibleModules);
 }
 
+// HTML escape helper function
+function h($value) {
+    return htmlspecialchars((string) $value, ENT_QUOTES, 'UTF-8');
+}
+
+// Get logged-in user information
+$loggedInUserName = '';
+$loggedInUserRole = '';
+if ($_SESSION['userType'] === 'owner') {
+    $loggedInUserName = isset($_SESSION['shopName']) ? $_SESSION['shopName'] : 'Shop Owner';
+    $loggedInUserRole = 'Administrator';
+} else {
+    $loggedInUserName = (isset($_SESSION['firstName']) ? $_SESSION['firstName'] : '') . ' ' . (isset($_SESSION['lastName']) ? $_SESSION['lastName'] : '');
+    $loggedInUserName = trim($loggedInUserName) ?: 'User';
+    $loggedInUserRole = isset($_SESSION['userRole']) ? $_SESSION['userRole'] : 'Staff Member';
+}
+
 $loginSlug = '';
 if (isset($_SESSION['login_slug']) && trim((string) $_SESSION['login_slug']) !== '') {
     $loginSlug = trim((string) $_SESSION['login_slug']);
@@ -839,30 +856,40 @@ $lastRow = min($offset + $perPage, $filteredTotal);
                             class="material-symbols-outlined text-[22px]">payments</span>Payments</a>
                     <?php endif; ?>
                     <div class="pt-4 mt-4 border-t border-slate-100 dark:border-slate-800">
-                        <?php if (canAccessModule('accountbillingadmin.php', $accessibleModules)): ?>
-                        <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-                            href="accountbillingadmin.php?shop=<?php echo $shopQuery; ?>"><span
-                                class="material-symbols-outlined text-[22px]">receipt_long</span>Account Billing</a>
-                        <?php endif; ?>
-                        <?php if (canAccessModule('settingsadmin.php', $accessibleModules)): ?>
-                        <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-                            href="settingsadmin.php?shop=<?php echo $shopQuery; ?>"><span
-                                class="material-symbols-outlined text-[22px]">settings</span>Settings</a>
-                        <?php endif; ?>
+                        <div class="relative group">
+                            <button class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors w-full text-left settings-dropdown-btn" data-dropdown="settings">
+                                <span class="material-symbols-outlined text-[22px]">settings</span>
+                                <span>Settings</span>
+                                <span class="material-symbols-outlined text-[16px] ml-auto">expand_more</span>
+                            </button>
+                            <div class="absolute left-0 top-full mt-1 w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg shadow-lg hidden z-50 settings-dropdown" data-dropdown="settings">
+                                <?php if (canAccessModule('settingsadmin.php', $accessibleModules)): ?>
+                                <a class="flex items-center gap-3 px-3 py-2.5 rounded-t-lg text-slate-600 dark:text-slate-400 hover:bg-blue-50 dark:hover:bg-slate-800 transition-colors text-sm"
+                                    href="settingsadmin.php?shop=<?php echo $shopQuery; ?>">
+                                    <span class="material-symbols-outlined text-[18px]">settings</span>
+                                    Settings
+                                </a>
+                                <?php endif; ?>
+                                <?php if (canAccessModule('accountbillingadmin.php', $accessibleModules)): ?>
+                                <a class="flex items-center gap-3 px-3 py-2.5 rounded-b-lg text-slate-600 dark:text-slate-400 hover:bg-blue-50 dark:hover:bg-slate-800 transition-colors text-sm border-t border-slate-100 dark:border-slate-700"
+                                    href="accountbillingadmin.php?shop=<?php echo $shopQuery; ?>">
+                                    <span class="material-symbols-outlined text-[18px]">receipt_long</span>
+                                    Account Billing
+                                </a>
+                                <?php endif; ?>
+                            </div>
+                        </div>
                     </div>
                 </nav>
             </div>
             <div class="p-4 border-t border-slate-200 dark:border-slate-800">
                 <div class="flex items-center gap-3">
-                    <div
-                        class="size-10 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center overflow-hidden">
-                        <img alt="Admin Profile" class="w-full h-full object-cover"
-                            src="https://lh3.googleusercontent.com/aida-public/AB6AXuDeh_igjzq55wP-MQUqlN5a7g7ERzT91RAZllys2xTPdmr_K6ugTc7NEPOG48E87bvkhiEKuMOE9TZ0njKOCLQ7Nhccix3HVxsYdR2tXeyTCkjam7s1q8ngQOzslzdGRLROqouBtkGpnSewuAyIscdu673vBatOqI9TKHP1RCzarhxH8GqVYpWDnccgDrczUMroOqof3VFA7U9HLzMcDyURIrkC9dU2KtSkusqfbOvLaUs_zR14qlpZVSgASdGK8sw1SCeDf4A38q-8" />
+                    <div class="size-10 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center overflow-hidden">
+                        <span class="material-symbols-outlined text-slate-500 dark:text-slate-400">person</span>
                     </div>
                     <div class="flex-1 min-w-0">
-                        <p class="text-sm font-semibold truncate">
-                            <?php echo htmlspecialchars($shopName, ENT_QUOTES, 'UTF-8'); ?></p>
-                        <p class="text-xs text-slate-500 truncate">Shop Manager</p>
+                        <p class="text-sm font-semibold truncate text-slate-900 dark:text-white"><?php echo h($loggedInUserName); ?></p>
+                        <p class="text-xs text-slate-500 dark:text-slate-400 truncate"><?php echo h($loggedInUserRole); ?></p>
                     </div>
                     <form method="post" action="../logout/logout.php" class="inline">
                         <input type="hidden" name="action" value="confirm" />
@@ -877,38 +904,13 @@ $lastRow = min($offset + $perPage, $filteredTotal);
 
         <div class="flex-1 flex flex-col min-w-0 bg-background-light dark:bg-background-dark overflow-y-auto">
             <header
-                class="sticky top-0 z-40 w-full border-b border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md flex items-center justify-between px-8 h-20">
-                <div class="flex items-center gap-6">
-                    <h2 class="text-lg font-black text-slate-900 dark:text-white tracking-tight">Inventory Management
-                    </h2>
-                    <div class="relative hidden lg:block">
-                        <span
-                            class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">search</span>
-                        <form method="get" action="inventoryadmin.php" class="inline">
-                            <input type="hidden" name="shop"
-                                value="<?php echo htmlspecialchars($loginSlug, ENT_QUOTES, 'UTF-8'); ?>" />
-                            <input
-                                class="bg-surface-variant border-none rounded-lg pl-10 pr-4 py-1.5 text-sm w-64 focus:ring-2 focus:ring-primary/20"
-                                name="q" value="<?php echo htmlspecialchars($search, ENT_QUOTES, 'UTF-8'); ?>"
-                                placeholder="Search inventory..." type="text" />
-                        </form>
-                    </div>
-                </div>
+                class="sticky top-0 z-40 w-full border-b border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md flex items-center justify-between px-8 h-16">
+                <h2 class="text-lg font-black text-slate-900 dark:text-white tracking-tight">Inventory Management</h2>
                 <div class="flex items-center gap-4">
                     <button class="p-2 text-slate-500 hover:text-primary transition-all"><span
                             class="material-symbols-outlined">notifications</span></button>
                     <button class="p-2 text-slate-500 hover:text-primary transition-all"><span
                             class="material-symbols-outlined">help_outline</span></button>
-                    <div class="h-8 w-px bg-slate-200 mx-2"></div>
-                    <div class="flex items-center gap-3">
-                        <div class="text-right hidden sm:block">
-                            <p class="text-xs font-bold text-on-background">
-                                <?php echo htmlspecialchars($shopName, ENT_QUOTES, 'UTF-8'); ?></p>
-                            <p class="text-[10px] text-slate-500 uppercase font-semibold">Inventory</p>
-                        </div>
-                        <img alt="Manager Avatar" class="h-10 w-10 rounded-full border-2 border-primary/20 object-cover"
-                            src="https://lh3.googleusercontent.com/aida-public/AB6AXuC_w4TZYv-DoCr0hxBNhV2Z-nUsRKiJWSSjgi__Y4oVCvZsEnAXH-GvsZk4qUV8VfyOd_rN5mqWnBeNlMb7An_00pBDPbF7FGZDqw2HhZ4MbeNkgRRsmuE6r3t2yOO4P5sHcWAMkVgXaheA3Z2LKA0Fo_mIUP0qh9KRyragtZ_zvLR-U7pm-kWc645Yi3rN0Mm0P9km9Kt3Fp4fKCU5i33aRJsonLoG5k45EuFpDDTP2CbZiarn81pTDjiPcRHLtpdJg1O47dGsJUD2" />
-                    </div>
                 </div>
             </header>
 
@@ -1360,6 +1362,27 @@ $lastRow = min($offset + $perPage, $filteredTotal);
             </main>
         </div>
     </div>
+    <script>
+        // Dropdown menu click handler
+        document.querySelectorAll('.settings-dropdown-btn').forEach(button => {
+            button.addEventListener('click', function(e) {
+                e.preventDefault();
+                const dropdown = document.querySelector('[data-dropdown="settings"].settings-dropdown');
+                if (dropdown) {
+                    dropdown.classList.toggle('hidden');
+                }
+            });
+        });
+
+        // Close dropdown when clicking outside
+        document.addEventListener('click', function(e) {
+            const dropdownBtn = document.querySelector('.settings-dropdown-btn');
+            const dropdown = document.querySelector('[data-dropdown="settings"].settings-dropdown');
+            if (dropdown && dropdownBtn && !dropdownBtn.contains(e.target) && !dropdown.contains(e.target)) {
+                dropdown.classList.add('hidden');
+            }
+        });
+    </script>
 </body>
 
 </html>

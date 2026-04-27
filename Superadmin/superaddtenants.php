@@ -1594,17 +1594,95 @@ if (isset($_POST['createTenant'])) {
         </header>
 
         <div class="p-8">
-            <header class="mb-8 flex justify-between items-center">
+            <div class="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-8">
                 <div>
-                    <h1 class="text-3xl font-black text-slate-900 dark:text-white tracking-tight">Tenant Management</h1>
-                    <p class="text-slate-500 dark:text-slate-400 mt-1 font-medium">Manage and monitor platform tenants
-                        and shop applications.</p>
+                    <h2 class="text-3xl font-black text-slate-900 dark:text-white tracking-tight">Tenant Management</h2>
+                    <p class="text-slate-500 dark:text-slate-400 mt-1">Manage and monitor platform tenants and shop applications.</p>
                 </div>
                 <button onclick="openModal()"
                     class="flex items-center gap-2 bg-primary text-white px-4 py-2 rounded-lg">
                     <span class="material-symbols-outlined">add</span> Add Tenant
                 </button>
-            </header>
+            </div>
+
+            <!-- Statistics Cards -->
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+                <?php
+                $activeTenantCountResult = mysqli_query($conn, "SELECT COUNT(*) as count FROM owners WHERE status='Active'");
+                $activeTenantCount = mysqli_fetch_assoc($activeTenantCountResult)['count'] ?? 0;
+
+                $pendingAppCountResult = mysqli_query($conn, "SELECT COUNT(*) as count FROM owners WHERE status='Pending'");
+                $pendingAppCount = mysqli_fetch_assoc($pendingAppCountResult)['count'] ?? 0;
+
+                $inactiveTenantCountResult = mysqli_query($conn, "SELECT COUNT(*) as count FROM owners WHERE status IN ('Inactive', 'Rejected', 'Suspended')");
+                $inactiveTenantCount = mysqli_fetch_assoc($inactiveTenantCountResult)['count'] ?? 0;
+                ?>
+                <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm p-6">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-sm font-medium text-slate-600 dark:text-slate-400">Active Tenants</p>
+                            <p class="text-3xl font-bold text-slate-900 dark:text-white mt-2"><?php echo $activeTenantCount; ?></p>
+                        </div>
+                        <div class="w-12 h-12 bg-green-100 dark:bg-green-900/30 rounded-lg flex items-center justify-center">
+                            <span class="material-symbols-outlined text-green-600 dark:text-green-400">check_circle</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm p-6">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-sm font-medium text-slate-600 dark:text-slate-400">Pending Approvals</p>
+                            <p class="text-3xl font-bold text-slate-900 dark:text-white mt-2"><?php echo $pendingAppCount; ?></p>
+                        </div>
+                        <div class="w-12 h-12 bg-amber-100 dark:bg-amber-900/30 rounded-lg flex items-center justify-center">
+                            <span class="material-symbols-outlined text-amber-600 dark:text-amber-400">schedule</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm p-6">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-sm font-medium text-slate-600 dark:text-slate-400">Inactive/Rejected</p>
+                            <p class="text-3xl font-bold text-slate-900 dark:text-white mt-2"><?php echo $inactiveTenantCount; ?></p>
+                        </div>
+                        <div class="w-12 h-12 bg-red-100 dark:bg-red-900/30 rounded-lg flex items-center justify-center">
+                            <span class="material-symbols-outlined text-red-600 dark:text-red-400">cancel</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tenants Section with Search -->
+            <div class="mb-8">
+                <div class="flex gap-3 mb-4">
+                    <div class="flex-1 relative">
+                        <span class="material-symbols-outlined absolute left-3 top-3 text-slate-400">search</span>
+                        <input type="text" id="globalSearchInput" placeholder="Search tenants by name, email, plan..."
+                            class="w-full pl-10 pr-4 py-2 border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent">
+                    </div>
+                    <button id="filtersToggle" class="flex items-center gap-2 px-4 py-2 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800">
+                        <span class="material-symbols-outlined">filter_list</span>
+                        <span class="text-sm font-medium">Filters</span>
+                    </button>
+                </div>
+                <div id="filtersDropdown" class="hidden mb-4 p-4 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-slate-200 dark:border-slate-700">
+                    <p class="text-sm font-medium text-slate-600 dark:text-slate-400 mb-3">Filter by Status:</p>
+                    <div class="flex flex-wrap gap-2">
+                        <button class="tenant-search-scope-btn px-3 py-1.5 rounded-full text-sm font-medium transition-colors" data-scope="all">
+                            All Tenants
+                        </button>
+                        <button class="tenant-search-scope-btn px-3 py-1.5 rounded-full text-sm font-medium transition-colors" data-scope="active">
+                            Active
+                        </button>
+                        <button class="tenant-search-scope-btn px-3 py-1.5 rounded-full text-sm font-medium transition-colors" data-scope="suspended">
+                            Suspended
+                        </button>
+                        <button class="tenant-search-scope-btn px-3 py-1.5 rounded-full text-sm font-medium transition-colors" data-scope="inactive">
+                            Inactive
+                        </button>
+                    </div>
+                </div>
+            </div>
 
             <div
                 class="bg-white dark:bg-background-dark rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
@@ -1638,8 +1716,15 @@ if (isset($_POST['createTenant'])) {
                             $result = mysqli_query($conn, $query);
                             while ($row = mysqli_fetch_assoc($result)) {
                                 $statusColor = "emerald";
-                                if (strtolower($row['status']) == "inactive")
+                                $displayStatus = ucfirst($row['status']);
+                                if (strtolower($row['status']) == "inactive") {
                                     $statusColor = "red";
+                                    $displayStatus = "Inactive";
+                                }
+                                if (strtolower($row['status']) == "rejected") {
+                                    $statusColor = "red";
+                                    $displayStatus = "Rejected";
+                                }
                                 if (strtolower($row['status']) == "pending")
                                     $statusColor = "amber";
                                 if (strtolower($row['status']) == "suspended")
@@ -1683,7 +1768,8 @@ if (isset($_POST['createTenant'])) {
                                 $tenantSearchHaystack = strtolower(trim((string) ($row['shopName'] ?? '') . ' ' . (string) ($row['ownerName'] ?? '') . ' ' . (string) ($row['email'] ?? '') . ' ' . (string) $tenantPlan . ' ' . (string) $tenantCycle . ' ' . (string) ($row['status'] ?? '') . ' ' . (string) ($row['tenantID'] ?? '') . ' ' . (string) $tenantNextBilling));
                                 ?>
                                 <tr class="searchable-tenant hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors"
-                                    data-search="<?php echo htmlspecialchars($tenantSearchHaystack, ENT_QUOTES, 'UTF-8'); ?>">
+                                    data-search="<?php echo htmlspecialchars($tenantSearchHaystack, ENT_QUOTES, 'UTF-8'); ?>"
+                                    data-status="<?php echo strtolower($row['status']); ?>"></tr>
                                     <td class="px-6 py-4"><?php echo $row['shopName']; ?> (ID:
                                         <?php echo $row['tenantID']; ?>)
                                     </td>
@@ -1702,7 +1788,7 @@ if (isset($_POST['createTenant'])) {
                                     <td class="px-6 py-4">
                                         <span
                                             class="px-2 py-1 text-xs font-semibold bg-<?php echo $statusColor; ?>-100 dark:bg-<?php echo $statusColor; ?>-900/30 text-<?php echo $statusColor; ?>-700 dark:text-<?php echo $statusColor; ?>-400 rounded-full">
-                                            <?php echo ucfirst($row['status']); ?>
+                                            <?php echo $displayStatus; ?>
                                         </span>
                                     </td>
                                     <td class="px-6 py-4"><?php echo date("M d, Y", strtotime($row['created_at'])); ?></td>
@@ -1763,8 +1849,16 @@ if (isset($_POST['createTenant'])) {
                 </div>
             </div>
 
+            <!-- Pending Applications Section with Search -->
+            <div class="mt-8">
+                <div class="mb-4">
+                    <input type="text" id="pendingSearchInput" placeholder="Search pending applications..."
+                        class="w-full px-4 py-2 border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent">
+                </div>
+            </div>
+
             <div
-                class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden mt-8">
+                class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden mt-0">
                 <div class="p-6 border-b border-slate-200 dark:border-slate-800">
                     <h2 class="text-lg font-bold">Pending Applications</h2>
                     <p class="text-sm text-slate-500 dark:text-slate-400 mt-1">Review and approve new shop registration
@@ -2307,8 +2401,8 @@ if (isset($_POST['createTenant'])) {
                     scopeButtons.forEach(function (button) {
                         const isActive = (button.dataset.scope || 'all') === currentScope;
                         button.className = isActive
-                            ? 'tenant-search-scope-btn w-full text-left px-3 py-2 rounded-lg text-sm font-medium bg-primary text-white'
-                            : 'tenant-search-scope-btn w-full text-left px-3 py-2 rounded-lg text-sm font-medium text-slate-700 hover:bg-slate-100';
+                            ? 'tenant-search-scope-btn px-3 py-1.5 rounded-full text-sm font-medium bg-primary text-white'
+                            : 'tenant-search-scope-btn px-3 py-1.5 rounded-full text-sm font-medium text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700';
                     });
                 }
 
@@ -2318,28 +2412,39 @@ if (isset($_POST['createTenant'])) {
                     let visiblePending = 0;
 
                     tenantRows.forEach(function (row) {
-                        const shouldSearch = currentScope === 'all' || currentScope === 'tenants';
-                        const matches = query === '' || (row.dataset.search || '').includes(query);
-                        const visible = shouldSearch ? matches : true;
+                        const rowData = (row.dataset.search || '').toLowerCase();
+                        const status = (row.dataset.status || '').toLowerCase();
+                        
+                        const matchesQuery = query === '' || rowData.includes(query);
+                        
+                        let matchesStatus = true;
+                        if (currentScope !== 'all') {
+                            if (currentScope === 'inactive') {
+                                matchesStatus = status === 'inactive' || status === 'rejected';
+                            } else {
+                                matchesStatus = status === currentScope;
+                            }
+                        }
+                        
+                        const visible = matchesQuery && matchesStatus;
                         row.classList.toggle('hidden', !visible);
                         if (visible) visibleTenants++;
                     });
 
                     pendingRows.forEach(function (row) {
-                        const shouldSearch = currentScope === 'all' || currentScope === 'pending';
-                        const matches = query === '' || (row.dataset.search || '').includes(query);
-                        const visible = shouldSearch ? matches : true;
-                        row.classList.toggle('hidden', !visible);
-                        if (visible) visiblePending++;
+                        const rowData = (row.dataset.search || '').toLowerCase();
+                        const matches = query === '' || rowData.includes(query);
+                        row.classList.toggle('hidden', !matches);
+                        if (matches) visiblePending++;
                     });
 
                     if (tenantsEmpty) {
-                        const shouldShow = query !== '' && (currentScope === 'all' || currentScope === 'tenants') && tenantRows.length > 0 && visibleTenants === 0;
+                        const shouldShow = tenantRows.length > 0 && visibleTenants === 0;
                         tenantsEmpty.classList.toggle('hidden', !shouldShow);
                     }
 
                     if (pendingEmpty) {
-                        const shouldShow = query !== '' && (currentScope === 'all' || currentScope === 'pending') && pendingRows.length > 0 && visiblePending === 0;
+                        const shouldShow = pendingRows.length > 0 && visiblePending === 0;
                         pendingEmpty.classList.toggle('hidden', !shouldShow);
                     }
                 }
@@ -2361,8 +2466,25 @@ if (isset($_POST['createTenant'])) {
                     });
 
                     document.addEventListener('click', function (event) {
-                        if (!filtersDropdown.classList.contains('hidden') && !event.target.closest('#searchScopeFilters')) {
+                        if (!filtersDropdown.classList.contains('hidden') && !event.target.closest('#filtersDropdown') && !event.target.closest('#filtersToggle')) {
                             filtersDropdown.classList.add('hidden');
+                        }
+                    });
+                }
+
+                const pendingSearchInput = document.getElementById('pendingSearchInput');
+                if (pendingSearchInput) {
+                    pendingSearchInput.addEventListener('input', function() {
+                        const query = this.value.trim().toLowerCase();
+                        pendingRows.forEach(function (row) {
+                            const rowData = (row.dataset.search || '').toLowerCase();
+                            const matches = query === '' || rowData.includes(query);
+                            row.classList.toggle('hidden', !matches);
+                        });
+                        if (pendingEmpty) {
+                            const visibleCount = pendingRows.filter(row => !row.classList.contains('hidden')).length;
+                            const shouldShow = pendingRows.length > 0 && visibleCount === 0;
+                            pendingEmpty.classList.toggle('hidden', !shouldShow);
                         }
                     });
                 }
@@ -2557,7 +2679,7 @@ if (isset($_POST['createTenant'])) {
             const statusInput = document.createElement('input');
             statusInput.type = 'hidden';
             statusInput.name = 'status';
-            statusInput.value = 'Inactive';
+            statusInput.value = 'Rejected';
 
             const updateInput = document.createElement('input');
             updateInput.type = 'hidden';

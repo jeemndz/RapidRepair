@@ -23,6 +23,18 @@ function canAccessModule($moduleFile, $accessibleModules) {
     return in_array($moduleFile, $accessibleModules);
 }
 
+// Get logged-in user information
+$loggedInUserName = '';
+$loggedInUserRole = '';
+if ($_SESSION['userType'] === 'owner') {
+    $loggedInUserName = isset($_SESSION['shopName']) ? $_SESSION['shopName'] : 'Shop Owner';
+    $loggedInUserRole = 'Administrator';
+} else {
+    $loggedInUserName = (isset($_SESSION['firstName']) ? $_SESSION['firstName'] : '') . ' ' . (isset($_SESSION['lastName']) ? $_SESSION['lastName'] : '');
+    $loggedInUserName = trim($loggedInUserName) ?: 'User';
+    $loggedInUserRole = isset($_SESSION['userRole']) ? $_SESSION['userRole'] : 'Staff Member';
+}
+
 $loginSlug = '';
 if (isset($_SESSION['login_slug']) && trim((string) $_SESSION['login_slug']) !== '') {
     $loginSlug = trim((string) $_SESSION['login_slug']);
@@ -847,20 +859,29 @@ function buildPageUrl($pageNumber, $shopQuery, $search, $statusFilter, $methodFi
                 </a>
                 <?php endif; ?>
                 <div class="pt-4 mt-4 border-t border-slate-100">
-                    <?php if (canAccessModule('accountbillingadmin.php', $accessibleModules)): ?>
-                    <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 hover:bg-slate-100 transition-colors"
-                        href="accountbillingadmin.php?shop=<?php echo $shopQuery; ?>">
-                        <span class="material-symbols-outlined text-[22px]">receipt_long</span>
-                        Account Billing
-                    </a>
-                    <?php endif; ?>
-                    <?php if (canAccessModule('settingsadmin.php', $accessibleModules)): ?>
-                    <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 hover:bg-slate-100 transition-colors"
-                        href="settingsadmin.php?shop=<?php echo $shopQuery; ?>">
-                        <span class="material-symbols-outlined text-[22px]">settings</span>
-                        Settings
-                    </a>
-                    <?php endif; ?>
+                    <div class="relative group">
+                        <button class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 hover:bg-slate-100 transition-colors w-full text-left settings-dropdown-btn" data-dropdown="settings">
+                            <span class="material-symbols-outlined text-[22px]">settings</span>
+                            <span>Settings</span>
+                            <span class="material-symbols-outlined text-[16px] ml-auto">expand_more</span>
+                        </button>
+                        <div class="absolute left-0 top-full mt-1 w-full bg-white border border-slate-200 rounded-lg shadow-lg hidden z-50 settings-dropdown" data-dropdown="settings">
+                            <?php if (canAccessModule('settingsadmin.php', $accessibleModules)): ?>
+                            <a class="flex items-center gap-3 px-3 py-2.5 rounded-t-lg text-slate-600 hover:bg-blue-50 transition-colors text-sm"
+                                href="settingsadmin.php?shop=<?php echo $shopQuery; ?>">
+                                <span class="material-symbols-outlined text-[18px]">settings</span>
+                                Settings
+                            </a>
+                            <?php endif; ?>
+                            <?php if (canAccessModule('accountbillingadmin.php', $accessibleModules)): ?>
+                            <a class="flex items-center gap-3 px-3 py-2.5 rounded-b-lg text-slate-600 hover:bg-blue-50 transition-colors text-sm border-t border-slate-100"
+                                href="accountbillingadmin.php?shop=<?php echo $shopQuery; ?>">
+                                <span class="material-symbols-outlined text-[18px]">receipt_long</span>
+                                Account Billing
+                            </a>
+                            <?php endif; ?>
+                        </div>
+                    </div>
                 </div>
             </nav>
         </div>
@@ -870,8 +891,8 @@ function buildPageUrl($pageNumber, $shopQuery, $search, $statusFilter, $methodFi
                     <span class="material-symbols-outlined text-slate-500">person</span>
                 </div>
                 <div class="flex-1 min-w-0">
-                    <p class="text-sm font-semibold truncate"><?php echo h($owner['shopName']); ?></p>
-                    <p class="text-xs text-slate-500 truncate">Shop Manager</p>
+                    <p class="text-sm font-semibold truncate"><?php echo h($loggedInUserName); ?></p>
+                    <p class="text-xs text-slate-500 truncate"><?php echo h($loggedInUserRole); ?></p>
                 </div>
                 <form id="logoutForm" method="post" action="../logout/logout.php" class="inline">
                     <input type="hidden" name="action" value="confirm" />
@@ -887,19 +908,7 @@ function buildPageUrl($pageNumber, $shopQuery, $search, $statusFilter, $methodFi
     <main class="flex-1 overflow-y-auto flex flex-col bg-background">
         <header
             class="sticky top-0 z-40 w-full border-b border-slate-200 bg-white/80 backdrop-blur-md flex items-center justify-between px-8 h-16">
-            <div class="flex items-center gap-6">
-                <h2 class="text-lg font-black text-slate-900 tracking-tight">Payments Management</h2>
-                <form method="get" class="relative hidden lg:block">
-                    <input type="hidden" name="shop" value="<?php echo h($loginSlug); ?>">
-                    <input type="hidden" name="status" value="<?php echo h($statusFilter); ?>">
-                    <input type="hidden" name="method" value="<?php echo h($methodFilter); ?>">
-                    <span
-                        class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">search</span>
-                    <input
-                        class="bg-surface-variant border-none rounded-lg pl-10 pr-4 py-1.5 text-sm w-64 focus:ring-2 focus:ring-primary/20"
-                        placeholder="Search payments..." type="text" name="search" value="<?php echo h($search); ?>">
-                </form>
-            </div>
+            <h2 class="text-lg font-black text-slate-900 dark:text-white tracking-tight">Payments Management</h2>
             <div class="flex items-center gap-4">
                 <button class="p-2 text-slate-500 hover:text-primary transition-all">
                     <span class="material-symbols-outlined">notifications</span>
@@ -907,18 +916,6 @@ function buildPageUrl($pageNumber, $shopQuery, $search, $statusFilter, $methodFi
                 <button class="p-2 text-slate-500 hover:text-primary transition-all">
                     <span class="material-symbols-outlined">help_outline</span>
                 </button>
-                <div class="h-8 w-px bg-slate-200 mx-2"></div>
-                <div class="flex items-center gap-3">
-                    <div class="text-right hidden sm:block">
-                        <p class="text-xs font-bold text-on-surface"><?php echo h($owner['shopName']); ?></p>
-                        <p class="text-[10px] text-slate-500 uppercase font-semibold">Slug: <?php echo h($loginSlug); ?>
-                        </p>
-                    </div>
-                    <div
-                        class="h-10 w-10 rounded-full border-2 border-primary/20 bg-slate-200 flex items-center justify-center">
-                        <span class="material-symbols-outlined text-slate-500">person</span>
-                    </div>
-                </div>
             </div>
         </header>
 
@@ -1515,6 +1512,26 @@ function buildPageUrl($pageNumber, $shopQuery, $search, $statusFilter, $methodFi
         addPaymentModal.classList.add('flex');
     }
     <?php endif; ?>
+
+    // Dropdown menu click handler
+    document.querySelectorAll('.settings-dropdown-btn').forEach(button => {
+        button.addEventListener('click', function(e) {
+            e.preventDefault();
+            const dropdown = document.querySelector('[data-dropdown="settings"].settings-dropdown');
+            if (dropdown) {
+                dropdown.classList.toggle('hidden');
+            }
+        });
+    });
+
+    // Close dropdown when clicking outside
+    document.addEventListener('click', function(e) {
+        const dropdownBtn = document.querySelector('.settings-dropdown-btn');
+        const dropdown = document.querySelector('[data-dropdown="settings"].settings-dropdown');
+        if (dropdown && dropdownBtn && !dropdownBtn.contains(e.target) && !dropdown.contains(e.target)) {
+            dropdown.classList.add('hidden');
+        }
+    });
 </script>
 
 </html>
