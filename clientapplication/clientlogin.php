@@ -217,7 +217,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['loginClient'])) {
                     <span class="text-2xl font-black text-primary tracking-tighter">RapidRepairCo.</span>
                 </div>
                 <header class="mb-10">
-                    <h2 class="text-3xl text-on-surface tracking-tight mb-2 font-bold">Authorize Access</h2>
+                    <h2 class="text-3xl text-on-surface tracking-tight mb-2 font-bold">LogIn</h2>
                     <p class="text-on-surface-variant font-medium">Enter your credentials to enter the network.</p>
                 </header>
                 <?php if (count($errors) > 0): ?>

@@ -199,15 +199,22 @@ function generateTemporaryPasswordForApplication($length = 12)
     return $password;
 }
 
-function generateInviteCode($length = 6)
+function generateUniqueInviteCode($conn, $length = 6)
 {
     $digits = '0123456789';
     $maxIndex = strlen($digits) - 1;
-    $code = '';
-    for ($i = 0; $i < $length; $i++) {
-        $code .= $digits[random_int(0, $maxIndex)];
+    
+    while (true) {
+        $code = '';
+        for ($i = 0; $i < $length; $i++) {
+            $code .= $digits[random_int(0, $maxIndex)];
+        }
+        
+        $check = mysqli_query($conn, "SELECT tenantID FROM owners WHERE invite_code='" . mysqli_real_escape_string($conn, $code) . "' LIMIT 1");
+        if ($check && mysqli_num_rows($check) === 0) {
+            return $code;
+        }
     }
-    return $code;
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['createTenantApplication'])) {
@@ -273,9 +280,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['createTenantApplicati
             $tenantID = str_pad((string) $newNumericId, 3, '0', STR_PAD_LEFT);
             $loginSlug = generateSlugForApplication($conn, $formData['shopName']);
             $temporaryPassword = generateTemporaryPasswordForApplication();
-            $inviteCode = generateInviteCode();
+            $inviteCode = generateUniqueInviteCode($conn);
 
-            $insertColumns = ['tenantID', 'ownerName', 'shopName', 'email', 'contactNumber', 'shopAddress', 'password', 'first_login', 'status', 'invite_code'];
+            $insertColumns = ['tenantID', 'ownerName', 'shopName', 'email', 'contactNumber', 'shopAddress', 'password', 'first_login', 'status'];
             $insertValues = [
                 "'" . mysqli_real_escape_string($conn, $tenantID) . "'",
                 "'" . mysqli_real_escape_string($conn, $formData['ownerName']) . "'",
@@ -285,8 +292,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['createTenantApplicati
                 "'" . mysqli_real_escape_string($conn, $formData['shopAddress']) . "'",
                 "'" . mysqli_real_escape_string($conn, $temporaryPassword) . "'",
                 '1',
-                "'Pending'",
-                "'" . mysqli_real_escape_string($conn, $inviteCode) . "'"
+                "'Pending'"
             ];
 
             if (ownersColumnExists($conn, 'login_slug')) {
@@ -309,6 +315,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['createTenantApplicati
                 $insertValues[] = "'" . mysqli_real_escape_string($conn, $formData['countryCode']) . "'";
             }
 
+            if (ownersColumnExists($conn, 'invite_code')) {
+                $insertColumns[] = 'invite_code';
+                $insertValues[] = "'" . mysqli_real_escape_string($conn, $inviteCode) . "'";
+            }
+
             if (ownersColumnExists($conn, 'created_at')) {
                 $insertColumns[] = 'created_at';
                 $insertValues[] = 'NOW()';
@@ -318,12 +329,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['createTenantApplicati
             $insertResult = mysqli_query($conn, $insertSql);
 
             if ($insertResult) {
-                // Redirect to payment page with application details
-                $paymentUrl = 'clientpayment.php?tenantID=' . urlencode($tenantID) . 
-                              '&plan=' . urlencode($formData['subscriptionPlan']) . 
-                              '&billingCycle=' . urlencode($formData['billingCycle']);
-                header('Location: ' . $paymentUrl);
-                exit;
+                header('Location: clientpayment.php?tenantID=' . urlencode($tenantID));
+                exit();
             } else {
                 $errors[] = 'Unable to submit your application right now. Please try again.';
             }

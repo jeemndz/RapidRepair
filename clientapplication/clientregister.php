@@ -130,7 +130,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['registerClient'])) {
             }
 
             if (mysqli_stmt_execute($stmt)) {
-                $successMessage = 'Registration submitted successfully.';
+                $successMessage = 'Account Registered Successfully.';
                 $formData = [
                     'firstName' => '',
                     'lastName' => '',
