@@ -737,15 +737,15 @@ if (isset($_POST['updateTenantStatus'])) {
             log_event($conn, "Accept Applicant", "Applicant", (int)$tenantID, $logDetails);
 
             if ($emailResult['sent']) {
-                header("Location: superaddtenants.php?notice=tenant_approved_email_sent");
+                header("Location: ?notice=tenant_approved_email_sent");
             } elseif (($emailResult['reason'] ?? '') === 'quota') {
-                header("Location: superaddtenants.php?notice=tenant_approved_email_quota_exceeded");
+                header("Location: ?notice=tenant_approved_email_quota_exceeded");
             } else {
-                header("Location: superaddtenants.php?notice=tenant_approved_email_failed");
+                header("Location: ?notice=tenant_approved_email_failed");
             }
         } else {
             mysqli_rollback($conn);
-            header("Location: superaddtenants.php?notice=tenant_status_update_failed");
+            header("Location: ?notice=tenant_status_update_failed");
         }
         exit;
     } else {
@@ -780,9 +780,9 @@ if (isset($_POST['updateTenantStatus'])) {
         
         log_event($conn, $action, "Applicant", (int)$tenantID, $logDetails);
         
-        header("Location: superaddtenants.php?notice=" . $redirect);
+        header("Location: ?notice=" . $redirect);
     } else {
-        header("Location: superaddtenants.php?notice=tenant_status_update_failed");
+        header("Location: ?notice=tenant_status_update_failed");
     }
     exit;
 }
@@ -1045,9 +1045,9 @@ if (isset($_POST['updateTenant'])) {
         $logDetails = "Updated: Shop Name, Address, Owner Name, Email, Contact, Status";
         log_event($conn, "Update Tenant Information", "Tenant", (int)$tenantID, $logDetails);
         
-        header("Location: superaddtenants.php?notice=tenant_updated");
+        header("Location: ?notice=tenant_updated");
     } else {
-        header("Location: superaddtenants.php?notice=tenant_update_failed");
+        header("Location: ?notice=tenant_update_failed");
     }
     exit;
 }
@@ -1420,21 +1420,21 @@ if (isset($_POST['createTenant'])) {
         $logDetails = "Created new tenant: $shopName, Owner: $ownerName, Subscription: $subscriptionPlan, Status: Active";
         log_event($conn, "Create Tenant", "Tenant", (int)$tenantID, $logDetails);
         
-        header("Location: superaddtenants.php?notice=tenant_created_email_sent");
+        header("Location: ?notice=tenant_created_email_sent");
     } elseif ($insert && $subscriptionSynced && $emailFailureReason === 'quota') {
         // Log the tenant creation
         $logDetails = "Created new tenant: $shopName, Owner: $ownerName, Subscription: $subscriptionPlan, Status: Active";
         log_event($conn, "Create Tenant", "Tenant", (int)$tenantID, $logDetails);
         
-        header("Location: superaddtenants.php?notice=tenant_created_email_quota_exceeded");
+        header("Location: ?notice=tenant_created_email_quota_exceeded");
     } elseif ($insert && $subscriptionSynced) {
         // Log the tenant creation
         $logDetails = "Created new tenant: $shopName, Owner: $ownerName, Subscription: $subscriptionPlan, Status: Active";
         log_event($conn, "Create Tenant", "Tenant", (int)$tenantID, $logDetails);
         
-        header("Location: superaddtenants.php?notice=tenant_created_email_failed");
+        header("Location: ?notice=tenant_created_email_failed");
     } else {
-        header("Location: superaddtenants.php?notice=tenant_create_failed");
+        header("Location: ?notice=tenant_create_failed");
     }
 
     exit;
