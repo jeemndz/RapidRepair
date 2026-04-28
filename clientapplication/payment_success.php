@@ -2,11 +2,16 @@
 session_start();
 include __DIR__ . '/../db.php';
 include __DIR__ . '/../log_helper.php';
+include __DIR__ . '/paymongo/paymongo_helper.php';
 
 $tenantID = isset($_GET['tenantID']) ? (int) trim($_GET['tenantID']) : 0;
 $paymentID = isset($_GET['paymentID']) ? trim($_GET['paymentID']) : '';
+$paymentIntentID = isset($_GET['paymentIntentID']) ? trim($_GET['paymentIntentID']) : '';
 
-if ($tenantID === 0 || $paymentID === '') {
+// Use paymentIntentID if provided, otherwise use paymentID
+$transactionRef = $paymentIntentID ?: $paymentID;
+
+if ($tenantID === 0 || $transactionRef === '') {
     header('Location: clientlanding.php');
     exit();
 }
@@ -23,9 +28,36 @@ if (!$tenant) {
 
 // Get payment details
 $paymentSql = "SELECT * FROM subscription_payments WHERE transaction_reference = '" . 
-    mysqli_real_escape_string($conn, $paymentID) . "' AND tenantID = " . $tenantID . " LIMIT 1";
+    mysqli_real_escape_string($conn, $transactionRef) . "' AND tenantID = " . $tenantID . " LIMIT 1";
 $paymentResult = mysqli_query($conn, $paymentSql);
 $payment = $paymentResult ? mysqli_fetch_assoc($paymentResult) : null;
+
+// If we have a payment intent ID and no local payment record yet, verify with Paymongo
+if ($paymentIntentID && !$payment) {
+    try {
+        $gateway = initializePaymongoGateway();
+        if ($gateway) {
+            $intentResult = $gateway->retrievePaymentIntent($paymentIntentID);
+            if ($intentResult['success'] && isset($intentResult['data']['data'])) {
+                $intentData = $intentResult['data']['data'];
+                // If payment is succeeded in Paymongo, update local database
+                if ($intentData['attributes']['status'] === 'succeeded') {
+                    $updateSql = "UPDATE subscription_payments 
+                                  SET payment_status = 'paid', paid_at = NOW() 
+                                  WHERE transaction_reference = '" . 
+                                  mysqli_real_escape_string($conn, $paymentIntentID) . "' AND tenantID = " . $tenantID;
+                    mysqli_query($conn, $updateSql);
+                    
+                    // Re-fetch the updated payment record
+                    $paymentResult = mysqli_query($conn, $paymentSql);
+                    $payment = $paymentResult ? mysqli_fetch_assoc($paymentResult) : null;
+                }
+            }
+        }
+    } catch (Exception $e) {
+        error_log('Payment verification error: ' . $e->getMessage());
+    }
+}
 
 $inviteCode = $tenant['invite_code'] ?? '';
 ?>
@@ -142,7 +174,7 @@ $inviteCode = $tenant['invite_code'] ?? '';
             <div class="bg-white border border-slate-200 rounded-xl p-8 space-y-6 mb-8 shadow-md">
                 <div>
                     <p class="text-xs font-bold text-on-surface-variant uppercase tracking-tighter mb-1">Payment Reference</p>
-                    <p class="text-lg font-bold font-mono break-all"><?php echo htmlspecialchars($paymentID); ?></p>
+                    <p class="text-lg font-bold font-mono break-all"><?php echo htmlspecialchars($transactionRef); ?></p>
                 </div>
 
                 <?php if ($payment): ?>

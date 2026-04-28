@@ -69,19 +69,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             
             $description = $selectedPlan['plan_name'] . ' Plan - ' . ucfirst($billingCycle) . ' Billing';
             
-            // Create payment intent using cURL
-            $paymentIntentResult = processPaymongoPaymentIntent($conn, $tenantID, $amount, 'PHP', $description);
+            // Prepare return URLs for Paymongo hosted checkout
+            // Paymongo will append payment_intent_id to the success URL
+            $successUrl = 'https://' . $_SERVER['HTTP_HOST'] . '/clientapplication/payment_success.php?tenantID=' . urlencode($tenantID) . '&paymentIntentID=';
+            $failureUrl = 'https://' . $_SERVER['HTTP_HOST'] . '/clientapplication/clientpayment.php?tenantID=' . urlencode($tenantID);
+            
+            // Create payment intent using cURL (passing return URL for Paymongo checkout)
+            $paymentIntentResult = processPaymongoPaymentIntent($conn, $tenantID, $amount, 'PHP', $description, $successUrl);
             
             if ($paymentIntentResult['success']) {
-                // Store payment intent ID in session
+                // Store payment intent ID in session for reference
                 $_SESSION['paymongo_payment_intent_id'] = $paymentIntentResult['paymentIntentId'];
                 $_SESSION['paymongo_public_key'] = $paymentIntentResult['publicKey'];
                 $_SESSION['paymongo_cardholder'] = $cardholderName;
                 $_SESSION['paymongo_amount'] = $amount;
                 $_SESSION['paymongo_billing_cycle'] = $billingCycle;
                 
-                // Redirect to payment checkout
-                header('Location: payment_checkout.php?tenantID=' . urlencode($tenantID) . '&paymentIntentID=' . urlencode($paymentIntentResult['paymentIntentId']));
+                // Redirect to Paymongo hosted checkout page
+                $paymentIntentId = $paymentIntentResult['paymentIntentId'];
+                $checkoutUrl = 'https://checkout.paymongo.com/pay/' . $paymentIntentId . '?success_url=' . urlencode($successUrl . $paymentIntentId) . '&failed_url=' . urlencode($failureUrl);
+                
+                header('Location: ' . $checkoutUrl);
                 exit();
             } else {
                 $errors[] = $paymentIntentResult['error'] ?? 'Failed to initialize payment. Please try again.';

@@ -92,26 +92,33 @@ class PaymongoPaymentGateway
     /**
      * Create payment intent (modern endpoint)
      */
-    public function createPaymentIntent($amount, $currency, $description, $paymentMethodAllowed = null)
+    public function createPaymentIntent($amount, $currency, $description, $paymentMethodAllowed = null, $returnUrl = null)
     {
         if (!$paymentMethodAllowed) {
             $paymentMethodAllowed = ['qrph', 'brankas', 'card', 'dob', 'billease', 'gcash', 'grab_pay', 'shopee_pay', 'paymaya'];
         }
 
+        $attributes = [
+            'amount' => (int)($amount * 100), // Convert to centavos
+            'payment_method_allowed' => $paymentMethodAllowed,
+            'payment_method_options' => [
+                'card' => [
+                    'request_three_d_secure' => 'any'
+                ]
+            ],
+            'currency' => strtoupper($currency),
+            'capture_type' => 'automatic',
+            'description' => $description
+        ];
+
+        // Add return URL if provided (for hosted checkout)
+        if ($returnUrl) {
+            $attributes['return_url'] = $returnUrl;
+        }
+
         $data = [
             'data' => [
-                'attributes' => [
-                    'amount' => (int)($amount * 100), // Convert to centavos
-                    'payment_method_allowed' => $paymentMethodAllowed,
-                    'payment_method_options' => [
-                        'card' => [
-                            'request_three_d_secure' => 'any'
-                        ]
-                    ],
-                    'currency' => strtoupper($currency),
-                    'capture_type' => 'automatic',
-                    'description' => $description
-                ]
+                'attributes' => $attributes
             ]
         ];
 
@@ -225,7 +232,7 @@ function initializePaymongoGateway()
 /**
  * Process payment intent creation
  */
-function processPaymongoPaymentIntent($conn, $tenantID, $amount, $currency, $description, $email = null)
+function processPaymongoPaymentIntent($conn, $tenantID, $amount, $currency, $description, $returnUrl = null, $email = null)
 {
     try {
         $gateway = initializePaymongoGateway();
@@ -240,12 +247,13 @@ function processPaymongoPaymentIntent($conn, $tenantID, $amount, $currency, $des
             ];
         }
 
-        // Create payment intent
+        // Create payment intent with return URL for hosted checkout
         $result = $gateway->createPaymentIntent(
             $amount,
             $currency,
             $description,
-            ['qrph', 'brankas', 'card', 'dob', 'billease', 'gcash', 'grab_pay', 'shopee_pay', 'paymaya']
+            ['qrph', 'brankas', 'card', 'dob', 'billease', 'gcash', 'grab_pay', 'shopee_pay', 'paymaya'],
+            $returnUrl
         );
 
         if (!$result['success'] || !isset($result['data']['data']['id'])) {
