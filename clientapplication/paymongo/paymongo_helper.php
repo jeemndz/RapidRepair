@@ -267,31 +267,12 @@ function processPaymongoPaymentIntent($conn, $tenantID, $amount, $currency, $des
 
         $paymentIntentId = $result['data']['data']['id'];
 
-        // Get plan_id from plan code - application determines this
-        $planId = null;
-        if ($planCode) {
-            $planQuery = "SELECT plan_id FROM subscription_plans WHERE plan_code = '" . mysqli_real_escape_string($conn, $planCode) . "' LIMIT 1";
-            $planResult = mysqli_query($conn, $planQuery);
-            if ($planResult && mysqli_num_rows($planResult) > 0) {
-                $plan = mysqli_fetch_assoc($planResult);
-                $planId = $plan['plan_id'];
-            }
-        }
-
-        // Store initial payment record with plan_id from application logic
-        if ($planId) {
-            $insertSql = "INSERT INTO subscription_payments 
-                          (tenantID, plan_id, amount, payment_method, payment_status, transaction_reference, created_at)
-                          VALUES 
-                          (" . (int)$tenantID . ", " . (int)$planId . ", " . (float)$amount . ", 'card', 'pending', '" . 
-                          mysqli_real_escape_string($conn, $paymentIntentId) . "', NOW())";
-        } else {
-            $insertSql = "INSERT INTO subscription_payments 
-                          (tenantID, amount, payment_method, payment_status, transaction_reference, created_at)
-                          VALUES 
-                          (" . (int)$tenantID . ", " . (float)$amount . ", 'card', 'pending', '" . 
-                          mysqli_real_escape_string($conn, $paymentIntentId) . "', NOW())";
-        }
+        // Store initial payment record - don't require plan_id to have default
+        $insertSql = "INSERT INTO subscription_payments 
+                      (tenantID, amount, payment_method, payment_status, transaction_reference, created_at)
+                      VALUES 
+                      (" . (int)$tenantID . ", " . (float)$amount . ", 'card', 'pending', '" . 
+                      mysqli_real_escape_string($conn, $paymentIntentId) . "', NOW())";
 
         if (!mysqli_query($conn, $insertSql)) {
             error_log('Database error: ' . mysqli_error($conn));
