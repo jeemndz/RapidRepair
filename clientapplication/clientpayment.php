@@ -307,6 +307,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         <?php foreach ($errors as $error): ?>
                             <div><?php echo htmlspecialchars($error); ?></div>
                         <?php endforeach; ?>
+                        <?php if (in_array('Failed to initialize payment. Please try again.', $errors)): ?>
+                            <div style="margin-top: 8px; font-size: 0.85em; opacity: 0.9;">
+                                <small><strong>Debug:</strong> If this persists, check that Paymongo credentials are configured in Azure App Service settings. <a href="debug_paymongo.php" target="_blank" style="color: inherit; text-decoration: underline;">Debug credentials</a></small>
+                            </div>
+                        <?php endif; ?>
                     </div>
                 </div>
             </div>

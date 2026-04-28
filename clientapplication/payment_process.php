@@ -41,7 +41,8 @@ try {
     // Initialize Paymongo gateway
     $gateway = initializePaymongoGateway();
     if (!$gateway) {
-        throw new Exception('Failed to initialize payment gateway');
+        error_log('Payment processing failed: Could not initialize gateway. Public key: ' . (getenv('PAYMONGO_PUBLIC_KEY') ? 'present' : 'missing') . ', Secret key: ' . (getenv('PAYMONGO_SECRET_KEY') ? 'present' : 'missing'));
+        throw new Exception('Payment gateway not properly configured. Contact support.');
     }
 
     // Create payment method from card

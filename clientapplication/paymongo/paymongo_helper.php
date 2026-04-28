@@ -191,14 +191,31 @@ class PaymongoPaymentGateway
 
 /**
  * Initialize Paymongo Gateway with credentials from Azure App Service Configuration
+ * Tries multiple methods to access environment variables for compatibility
  */
 function initializePaymongoGateway()
 {
+    // Try getenv() first (standard PHP method)
     $publicKey = getenv('PAYMONGO_PUBLIC_KEY');
     $secretKey = getenv('PAYMONGO_SECRET_KEY');
+    
+    // Fallback to $_ENV if getenv() fails
+    if (!$publicKey || !$secretKey) {
+        $publicKey = $_ENV['PAYMONGO_PUBLIC_KEY'] ?? $publicKey;
+        $secretKey = $_ENV['PAYMONGO_SECRET_KEY'] ?? $secretKey;
+    }
+    
+    // Fallback to $_SERVER if $_ENV fails
+    if (!$publicKey || !$secretKey) {
+        $publicKey = $_SERVER['PAYMONGO_PUBLIC_KEY'] ?? $publicKey;
+        $secretKey = $_SERVER['PAYMONGO_SECRET_KEY'] ?? $secretKey;
+    }
 
     if (!$publicKey || !$secretKey) {
-        error_log('Paymongo credentials not found in environment');
+        error_log('Paymongo credentials not found in environment. Tried: getenv(), $_ENV, $_SERVER');
+        error_log('Available $_SERVER keys: ' . implode(', ', array_filter(array_keys($_SERVER), function($key) {
+            return strpos($key, 'PAYMONGO') !== false;
+        })));
         return null;
     }
 
@@ -214,9 +231,12 @@ function processPaymongoPaymentIntent($conn, $tenantID, $amount, $currency, $des
         $gateway = initializePaymongoGateway();
         
         if (!$gateway) {
+            error_log('Payment intent creation failed: Could not initialize Paymongo gateway');
+            error_log('Public Key available: ' . (getenv('PAYMONGO_PUBLIC_KEY') ? 'Yes' : 'No'));
+            error_log('Secret Key available: ' . (getenv('PAYMONGO_SECRET_KEY') ? 'Yes' : 'No'));
             return [
                 'success' => false,
-                'error' => 'Failed to initialize Paymongo gateway'
+                'error' => 'Failed to initialize Paymongo gateway. Please ensure API credentials are configured.'
             ];
         }
 
