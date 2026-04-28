@@ -148,7 +148,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                         class="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-3.5 rounded-lg transition-all flex items-center justify-center gap-2 shadow-lg hover:shadow-red-600/20 active:scale-[0.98]"
                     >
                         <span class="material-symbols-outlined text-xl">login</span>
-                        Sign In as Superadmin
+                        Log in 
                     </button>
                 </form>
 
