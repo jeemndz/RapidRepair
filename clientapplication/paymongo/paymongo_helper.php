@@ -262,7 +262,7 @@ function processPaymongoPaymentIntent($conn, $tenantID, $amount, $currency, $des
         $insertSql = "INSERT INTO subscription_payments 
                       (tenantID, amount, payment_method, payment_status, transaction_reference, created_at)
                       VALUES 
-                      (" . (int)$tenantID . ", " . (float)$amount . ", 'paymongo', 'pending', '" . 
+                      (" . (int)$tenantID . ", " . (float)$amount . ", 'card', 'pending', '" . 
                       mysqli_real_escape_string($conn, $paymentIntentId) . "', NOW())";
 
         if (!mysqli_query($conn, $insertSql)) {
