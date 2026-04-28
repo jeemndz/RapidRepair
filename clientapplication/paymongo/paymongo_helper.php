@@ -231,8 +231,9 @@ function initializePaymongoGateway()
 
 /**
  * Process payment intent creation
+ * @param $planCode string Plan code to look up subscription_id from application
  */
-function processPaymongoPaymentIntent($conn, $tenantID, $amount, $currency, $description, $returnUrl = null, $email = null)
+function processPaymongoPaymentIntent($conn, $tenantID, $amount, $currency, $description, $returnUrl = null, $planCode = null)
 {
     try {
         $gateway = initializePaymongoGateway();
@@ -266,15 +267,38 @@ function processPaymongoPaymentIntent($conn, $tenantID, $amount, $currency, $des
 
         $paymentIntentId = $result['data']['data']['id'];
 
-        // Store initial payment record
-        $insertSql = "INSERT INTO subscription_payments 
-                      (tenantID, amount, payment_method, payment_status, transaction_reference, created_at)
-                      VALUES 
-                      (" . (int)$tenantID . ", " . (float)$amount . ", 'card', 'pending', '" . 
-                      mysqli_real_escape_string($conn, $paymentIntentId) . "', NOW())";
+        // Get subscription ID from plan code - application determines this
+        $subscriptionId = null;
+        if ($planCode) {
+            $planQuery = "SELECT plan_id FROM subscription_plans WHERE plan_code = '" . mysqli_real_escape_string($conn, $planCode) . "' LIMIT 1";
+            $planResult = mysqli_query($conn, $planQuery);
+            if ($planResult && mysqli_num_rows($planResult) > 0) {
+                $plan = mysqli_fetch_assoc($planResult);
+                $subscriptionId = $plan['plan_id'];
+            }
+        }
+
+        // Store initial payment record with subscription_id from application logic
+        if ($subscriptionId) {
+            $insertSql = "INSERT INTO subscription_payments 
+                          (tenantID, subscription_id, amount, payment_method, payment_status, transaction_reference, created_at)
+                          VALUES 
+                          (" . (int)$tenantID . ", " . (int)$subscriptionId . ", " . (float)$amount . ", 'card', 'pending', '" . 
+                          mysqli_real_escape_string($conn, $paymentIntentId) . "', NOW())";
+        } else {
+            $insertSql = "INSERT INTO subscription_payments 
+                          (tenantID, amount, payment_method, payment_status, transaction_reference, created_at)
+                          VALUES 
+                          (" . (int)$tenantID . ", " . (float)$amount . ", 'card', 'pending', '" . 
+                          mysqli_real_escape_string($conn, $paymentIntentId) . "', NOW())";
+        }
 
         if (!mysqli_query($conn, $insertSql)) {
             error_log('Database error: ' . mysqli_error($conn));
+            return [
+                'success' => false,
+                'error' => 'Failed to store payment record: ' . mysqli_error($conn)
+            ];
         }
 
         return [

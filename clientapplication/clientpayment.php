@@ -39,7 +39,6 @@ if (!$selectedPlan) {
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (isset($_POST['processPayment'])) {
         // Initial payment form submission to create payment intent
-        $cardholderName = trim($_POST['cardholderName'] ?? '');
         $selectedPlanCodeFromForm = isset($_POST['selectedPlanCode']) ? strtolower(trim($_POST['selectedPlanCode'])) : '';
         $billingCycleFromForm = isset($_POST['billingCycle']) ? strtolower(trim($_POST['billingCycle'])) : 'monthly';
         
@@ -52,12 +51,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         $billingCycle = $billingCycleFromForm;
         
-        // Validation
-        if ($cardholderName === '' || strlen($cardholderName) < 2) {
-            $errors[] = 'Valid cardholder name is required (at least 2 characters).';
-        }
-        
-        if (count($errors) === 0 && $tenant) {
+        if ($tenant) {
             // Calculate amount based on billing cycle
             $amount = $selectedPlan['monthly_price'];
             
@@ -74,14 +68,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $successUrl = 'https://' . $_SERVER['HTTP_HOST'] . '/clientapplication/payment_success.php?tenantID=' . urlencode($tenantID) . '&paymentIntentID=';
             $failureUrl = 'https://' . $_SERVER['HTTP_HOST'] . '/clientapplication/clientpayment.php?tenantID=' . urlencode($tenantID);
             
-            // Create payment intent using cURL (passing return URL for Paymongo checkout)
-            $paymentIntentResult = processPaymongoPaymentIntent($conn, $tenantID, $amount, 'PHP', $description, $successUrl);
+            // Create payment intent with plan code to get subscription_id from application
+            $paymentIntentResult = processPaymongoPaymentIntent($conn, $tenantID, $amount, 'PHP', $description, $successUrl, $selectedPlan['plan_code']);
             
             if ($paymentIntentResult['success']) {
                 // Store payment intent ID in session for reference
                 $_SESSION['paymongo_payment_intent_id'] = $paymentIntentResult['paymentIntentId'];
                 $_SESSION['paymongo_public_key'] = $paymentIntentResult['publicKey'];
-                $_SESSION['paymongo_cardholder'] = $cardholderName;
                 $_SESSION['paymongo_amount'] = $amount;
                 $_SESSION['paymongo_billing_cycle'] = $billingCycle;
                 
@@ -195,19 +188,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     e.preventDefault();
                     
                     const form = document.querySelector('form');
-                    const cardholderName = document.querySelector('input[name="cardholderName"]').value.trim();
                     const errorDiv = document.getElementById('payment-error');
-
-                    // Validation
-                    if (!cardholderName || cardholderName.length < 2) {
-                        errorDiv.textContent = 'Please enter a valid cardholder name (at least 2 characters)';
-                        return;
-                    }
+                    errorDiv.textContent = '';
 
                     // Disable button during processing
                     paymentButton.disabled = true;
                     paymentButton.textContent = 'Processing...';
-                    errorDiv.textContent = '';
 
                     // Submit form to create payment intent
                     form.submit();
@@ -397,18 +383,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         <input type="hidden" id="selectedPlanCode" name="selectedPlanCode" value="<?php echo htmlspecialchars($selectedPlan['plan_code']); ?>" />
                         <input type="hidden" name="billingCycle" value="<?php echo htmlspecialchars($billingCycle); ?>" />
 
-                        <!-- Cardholder Name -->
-                        <div class="space-y-2">
-                            <label class="block text-xs font-bold text-on-surface-variant uppercase tracking-tighter">Cardholder Name</label>
-                            <input type="text" name="cardholderName" required
-                                class="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-3 text-sm focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all placeholder:text-slate-400"
-                                placeholder="Full legal name" />
-                        </div>
-
                         <div id="payment-error" class="text-red-600 text-sm"></div>
 
                         <div class="pt-4 border-t border-slate-200">
-                            <button type="button" id="paymentButton"
+                            <button type="submit" id="paymentButton"
                                 class="w-full py-4 bg-primary text-white text-sm font-black uppercase tracking-widest rounded-lg shadow-lg hover:shadow-primary/20 hover:brightness-110 transition-all flex items-center justify-center gap-2">
                                 Complete Payment with Paymongo
                                 <span class="material-symbols-outlined" data-icon="arrow_forward">arrow_forward</span>
