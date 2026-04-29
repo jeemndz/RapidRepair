@@ -22,6 +22,7 @@ $payload = [
             "show_description" => true,
             "show_line_items" => true,
             "description" => "Tenant ID: " . $tenantId,
+
             "payment_method_types" => [
                 "card",
                 "gcash",
@@ -29,6 +30,7 @@ $payload = [
                 "grab_pay",
                 "qrph"
             ],
+
             "line_items" => [
                 [
                     "currency" => "PHP",
@@ -38,8 +40,10 @@ $payload = [
                     "quantity" => 1
                 ]
             ],
-            "success_url" => "http://localhost/RapidRepair/clientapplication/paymongo/payment_success.php",
-            "cancel_url" => "http://localhost/RapidRepair/clientapplication/paymongo/payment_failed.php"
+
+            // ✅ USE BASE_URL (AUTO LOCAL/AZURE)
+            "success_url" => $BASE_URL . "/payment_success.php",
+            "cancel_url"  => $BASE_URL . "/payment_failed.php"
         ]
     ]
 ];
@@ -54,7 +58,7 @@ curl_setopt_array($curl, [
     CURLOPT_HTTPHEADER => [
         "accept: application/json",
         "content-type: application/json",
-        "authorization: Basic " . base64_encode($PAYMONGO_SECRET_KEY . ":")
+        "authorization: " . "Basic " . base64_encode($PAYMONGO_SECRET_KEY . ":")
     ],
 ]);
 
@@ -71,6 +75,7 @@ $result = json_decode($response, true);
 $checkoutSessionId = $result["data"]["id"] ?? null;
 $checkoutUrl = $result["data"]["attributes"]["checkout_url"] ?? null;
 
+// ✅ SAVE SESSION DATA
 if ($checkoutSessionId) {
     $_SESSION["checkout_session_id"] = $checkoutSessionId;
     $_SESSION["amount"] = $amount;
@@ -81,11 +86,13 @@ if ($checkoutSessionId) {
     $_SESSION["customer_phone"] = $phone;
 }
 
+// ✅ REDIRECT TO PAYMONGO CHECKOUT
 if ($checkoutUrl) {
     header("Location: " . $checkoutUrl);
     exit;
 }
 
+// ❌ DEBUG OUTPUT
 echo "<pre>";
 print_r($result);
 echo "</pre>";
