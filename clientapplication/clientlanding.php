@@ -678,7 +678,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['createTenantApplicati
                             </div>
                             <button
                                 class="w-full bg-primary text-white font-bold py-4 rounded-lg tracking-tight hover:bg-primary/90 transition-all mt-4"
-                                type="submit">Complete Registration</button>
+                                type="submit">Submit Application</button>
                         </fieldset>
                     </form>
                 </div>

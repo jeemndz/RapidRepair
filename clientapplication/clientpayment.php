@@ -1,19 +1,21 @@
 <?php
 session_start();
+
 include __DIR__ . "/../db.php";
-include __DIR__ . "/paymongo/paymongo_helper.php";
 include __DIR__ . "/client_helpers.php";
 
 $errors = [];
 $successMessage = "";
+
 $tenantID = isset($_GET['tenantID']) ? (int) trim($_GET['tenantID']) : 0;
 $selectedPlanCode = isset($_GET['plan']) ? strtolower(trim($_GET['plan'])) : '';
 $billingCycle = isset($_GET['billingCycle']) ? strtolower(trim($_GET['billingCycle'])) : 'monthly';
 
-// Verify tenant exists
 $tenant = null;
+
 if ($tenantID !== 0) {
     $tenant = getTenantDetails($conn, $tenantID);
+
     if (!$tenant) {
         $errors[] = 'Tenant not found. Please complete registration first.';
     }
@@ -21,225 +23,143 @@ if ($tenantID !== 0) {
     $errors[] = 'Invalid tenant information. Please register first.';
 }
 
-// Load subscription plans
 $subscriptionPlans = loadSubscriptionPlans($conn);
 
-// Find selected plan
+if (!$subscriptionPlans || count($subscriptionPlans) === 0) {
+    $errors[] = 'No subscription plans found.';
+    $subscriptionPlans = [];
+}
+
 $selectedPlan = null;
+
 if ($selectedPlanCode !== '') {
     $selectedPlan = getPlanByCode($conn, $selectedPlanCode);
 }
 
-// Default to first plan if none selected
-if (!$selectedPlan) {
+if (!$selectedPlan && count($subscriptionPlans) > 0) {
     $selectedPlan = $subscriptionPlans[0];
 }
 
-// Handle payment form submission
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    if (isset($_POST['processPayment'])) {
-        // Initial payment form submission to create payment intent
-        $selectedPlanCodeFromForm = isset($_POST['selectedPlanCode']) ? strtolower(trim($_POST['selectedPlanCode'])) : '';
-        $billingCycleFromForm = isset($_POST['billingCycle']) ? strtolower(trim($_POST['billingCycle'])) : 'monthly';
-        
-        // Re-fetch the selected plan from form submission
-        if ($selectedPlanCodeFromForm !== '') {
-            $selectedPlan = getPlanByCode($conn, $selectedPlanCodeFromForm);
-            if (!$selectedPlan) {
-                $selectedPlan = $subscriptionPlans[0];
-            }
-        }
-        $billingCycle = $billingCycleFromForm;
-        
-        if ($tenant) {
-            // Calculate amount based on billing cycle
-            $amount = $selectedPlan['monthly_price'];
-            
-            if ($billingCycle === 'quarterly') {
-                $amount = $amount * 3;
-            } else if ($billingCycle === 'yearly') {
-                $amount = $amount * 12;
-            }
-            
-            $description = $selectedPlan['plan_name'] . ' Plan - ' . ucfirst($billingCycle) . ' Billing';
-            
-            // Prepare return URLs for Paymongo hosted checkout
-            // Paymongo will append payment_intent_id to the success URL
-            $successUrl = 'https://' . $_SERVER['HTTP_HOST'] . '/clientapplication/payment_success.php?tenantID=' . urlencode($tenantID) . '&paymentIntentID=';
-            $failureUrl = 'https://' . $_SERVER['HTTP_HOST'] . '/clientapplication/clientpayment.php?tenantID=' . urlencode($tenantID);
-            
-            // Create payment intent with plan code to get subscription_id from application
-            $paymentIntentResult = processPaymongoPaymentIntent($conn, $tenantID, $amount, 'PHP', $description, $successUrl, $selectedPlan['plan_code']);
-            
-            if ($paymentIntentResult['success']) {
-                // Store payment intent ID in session for reference
-                $_SESSION['paymongo_payment_intent_id'] = $paymentIntentResult['paymentIntentId'];
-                $_SESSION['paymongo_public_key'] = $paymentIntentResult['publicKey'];
-                $_SESSION['paymongo_amount'] = $amount;
-                $_SESSION['paymongo_billing_cycle'] = $billingCycle;
-                
-                // Redirect to Paymongo hosted checkout page
-                $paymentIntentId = $paymentIntentResult['paymentIntentId'];
-                $checkoutUrl = 'https://checkout.paymongo.com/pay/' . $paymentIntentId . '?success_url=' . urlencode($successUrl . $paymentIntentId) . '&failed_url=' . urlencode($failureUrl);
-                
-                header('Location: ' . $checkoutUrl);
-                exit();
-            } else {
-                $errors[] = $paymentIntentResult['error'] ?? 'Failed to initialize payment. Please try again.';
-            }
-        }
-    }
-}
-?>
-<!DOCTYPE html>
+function calculatePlanAmount($monthlyPrice, $billingCycle)
+{
+    $amount = (float) $monthlyPrice;
 
+    if ($billingCycle === 'quarterly') {
+        $amount *= 3;
+    } elseif ($billingCycle === 'yearly') {
+        $amount *= 12;
+    }
+
+    return $amount;
+}
+
+$displayAmount = $selectedPlan ? calculatePlanAmount($selectedPlan['monthly_price'], $billingCycle) : 0;
+$checkoutAmountCentavos = (int) round($displayAmount * 100);
+?>
+
+<!DOCTYPE html>
 <html class="light" lang="en">
 
 <head>
     <meta charset="utf-8" />
     <meta content="width=device-width, initial-scale=1.0" name="viewport" />
     <title>Complete Payment | RapidRepairCo.</title>
+
     <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
-    <link
-        href="https://fonts.googleapis.com/css2?family=Inter:wght@100;200;300;400;500;600;700;800;900&amp;display=swap"
+
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@100;200;300;400;500;600;700;800;900&display=swap"
         rel="stylesheet" />
-    <link
-        href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap"
+
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap"
         rel="stylesheet" />
-    <link
-        href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap"
-        rel="stylesheet" />
+
     <script id="tailwind-config">
         tailwind.config = {
             darkMode: "class",
             theme: {
                 extend: {
-                    "colors": {
-                        "secondary-fixed-dim": "#cbd5e1",
-                        "on-tertiary-fixed-variant": "#9a3412",
-                        "on-secondary-fixed": "#0f172a",
+                    colors: {
+                        "primary-fixed-dim": "#bfdbfe",
                         "primary-fixed": "#dbeafe",
                         "outline": "#e2e8f0",
-                        "on-secondary": "#ffffff",
-                        "surface-container": "#ffffff",
-                        "on-error-container": "#991b1b",
-                        "secondary-fixed": "#e2e8f0",
-                        "surface-container-highest": "#ffffff",
-                        "tertiary-container": "#fef3c7",
-                        "on-secondary-container": "#1e293b",
-                        "primary-fixed-dim": "#bfdbfe",
                         "on-primary": "#ffffff",
-                        "surface-container-low": "#ffffff",
-                        "on-tertiary-fixed": "#7c2d12",
-                        "on-secondary-fixed-variant": "#334155",
-                        "outline-variant": "#cbd5e1",
-                        "error-container": "#fee2e2",
                         "background": "#f6f6f8",
-                        "surface-bright": "#ffffff",
                         "surface": "#f6f6f8",
-                        "on-tertiary-container": "#92400e",
-                        "surface-container-lowest": "#ffffff",
-                        "on-primary-fixed": "#1e3a8a",
-                        "on-primary-fixed-variant": "#1d4ed8",
-                        "inverse-on-surface": "#f8fafc",
-                        "tertiary-fixed": "#ffedd5",
                         "on-primary-container": "#1152d4",
-                        "on-error": "#ffffff",
-                        "inverse-primary": "#b4c5ff",
-                        "surface-container-high": "#ffffff",
                         "on-background": "#0f172a",
-                        "inverse-surface": "#1e293b",
-                        "surface-variant": "#f1f5f9",
-                        "secondary": "#475569",
-                        "error": "#ef4444",
-                        "secondary-container": "#f1f5f9",
                         "primary-container": "#eef2ff",
-                        "on-tertiary": "#ffffff",
                         "surface-tint": "#1152d4",
-                        "tertiary": "#f59e0b",
-                        "surface-dim": "#d9d9e4",
-                        "on-surface-variant": "#64748b",
-                        "tertiary-fixed-dim": "#fed7aa",
                         "primary": "#1152d4",
-                        "on-surface": "#0f172a"
+                        "on-surface": "#0f172a",
+                        "on-surface-variant": "#64748b"
                     },
-                    "borderRadius": {
-                        "DEFAULT": "0.125rem",
-                        "lg": "0.25rem",
-                        "xl": "0.5rem",
-                        "full": "0.75rem"
+                    borderRadius: {
+                        DEFAULT: "0.125rem",
+                        lg: "0.25rem",
+                        xl: "0.5rem",
+                        full: "0.75rem"
                     },
-                    "fontFamily": {
-                        "headline": ["Inter"],
-                        "body": ["Inter"],
-                        "label": ["Inter"]
+                    fontFamily: {
+                        headline: ["Inter"],
+                        body: ["Inter"],
+                        label: ["Inter"]
                     }
-                },
-            },
+                }
+            }
         }
     </script>
-    <script>
-        // Simple payment form handler
-        document.addEventListener('DOMContentLoaded', function() {
-            const paymentButton = document.getElementById('paymentButton');
-            
-            if (paymentButton) {
-                paymentButton.addEventListener('click', function(e) {
-                    e.preventDefault();
-                    
-                    const form = document.querySelector('form');
-                    const errorDiv = document.getElementById('payment-error');
-                    errorDiv.textContent = '';
 
-                    // Disable button during processing
-                    paymentButton.disabled = true;
-                    paymentButton.textContent = 'Processing...';
-
-                    // Submit form to create payment intent
-                    form.submit();
-                });
-            }
-        });
-    </script>
     <script>
-        // Plans data from PHP
-        const plansData = <?php echo json_encode(array_map(function($plan) {
+        const plansData = <?php echo json_encode(array_map(function ($plan) {
             return [
                 'plan_id' => $plan['plan_id'],
                 'plan_code' => $plan['plan_code'],
                 'plan_name' => $plan['plan_name'],
-                'monthly_price' => (float)$plan['monthly_price'],
-                'description' => isset($plan['description']) ? $plan['description'] : ''
+                'monthly_price' => (float) $plan['monthly_price'],
+                'description' => $plan['description'] ?? ''
             ];
         }, $subscriptionPlans)); ?>;
 
-        function updatePaymentMethodFields() {
-            // For Paymongo, only card is available
-            const cardFields = document.getElementById('cardFields');
-            if (cardFields) {
-                cardFields.style.display = 'block';
+        let currentBillingCycle = "<?php echo htmlspecialchars($billingCycle); ?>";
+
+        function calculateAmount(monthlyPrice, billingCycle) {
+            let amount = parseFloat(monthlyPrice);
+
+            if (billingCycle === 'quarterly') {
+                amount *= 3;
+            } else if (billingCycle === 'yearly') {
+                amount *= 12;
             }
+
+            return amount;
+        }
+
+        function formatPeso(amount) {
+            return '₱' + amount.toFixed(2);
         }
 
         function updateSelectedPlan(planCode) {
-            // Find the plan in our data
             const plan = plansData.find(p => p.plan_code.toLowerCase() === planCode.toLowerCase());
             if (!plan) return;
 
-            // Update the hidden input
-            document.getElementById('selectedPlanCode').value = plan.plan_code;
+            const amount = calculateAmount(plan.monthly_price, currentBillingCycle);
 
-            // Update display
+            document.getElementById('selectedPlanCode').value = plan.plan_code;
+            document.getElementById('checkoutPlanName').value = plan.plan_name + ' Plan - ' + currentBillingCycle.charAt(0).toUpperCase() + currentBillingCycle.slice(1) + ' Billing';
+            document.getElementById('checkoutAmount').value = Math.round(amount * 100);
+
             document.getElementById('planCodeDisplay').textContent = plan.plan_code;
             document.getElementById('planNameDisplay').textContent = plan.plan_name + ' Plan';
-            document.getElementById('planPriceDisplay').textContent = '₱' + plan.monthly_price.toFixed(2);
-            document.getElementById('orderSummaryPrice').textContent = '₱' + plan.monthly_price.toFixed(2);
-            document.getElementById('subtotalPrice').textContent = '₱' + plan.monthly_price.toFixed(2);
-            document.getElementById('totalPrice').textContent = '₱' + plan.monthly_price.toFixed(2);
+            document.getElementById('planPriceDisplay').textContent = formatPeso(amount);
+            document.getElementById('orderSummaryPlanName').textContent = plan.plan_name + ' Plan';
+            document.getElementById('orderSummaryPrice').textContent = formatPeso(amount);
+            document.getElementById('subtotalPrice').textContent = formatPeso(amount);
+            document.getElementById('totalPrice').textContent = formatPeso(amount);
+            document.getElementById('billingCycleDisplay').textContent = currentBillingCycle;
 
-            // Update plan selector cards if they exist
             document.querySelectorAll('[data-plan-card]').forEach(card => {
                 const cardPlanCode = card.dataset.planCard.toLowerCase();
+
                 if (cardPlanCode === planCode.toLowerCase()) {
                     card.classList.remove('border-slate-200', 'hover:border-primary');
                     card.classList.add('border-2', 'border-primary', 'bg-primary-fixed');
@@ -249,7 +169,37 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
             });
         }
+
+        function updateBillingCycle(cycle, button) {
+            currentBillingCycle = cycle;
+
+            document.getElementById('billingCycleInput').value = cycle;
+
+            button.parentElement.querySelectorAll('button').forEach(b => {
+                b.classList.remove('border-primary', 'bg-primary-fixed', 'text-primary');
+                b.classList.add('border-slate-200', 'text-on-surface-variant');
+            });
+
+            button.classList.remove('border-slate-200', 'text-on-surface-variant');
+            button.classList.add('border-primary', 'bg-primary-fixed', 'text-primary');
+
+            const selectedPlanCode = document.getElementById('selectedPlanCode').value;
+            updateSelectedPlan(selectedPlanCode);
+        }
+
+        document.addEventListener('DOMContentLoaded', function () {
+            const paymentForm = document.getElementById('paymentForm');
+            const paymentButton = document.getElementById('paymentButton');
+
+            if (paymentForm && paymentButton) {
+                paymentForm.addEventListener('submit', function () {
+                    paymentButton.disabled = true;
+                    paymentButton.innerHTML = 'Processing...';
+                });
+            }
+        });
     </script>
+
     <style>
         body {
             font-family: 'Inter', sans-serif;
@@ -258,30 +208,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         .material-symbols-outlined {
             font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
         }
-
-        .architectural-gradient {
-            background: linear-gradient(180deg, rgba(17, 82, 212, 0.05) 0%, rgba(17, 82, 212, 0) 100%);
-        }
     </style>
 </head>
 
 <body class="bg-background text-on-background min-h-screen flex flex-col">
-    <!-- TopNavBar -->
+
     <nav
-        class="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-none flex justify-between items-center w-full px-8 h-16 max-w-full font-['Inter'] tracking-tight fixed top-0 z-50">
-        <div class="text-xl font-black text-primary dark:text-blue-500 uppercase">RapidRepairCo.</div>
+        class="bg-white border-b border-slate-200 shadow-sm flex justify-between items-center w-full px-8 h-16 max-w-full font-['Inter'] tracking-tight fixed top-0 z-50">
+        <div class="text-xl font-black text-primary uppercase">RapidRepairCo.</div>
+
         <div class="hidden md:flex items-center space-x-8">
-            <span class="text-slate-600 dark:text-slate-400 font-medium">Payment Setup</span>
+            <span class="text-slate-600 font-medium">Payment Setup</span>
         </div>
+
         <div class="flex items-center gap-4">
-            <a href="clientlanding.php" class="text-slate-600 dark:text-slate-400 font-medium hover:text-primary transition-colors">Back</a>
+            <a href="clientlanding.php" class="text-slate-600 font-medium hover:text-primary transition-colors">Back</a>
         </div>
     </nav>
+
     <main class="mt-16 flex-grow flex flex-col items-center px-4 md:px-8 py-12 max-w-7xl mx-auto w-full">
-        <!-- Header -->
+
         <header class="w-full mb-12 text-center md:text-left">
             <h1 class="text-[30px] font-black text-on-background tracking-tight mb-2">Complete Your Payment</h1>
-            <p class="text-on-surface-variant text-sm font-medium">Select your subscription plan and provide payment details. After submission, your application will be reviewed by our team.</p>
+            <p class="text-on-surface-variant text-sm font-medium">
+                Select your subscription plan and proceed to secure PayMongo checkout.
+            </p>
         </header>
 
         <?php if ($successMessage !== ''): ?>
@@ -301,172 +252,269 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         <?php foreach ($errors as $error): ?>
                             <div><?php echo htmlspecialchars($error); ?></div>
                         <?php endforeach; ?>
-                        <?php if (in_array('Failed to initialize payment. Please try again.', $errors)): ?>
-                            <div style="margin-top: 8px; font-size: 0.85em; opacity: 0.9;">
-                                <small><strong>Debug:</strong> If this persists, check that Paymongo credentials are configured in Azure App Service settings. <a href="debug_paymongo.php" target="_blank" style="color: inherit; text-decoration: underline;">Debug credentials</a></small>
-                            </div>
-                        <?php endif; ?>
                     </div>
                 </div>
             </div>
         <?php endif; ?>
 
-        <div class="grid grid-cols-1 lg:grid-cols-12 gap-8 w-full">
-            <!-- Plan Selection & Payment (LHS) -->
-            <div class="lg:col-span-8 space-y-8">
-                <!-- Plan Selection -->
-                <section class="space-y-6">
-                    <div class="flex items-center gap-2 mb-4">
-                        <span class="material-symbols-outlined text-primary" data-icon="layers">layers</span>
-                        <h2 class="text-2xl font-bold tracking-tight">Choose Your Plan</h2>
-                    </div>
-                    
-                    <!-- Plan Cards Grid -->
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <?php foreach ($subscriptionPlans as $plan): ?>
-                            <div 
-                                class="plan-card p-6 border-2 rounded-lg transition-all cursor-pointer <?php echo strtolower($selectedPlan['plan_code']) === strtolower($plan['plan_code']) ? 'border-primary bg-primary-fixed' : 'border-slate-200 hover:border-primary'; ?>"
-                                data-plan-card="<?php echo htmlspecialchars($plan['plan_code']); ?>"
-                                onclick="updateSelectedPlan('<?php echo htmlspecialchars($plan['plan_code']); ?>')">
-                                <div class="mb-3">
-                                    <span class="text-xs font-bold uppercase tracking-widest text-primary"><?php echo htmlspecialchars($plan['plan_code']); ?></span>
-                                    <h3 class="text-lg font-bold mt-2"><?php echo htmlspecialchars($plan['plan_name']); ?></h3>
+        <?php if ($selectedPlan): ?>
+
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-8 w-full">
+
+                <div class="lg:col-span-8 space-y-8">
+
+                    <section class="space-y-6">
+                        <div class="flex items-center gap-2 mb-4">
+                            <span class="material-symbols-outlined text-primary">layers</span>
+                            <h2 class="text-2xl font-bold tracking-tight">Choose Your Plan</h2>
+                        </div>
+
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <?php foreach ($subscriptionPlans as $plan): ?>
+                                <div class="plan-card p-6 border-2 rounded-lg transition-all cursor-pointer <?php echo strtolower($selectedPlan['plan_code']) === strtolower($plan['plan_code']) ? 'border-primary bg-primary-fixed' : 'border-slate-200 hover:border-primary'; ?>"
+                                    data-plan-card="<?php echo htmlspecialchars($plan['plan_code']); ?>"
+                                    onclick="updateSelectedPlan('<?php echo htmlspecialchars($plan['plan_code']); ?>')">
+
+                                    <div class="mb-3">
+                                        <span class="text-xs font-bold uppercase tracking-widest text-primary">
+                                            <?php echo htmlspecialchars($plan['plan_code']); ?>
+                                        </span>
+
+                                        <h3 class="text-lg font-bold mt-2">
+                                            <?php echo htmlspecialchars($plan['plan_name']); ?>
+                                        </h3>
+                                    </div>
+
+                                    <div class="mb-4">
+                                        <span class="text-2xl font-black">
+                                            ₱<?php echo number_format($plan['monthly_price'], 2); ?>
+                                        </span>
+                                        <span class="text-sm text-on-surface-variant">/month</span>
+                                    </div>
                                 </div>
-                                <div class="mb-4">
-                                    <span class="text-2xl font-black">₱<?php echo number_format($plan['monthly_price'], 2); ?></span>
-                                    <span class="text-sm text-on-surface-variant">/month</span>
+                            <?php endforeach; ?>
+                        </div>
+                    </section>
+
+                    <section class="bg-white border-2 border-primary rounded-xl p-8 shadow-md">
+                        <h3 class="text-lg font-bold mb-4">Your Selected Plan</h3>
+
+                        <div class="mb-6">
+                            <span class="text-xs font-bold uppercase tracking-widest text-primary" id="planCodeDisplay">
+                                <?php echo htmlspecialchars($selectedPlan['plan_code']); ?>
+                            </span>
+
+                            <div class="mt-3 flex items-baseline gap-2">
+                                <span class="text-4xl font-black text-on-background" id="planPriceDisplay">
+                                    ₱<?php echo number_format($displayAmount, 2); ?>
+                                </span>
+                                <span class="text-on-surface-variant text-sm">
+                                    /<?php echo htmlspecialchars($billingCycle); ?>
+                                </span>
+                            </div>
+
+                            <p class="mt-3 text-sm text-on-surface-variant" id="planNameDisplay">
+                                <?php echo htmlspecialchars($selectedPlan['plan_name']); ?> Plan
+                            </p>
+                        </div>
+
+                        <div class="pt-4 border-t border-outline">
+                            <label class="block text-xs font-bold text-on-surface-variant uppercase tracking-tighter mb-2">
+                                Billing Cycle
+                            </label>
+
+                            <div class="grid grid-cols-3 gap-3">
+                                <button type="button"
+                                    class="py-2 px-3 rounded-lg border-2 transition-all text-sm font-semibold <?php echo $billingCycle === 'monthly' ? 'border-primary bg-primary-fixed text-primary' : 'border-slate-200 text-on-surface-variant hover:border-primary'; ?>"
+                                    onclick="updateBillingCycle('monthly', this)">
+                                    Monthly
+                                </button>
+
+                                <button type="button"
+                                    class="py-2 px-3 rounded-lg border-2 transition-all text-sm font-semibold <?php echo $billingCycle === 'quarterly' ? 'border-primary bg-primary-fixed text-primary' : 'border-slate-200 text-on-surface-variant hover:border-primary'; ?>"
+                                    onclick="updateBillingCycle('quarterly', this)">
+                                    Quarterly
+                                </button>
+
+                                <button type="button"
+                                    class="py-2 px-3 rounded-lg border-2 transition-all text-sm font-semibold <?php echo $billingCycle === 'yearly' ? 'border-primary bg-primary-fixed text-primary' : 'border-slate-200 text-on-surface-variant hover:border-primary'; ?>"
+                                    onclick="updateBillingCycle('yearly', this)">
+                                    Yearly
+                                </button>
+                            </div>
+                        </div>
+                    </section>
+
+                    <section class="bg-white border border-slate-200 rounded-xl p-8 space-y-6">
+                        <div class="flex items-center gap-2 mb-4">
+                            <span class="material-symbols-outlined text-primary">lock</span>
+                            <h2 class="text-xl font-bold tracking-tight">Complete Your Payment</h2>
+                        </div>
+
+                        <form id="paymentForm" class="space-y-6" method="post" action="paymongo/create_checkout.php">
+
+                            <input type="hidden" name="tenant_id" value="<?php echo htmlspecialchars($tenantID); ?>" />
+
+                            <input type="hidden" id="selectedPlanCode" name="selectedPlanCode"
+                                value="<?php echo htmlspecialchars($selectedPlan['plan_code']); ?>" />
+
+                            <input type="hidden" id="checkoutPlanName" name="plan_name"
+                                value="<?php echo htmlspecialchars($selectedPlan['plan_name'] . ' Plan - ' . ucfirst($billingCycle) . ' Billing'); ?>" />
+
+                            <input type="hidden" id="billingCycleInput" name="billingCycle"
+                                value="<?php echo htmlspecialchars($billingCycle); ?>" />
+
+                            <input type="hidden" id="checkoutAmount" name="amount"
+                                value="<?php echo htmlspecialchars($checkoutAmountCentavos); ?>" />
+
+                            <input type="hidden" name="name"
+                                value="<?php echo htmlspecialchars($tenant['owner_name'] ?? $tenant['shop_name'] ?? 'Customer'); ?>" />
+
+                            <input type="hidden" name="email"
+                                value="<?php echo htmlspecialchars($tenant['email'] ?? 'test@example.com'); ?>" />
+
+                            <input type="hidden" name="phone"
+                                value="<?php echo htmlspecialchars($tenant['contact_number'] ?? '09171234567'); ?>" />
+
+                            <div id="payment-error" class="text-red-600 text-sm"></div>
+
+                            <div style="margin-bottom:20px;">
+
+                                <h3 style="margin-bottom:10px;">Preview Payment Methods</h3>
+
+                                <div style="display:flex; gap:20px; justify-content:center; flex-wrap:wrap;">
+
+                                    <!-- GCash -->
+                                    <div style="text-align:center;">
+                                        <p style="font-weight:bold;">GCash</p>
+                                        <img src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=GCash-Test"
+                                            style="border:1px solid #ddd; padding:8px; border-radius:10px;">
+                                    </div>
+
+                                    <!-- PayMaya -->
+                                    <div style="text-align:center;">
+                                        <p style="font-weight:bold;">PayMaya</p>
+                                        <img src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=PayMaya-Test"
+                                            style="border:1px solid #ddd; padding:8px; border-radius:10px;">
+                                    </div>
+
+                                    <!-- GrabPay -->
+                                    <div style="text-align:center;">
+                                        <p style="font-weight:bold;">GrabPay</p>
+                                        <img src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=GrabPay-Test"
+                                            style="border:1px solid #ddd; padding:8px; border-radius:10px;">
+                                    </div>
+
+                                </div>
+
+                                <p style="font-size:12px; color:#777; margin-top:10px; text-align:center;">
+                                    Preview only. Actual payment happens securely via PayMongo.
+                                </p>
+
+                            </div>
+
+
+                            <div class="pt-4 border-t border-slate-200">
+                                <button type="submit" id="paymentButton"
+                                    class="w-full py-4 bg-primary text-white text-sm font-black uppercase tracking-widest rounded-lg shadow-lg hover:shadow-primary/20 hover:brightness-110 transition-all flex items-center justify-center gap-2">
+                                    Complete Payment with PayMongo
+                                    <span class="material-symbols-outlined">arrow_forward</span>
+                                </button>
+                            </div>
+                        </form>
+                    </section>
+                </div>
+
+                <div class="lg:col-span-4">
+                    <aside class="sticky top-28 space-y-6">
+                        <div class="bg-slate-900 text-white rounded-xl p-8 shadow-xl overflow-hidden relative">
+                            <div class="absolute -right-12 -top-12 w-32 h-32 bg-primary/20 rounded-full blur-3xl"></div>
+
+                            <h3 class="text-lg font-bold mb-6 flex items-center gap-2">
+                                <span class="material-symbols-outlined text-primary">receipt_long</span>
+                                Order Summary
+                            </h3>
+
+                            <div class="space-y-4 relative z-10">
+                                <div class="flex justify-between items-start">
+                                    <div>
+                                        <p class="text-sm font-bold text-white" id="orderSummaryPlanName">
+                                            <?php echo htmlspecialchars($selectedPlan['plan_name']); ?> Plan
+                                        </p>
+                                        <p class="text-xs text-slate-400">
+                                            Billing Cycle:
+                                            <span class="capitalize font-semibold text-slate-300" id="billingCycleDisplay">
+                                                <?php echo htmlspecialchars($billingCycle); ?>
+                                            </span>
+                                        </p>
+                                    </div>
+
+                                    <span class="text-sm font-bold" id="orderSummaryPrice">
+                                        ₱<?php echo number_format($displayAmount, 2); ?>
+                                    </span>
+                                </div>
+
+                                <div class="flex justify-between items-center text-sm border-t border-slate-800 pt-4">
+                                    <span class="text-slate-400">Subtotal</span>
+                                    <span id="subtotalPrice">₱<?php echo number_format($displayAmount, 2); ?></span>
+                                </div>
+
+                                <div class="flex justify-between items-center text-sm">
+                                    <span class="text-slate-400">Tax (0%)</span>
+                                    <span>₱0.00</span>
+                                </div>
+
+                                <div class="flex justify-between items-center text-sm">
+                                    <span class="text-slate-400">Setup Fee</span>
+                                    <span class="text-primary-fixed-dim font-bold">WAIVED</span>
+                                </div>
+
+                                <div class="flex justify-between items-center pt-6 border-t border-slate-800">
+                                    <span class="text-lg font-black uppercase tracking-tight">Total</span>
+                                    <span class="text-2xl font-black text-primary-fixed-dim" id="totalPrice">
+                                        ₱<?php echo number_format($displayAmount, 2); ?>
+                                    </span>
                                 </div>
                             </div>
-                        <?php endforeach; ?>
-                    </div>
-                </section>
 
-                <!-- Selected Plan Summary -->
-                <section class="bg-white border-2 border-primary rounded-xl p-8 shadow-md">
-                    <h3 class="text-lg font-bold mb-4">Your Selected Plan</h3>
-                    <div class="mb-6">
-                        <span class="text-xs font-bold uppercase tracking-widest text-primary" id="planCodeDisplay"><?php echo htmlspecialchars($selectedPlan['plan_code']); ?></span>
-                        <div class="mt-3 flex items-baseline gap-2">
-                            <span class="text-4xl font-black text-on-background" id="planPriceDisplay">₱<?php echo number_format($selectedPlan['monthly_price'], 2); ?></span>
-                            <span class="text-on-surface-variant text-sm">/month</span>
+                            <p
+                                class="mt-6 text-[10px] text-center text-slate-500 uppercase tracking-widest leading-relaxed">
+                                Secure Encrypted Payment. You will be redirected to PayMongo Checkout.
+                            </p>
                         </div>
-                        <p class="mt-3 text-sm text-on-surface-variant" id="planNameDisplay"><?php echo htmlspecialchars($selectedPlan['plan_name']); ?> Plan</p>
-                    </div>
-                    <div class="pt-4 border-t border-outline">
-                        <label class="block text-xs font-bold text-on-surface-variant uppercase tracking-tighter mb-2">Billing Cycle</label>
-                        <div class="grid grid-cols-3 gap-3">
-                            <button type="button" class="py-2 px-3 rounded-lg border-2 transition-all text-sm font-semibold <?php echo $billingCycle === 'monthly' ? 'border-primary bg-primary-fixed text-primary' : 'border-slate-200 text-on-surface-variant hover:border-primary'; ?>"
-                                onclick="document.querySelector('input[name=\'billingCycle\']').value='monthly'; this.parentElement.querySelectorAll('button').forEach(b => b.classList.remove('border-primary', 'bg-primary-fixed', 'text-primary')); this.parentElement.querySelectorAll('button').forEach(b => b.classList.add('border-slate-200', 'text-on-surface-variant')); this.classList.remove('border-slate-200', 'text-on-surface-variant'); this.classList.add('border-primary', 'bg-primary-fixed', 'text-primary');">
-                                Monthly
-                            </button>
-                            <button type="button" class="py-2 px-3 rounded-lg border-2 transition-all text-sm font-semibold <?php echo $billingCycle === 'quarterly' ? 'border-primary bg-primary-fixed text-primary' : 'border-slate-200 text-on-surface-variant hover:border-primary'; ?>"
-                                onclick="document.querySelector('input[name=\'billingCycle\']').value='quarterly'; this.parentElement.querySelectorAll('button').forEach(b => b.classList.remove('border-primary', 'bg-primary-fixed', 'text-primary')); this.parentElement.querySelectorAll('button').forEach(b => b.classList.add('border-slate-200', 'text-on-surface-variant')); this.classList.remove('border-slate-200', 'text-on-surface-variant'); this.classList.add('border-primary', 'bg-primary-fixed', 'text-primary');">
-                                Quarterly
-                            </button>
-                            <button type="button" class="py-2 px-3 rounded-lg border-2 transition-all text-sm font-semibold <?php echo $billingCycle === 'yearly' ? 'border-primary bg-primary-fixed text-primary' : 'border-slate-200 text-on-surface-variant hover:border-primary'; ?>"
-                                onclick="document.querySelector('input[name=\'billingCycle\']').value='yearly'; this.parentElement.querySelectorAll('button').forEach(b => b.classList.remove('border-primary', 'bg-primary-fixed', 'text-primary')); this.parentElement.querySelectorAll('button').forEach(b => b.classList.add('border-slate-200', 'text-on-surface-variant')); this.classList.remove('border-slate-200', 'text-on-surface-variant'); this.classList.add('border-primary', 'bg-primary-fixed', 'text-primary');">
-                                Yearly
-                            </button>
+
+                        <div class="bg-blue-50 border border-blue-100 rounded-xl p-6">
+                            <div class="flex items-center gap-3 mb-3">
+                                <div class="w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center">
+                                    <span class="material-symbols-outlined text-primary text-lg">verified_user</span>
+                                </div>
+
+                                <p class="text-sm font-bold text-on-primary-container">Secure Guarantee</p>
+                            </div>
+
+                            <p class="text-xs text-on-surface-variant leading-relaxed">
+                                All payment information is handled securely through PayMongo.
+                            </p>
                         </div>
-                    </div>
-                </section>
-
-                <!-- Payment Section -->
-                <section class="bg-white border border-slate-200 rounded-xl p-8 space-y-6">
-                    <div class="flex items-center gap-2 mb-4">
-                        <span class="material-symbols-outlined text-primary" data-icon="lock">lock</span>
-                        <h2 class="text-xl font-bold tracking-tight">Complete Your Payment</h2>
-                    </div>
-
-                    <form class="space-y-6" method="post" action="">
-                        <input type="hidden" name="processPayment" value="1" />
-                        <input type="hidden" id="selectedPlanCode" name="selectedPlanCode" value="<?php echo htmlspecialchars($selectedPlan['plan_code']); ?>" />
-                        <input type="hidden" name="billingCycle" value="<?php echo htmlspecialchars($billingCycle); ?>" />
-
-                        <div id="payment-error" class="text-red-600 text-sm"></div>
-
-                        <div class="pt-4 border-t border-slate-200">
-                            <button type="submit" id="paymentButton"
-                                class="w-full py-4 bg-primary text-white text-sm font-black uppercase tracking-widest rounded-lg shadow-lg hover:shadow-primary/20 hover:brightness-110 transition-all flex items-center justify-center gap-2">
-                                Complete Payment with Paymongo
-                                <span class="material-symbols-outlined" data-icon="arrow_forward">arrow_forward</span>
-                            </button>
-                        </div>
-                    </form>
-                </section>
+                    </aside>
+                </div>
             </div>
 
-            <!-- Summary (RHS) -->
-            <div class="lg:col-span-4">
-                <aside class="sticky top-28 space-y-6">
-                    <div class="bg-slate-900 text-white rounded-xl p-8 shadow-xl overflow-hidden relative">
-                        <!-- Decorative element -->
-                        <div class="absolute -right-12 -top-12 w-32 h-32 bg-primary/20 rounded-full blur-3xl"></div>
-                        <h3 class="text-lg font-bold mb-6 flex items-center gap-2">
-                            <span class="material-symbols-outlined text-primary"
-                                data-icon="receipt_long">receipt_long</span>
-                            Order Summary
-                        </h3>
-                        <div class="space-y-4 relative z-10">
-                            <div class="flex justify-between items-start">
-                                <div>
-                                    <p class="text-sm font-bold text-white" id="orderSummaryPlanName"><?php echo htmlspecialchars($selectedPlan['plan_name']); ?> Plan</p>
-                                    <p class="text-xs text-slate-400">Billing Cycle: <span class="capitalize font-semibold text-slate-300"><?php echo htmlspecialchars($billingCycle); ?></span></p>
-                                </div>
-                                <span class="text-sm font-bold" id="orderSummaryPrice">₱<?php echo number_format($selectedPlan['monthly_price'], 2); ?></span>
-                            </div>
-                            <div class="flex justify-between items-center text-sm border-t border-slate-800 pt-4">
-                                <span class="text-slate-400">Subtotal</span>
-                                <span id="subtotalPrice">₱<?php echo number_format($selectedPlan['monthly_price'], 2); ?></span>
-                            </div>
-                            <div class="flex justify-between items-center text-sm">
-                                <span class="text-slate-400">Tax (0%)</span>
-                                <span>₱0.00</span>
-                            </div>
-                            <div class="flex justify-between items-center text-sm">
-                                <span class="text-slate-400">Setup Fee</span>
-                                <span class="text-primary-fixed-dim font-bold">WAIVED</span>
-                            </div>
-                            <div class="flex justify-between items-center pt-6 border-t border-slate-800">
-                                <span class="text-lg font-black uppercase tracking-tight">Total</span>
-                                <span class="text-2xl font-black text-primary-fixed-dim" id="totalPrice">₱<?php echo number_format($selectedPlan['monthly_price'], 2); ?></span>
-                            </div>
-                        </div>
-                        <p
-                            class="mt-6 text-[10px] text-center text-slate-500 uppercase tracking-widest leading-relaxed">
-                            Secure Encrypted Payment. Your application will be reviewed within 1-2 business days.
-                        </p>
-                    </div>
-                    <div class="bg-blue-50 border border-blue-100 rounded-xl p-6">
-                        <div class="flex items-center gap-3 mb-3">
-                            <div class="w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center">
-                                <span class="material-symbols-outlined text-primary text-lg"
-                                    data-icon="verified_user">verified_user</span>
-                            </div>
-                            <p class="text-sm font-bold text-on-primary-container">Secure Guarantee</p>
-                        </div>
-                        <p class="text-xs text-on-surface-variant leading-relaxed">
-                            All payment information is encrypted and secure. You can modify your plan or cancel anytime.
-                        </p>
-                    </div>
-                </aside>
-            </div>
-        </div>
+        <?php endif; ?>
+
     </main>
-    <!-- Footer -->
+
     <footer
-        class="bg-slate-50 dark:bg-slate-950 border-t border-slate-200 dark:border-slate-800 flex justify-between items-center px-8 py-4 w-full mt-auto font-['Inter'] text-xs font-semibold">
-        <div class="text-slate-500 dark:text-slate-500">© 2026 RapidRepairCo. Secure Encrypted Environment.
-        </div>
+        class="bg-slate-50 border-t border-slate-200 flex justify-between items-center px-8 py-4 w-full mt-auto font-['Inter'] text-xs font-semibold">
+        <div class="text-slate-500">© 2026 RapidRepairCo. Secure Encrypted Environment.</div>
+
         <div class="flex gap-6">
-            <a class="text-slate-500 dark:text-slate-500 hover:text-primary dark:hover:text-blue-400 transition-colors"
-                href="#">Privacy Policy</a>
-            <a class="text-slate-500 dark:text-slate-500 hover:text-primary dark:hover:text-blue-400 transition-colors"
-                href="#">Terms of Service</a>
-            <a class="text-slate-500 dark:text-slate-500 hover:text-primary dark:hover:text-blue-400 transition-colors"
-                href="#">Support</a>
+            <a class="text-slate-500 hover:text-primary transition-colors" href="#">Privacy Policy</a>
+            <a class="text-slate-500 hover:text-primary transition-colors" href="#">Terms of Service</a>
+            <a class="text-slate-500 hover:text-primary transition-colors" href="#">Support</a>
         </div>
     </footer>
+
 </body>
 
 </html>
