@@ -1184,7 +1184,7 @@ if (isset($_POST['createTenant'])) {
         $newID = 1;
     }
 
-    $tenantID = str_pad($newID, 3, "0", STR_PAD_LEFT);
+    $tenantID = (string) $newID;
 
     // Generate slug
     $login_slug = generateSlug($conn, $shopName);
