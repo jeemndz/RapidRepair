@@ -353,6 +353,8 @@ $checkoutAmountCentavos = (int) round($displayAmount * 100);
 
                         <form id="paymentForm" class="space-y-6" method="post" action="paymongo/create_checkout.php">
 
+                            <input type="hidden" name="payment_source" value="clientpayment">         
+
                             <input type="hidden" name="tenant_id" value="<?php echo htmlspecialchars($tenantID); ?>" />
 
                             <input type="hidden" id="selectedPlanCode" name="selectedPlanCode"

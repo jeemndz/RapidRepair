@@ -2,11 +2,20 @@
 session_start();
 require_once "config.php";
 
+$paymentSource = $_SESSION["payment_source"] ?? "clientpayment";
 $shopSlug = $_SESSION['login_slug'] ?? '';
-$billingUrl = "../../tenant/accountbillingadmin.php";
 
-if ($shopSlug !== '') {
-    $billingUrl .= "?shop=" . urlencode($shopSlug);
+if ($paymentSource === "accountbillingadmin") {
+    $returnUrl = "../../tenant/accountbillingadmin.php";
+
+    if ($shopSlug !== '') {
+        $returnUrl .= "?shop=" . urlencode($shopSlug);
+    }
+
+    $returnText = "Go to Billing Dashboard";
+} else {
+    $returnUrl = "../clientlanding.php";
+    $returnText = "Return to Home";
 }
 
 $checkoutSessionId = $_SESSION["checkout_session_id"] ?? null;
@@ -138,9 +147,9 @@ $isProcessing = ($status === "processing");
             </div>
 
             <?php if ($isPaid): ?>
-                <a href="<?= htmlspecialchars($billingUrl) ?>"
+                <a href="<?= htmlspecialchars($returnUrl) ?>"
                    style="display:block; width:100%; text-align:center; padding:15px 0; background:#1152d4; color:#fff; text-decoration:none; border-radius:10px; font-weight:800; font-size:14px; text-transform:uppercase;">
-                    Go to Billing Dashboard
+                    <?= htmlspecialchars($returnText) ?>
                 </a>
 
             <?php elseif ($isProcessing): ?>
@@ -149,15 +158,15 @@ $isProcessing = ($status === "processing");
                     Refresh Status
                 </a>
 
-                <a href="<?= htmlspecialchars($billingUrl) ?>"
+                <a href="<?= htmlspecialchars($returnUrl) ?>"
                    style="display:block; margin-top:14px; text-align:center; padding:14px 0; color:#475569; text-decoration:none; font-size:14px; font-weight:600;">
-                    Back to Billing Dashboard
+                    <?= htmlspecialchars($returnText) ?>
                 </a>
 
             <?php else: ?>
-                <a href="<?= htmlspecialchars($billingUrl) ?>"
+                <a href="<?= htmlspecialchars($returnUrl) ?>"
                    style="display:block; width:100%; text-align:center; padding:15px 0; background:#1152d4; color:#fff; text-decoration:none; border-radius:10px; font-weight:800; font-size:14px; text-transform:uppercase;">
-                    Try Payment Again
+                    Try Again
                 </a>
             <?php endif; ?>
 

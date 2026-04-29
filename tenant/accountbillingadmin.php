@@ -443,6 +443,8 @@ if ($invoiceStmt) {
                             <?php if ($billingAmount > 0): ?>
                                 <form method="POST" action="../clientapplication/paymongo/create_checkout.php" class="mt-4">
 
+                                    <input type="hidden" name="payment_source" value="accountbillingadmin">
+
                                     <input type="hidden" name="tenant_id" value="<?php echo h($tenantID); ?>">
                                     <input type="hidden" name="amount" value="<?php echo h($billingAmount); ?>">
                                     <input type="hidden" name="plan_name" value="<?php echo h($billingPlanName); ?>">
