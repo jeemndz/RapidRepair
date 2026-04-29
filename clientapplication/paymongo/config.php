@@ -1,10 +1,5 @@
 <?php
 
-$PAYMONGO_PUBLIC_KEY = getenv("PAYMONGO_PUBLIC_KEY");
-$PAYMONGO_SECRET_KEY = getenv("PAYMONGO_SECRET_KEY");
+$PAYMONGO_SECRET_KEY = "sk_test_Z6ynXiE7Ywm2KmTCoKsHZnz2"; // your PayMongo secret key
 
-$BASE_URL = getenv("BASE_URL") ?: "http://localhost/RapidRepair/clientapplication/paymongo";
-
-if (!$PAYMONGO_SECRET_KEY) {
-    die("PAYMONGO_SECRET_KEY is not configured.");
-}
+$BASE_URL = "http://localhost/RapidRepair/clientapplication/paymongo";
