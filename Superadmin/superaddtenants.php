@@ -878,6 +878,12 @@ switch ($notice) {
         $noticeTitle = 'Creation Failed';
         $noticeMessage = 'Could not create tenant. Please try again.';
         break;
+    case 'tenant_create_duplicate_email':
+        $noticeTypeClass = 'bg-amber-500';
+        $noticeIcon = 'warning';
+        $noticeTitle = 'Duplicate Email';
+        $noticeMessage = 'A tenant account already exists with that email address.';
+        break;
     case 'tenant_updated':
         $noticeTypeClass = 'bg-red-600';
         $noticeIcon = 'check_circle';
@@ -1008,6 +1014,24 @@ function generateTemporaryPassword($length = 12)
     return $password;
 }
 
+function generateUniqueInviteCode($conn, $length = 6)
+{
+    $digits = '0123456789';
+    $maxIndex = strlen($digits) - 1;
+
+    while (true) {
+        $code = '';
+        for ($i = 0; $i < $length; $i++) {
+            $code .= $digits[random_int(0, $maxIndex)];
+        }
+
+        $check = mysqli_query($conn, "SELECT tenantID FROM owners WHERE invite_code='" . mysqli_real_escape_string($conn, $code) . "' LIMIT 1");
+        if ($check && mysqli_num_rows($check) === 0) {
+            return $code;
+        }
+    }
+}
+
 // HANDLE UPDATE TENANT
 if (isset($_POST['updateTenant'])) {
     $tenantID = mysqli_real_escape_string($conn, $_POST['tenantID']);
@@ -1114,6 +1138,14 @@ if (isset($_POST['createTenant'])) {
         die("Invalid email address.");
     }
 
+    $normalizedEmail = trim(strtolower($email));
+    $existingEmailSql = "SELECT tenantID FROM owners WHERE LOWER(TRIM(email)) = '" . mysqli_real_escape_string($conn, $normalizedEmail) . "' LIMIT 1";
+    $existingEmailResult = mysqli_query($conn, $existingEmailSql);
+    if ($existingEmailResult && mysqli_num_rows($existingEmailResult) > 0) {
+        header("Location: ?notice=tenant_create_duplicate_email");
+        exit;
+    }
+
     // Superadmin-created tenants should be ACTIVE immediately
     $status = 'Active';
 
@@ -1137,6 +1169,7 @@ if (isset($_POST['createTenant'])) {
     $billingDivisor = getBillingCycleDivisor($billingCycle);
     $planTotalPrice = $subscriptionPlans[$subscriptionPlan]['monthly_price'] * $billingDivisor;
     $resolvedPlanId = resolvePlanIdForSubscription($conn, $subscriptionPlan, $subscriptionPlans[$subscriptionPlan]['name']);
+    $inviteCode = generateUniqueInviteCode($conn);
 
     // First login password stays plain text until changed
     $hashedPassword = $tempPassword;
@@ -1165,6 +1198,7 @@ if (isset($_POST['createTenant'])) {
         'username',
         'email',
         'contactNumber',
+        'invite_code',
         'shopAddress',
         'password',
         'first_login',
@@ -1179,6 +1213,7 @@ if (isset($_POST['createTenant'])) {
         "'" . $username . "'",
         "'" . mysqli_real_escape_string($conn, $email) . "'",
         "'" . mysqli_real_escape_string($conn, $contactNumber) . "'",
+        "'" . mysqli_real_escape_string($conn, $inviteCode) . "'",
         "'" . mysqli_real_escape_string($conn, $shopAddress) . "'",
         "'" . mysqli_real_escape_string($conn, $hashedPassword) . "'",
         "1",
