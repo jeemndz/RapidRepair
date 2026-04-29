@@ -1,5 +1,10 @@
 <?php
 session_start();
+
+if (isset($_GET['source'])) {
+    $_SESSION["payment_source"] = $_GET['source'];
+}
+
 require_once "config.php";
 
 $paymentSource = $_SESSION["payment_source"] ?? "clientpayment";
@@ -18,11 +23,15 @@ if ($paymentSource === "accountbillingadmin") {
     $returnText = "Return to Home";
 }
 
-$checkoutSessionId = $_SESSION["checkout_session_id"] ?? null;
+$checkoutSessionId = $_GET["checkout_session_id"] 
+    ?? $_SESSION["checkout_session_id"] 
+    ?? null;
 
 if (!$checkoutSessionId) {
     die("No checkout session found.");
 }
+
+$_SESSION["checkout_session_id"] = $checkoutSessionId;
 
 $curl = curl_init();
 
@@ -152,23 +161,23 @@ $isProcessing = ($status === "processing");
                     <?= htmlspecialchars($returnText) ?>
                 </a>
 
-            <?php elseif ($isProcessing): ?>
-                <a href="payment_success.php"
-                   style="display:block; width:100%; text-align:center; padding:15px 0; background:#f59e0b; color:#fff; text-decoration:none; border-radius:10px; font-weight:800; font-size:14px; text-transform:uppercase;">
-                    Refresh Status
-                </a>
+<?php elseif ($isProcessing): ?>
+    <a href="payment_success.php?checkout_session_id=<?= urlencode($checkoutSessionId) ?>&source=<?= urlencode($paymentSource) ?>"
+       style="display:block; width:100%; text-align:center; padding:15px 0; background:#f59e0b; color:#fff; text-decoration:none; border-radius:10px; font-weight:800; font-size:14px; text-transform:uppercase;">
+        Refresh Status
+    </a>
 
-                <a href="<?= htmlspecialchars($returnUrl) ?>"
-                   style="display:block; margin-top:14px; text-align:center; padding:14px 0; color:#475569; text-decoration:none; font-size:14px; font-weight:600;">
-                    <?= htmlspecialchars($returnText) ?>
-                </a>
+    <a href="<?= htmlspecialchars($returnUrl) ?>"
+       style="display:block; margin-top:14px; text-align:center; padding:14px 0; color:#475569; text-decoration:none; font-size:14px; font-weight:600;">
+        <?= htmlspecialchars($returnText) ?>
+    </a>
 
-            <?php else: ?>
-                <a href="<?= htmlspecialchars($returnUrl) ?>"
-                   style="display:block; width:100%; text-align:center; padding:15px 0; background:#1152d4; color:#fff; text-decoration:none; border-radius:10px; font-weight:800; font-size:14px; text-transform:uppercase;">
-                    Try Again
-                </a>
-            <?php endif; ?>
+<?php else: ?>
+    <a href="<?= htmlspecialchars($returnUrl) ?>"
+       style="display:block; width:100%; text-align:center; padding:15px 0; background:#1152d4; color:#fff; text-decoration:none; border-radius:10px; font-weight:800; font-size:14px; text-transform:uppercase;">
+        Try Again
+    </a>
+<?php endif; ?>
 
         </div>
 
