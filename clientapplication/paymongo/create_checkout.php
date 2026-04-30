@@ -42,8 +42,8 @@ $payload = [
             ],
 
             // ✅ USE BASE_URL (AUTO LOCAL/AZURE)
-            "success_url" => $BASE_URL . "/payment_success.php",
-            "cancel_url"  => $BASE_URL . "/payment_failed.php"
+            "success_url" => $BASE_URL . "/payment_success.php?source=" . urlencode($paymentSource),
+            "cancel_url"  => $BASE_URL . "/payment_failed.php?source=" . urlencode($paymentSource)
         ]
     ]
 ];
