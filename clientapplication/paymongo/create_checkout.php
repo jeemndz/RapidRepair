@@ -2,7 +2,6 @@
 session_start();
 require_once "config.php";
 
-// 🔹 GET DATA
 $amount = intval($_POST["amount"] ?? 12100);
 $name = $_POST["name"] ?? "John Maverick Mendoza";
 $email = $_POST["email"] ?? "test@example.com";
@@ -11,10 +10,6 @@ $phone = $_POST["phone"] ?? "09171234567";
 $tenantId = $_POST["tenant_id"] ?? "1";
 $planName = $_POST["plan_name"] ?? "RapidRepairCo. Subscription";
 
-// 🔹 VERY IMPORTANT (source detection)
-$paymentSource = $_POST["payment_source"] ?? "clientpayment";
-
-// 🔹 BUILD PAYLOAD
 $payload = [
     "data" => [
         "attributes" => [
@@ -46,14 +41,13 @@ $payload = [
                 ]
             ],
 
-            // ✅ IMPORTANT FIX (PASS CHECKOUT ID)
-            "success_url" => $BASE_URL . "/payment_success.php?checkout_session_id={CHECKOUT_SESSION_ID}",
-            "cancel_url"  => $BASE_URL . "/payment_failed.php?checkout_session_id={CHECKOUT_SESSION_ID}"
+            // ✅ USE BASE_URL (AUTO LOCAL/AZURE)
+            "success_url" => $BASE_URL . "/payment_success.php",
+            "cancel_url"  => $BASE_URL . "/payment_failed.php"
         ]
     ]
 ];
 
-// 🔹 CURL REQUEST
 $curl = curl_init();
 
 curl_setopt_array($curl, [
@@ -64,7 +58,7 @@ curl_setopt_array($curl, [
     CURLOPT_HTTPHEADER => [
         "accept: application/json",
         "content-type: application/json",
-        "authorization: Basic " . base64_encode($PAYMONGO_SECRET_KEY . ":")
+        "authorization: " . "Basic " . base64_encode($PAYMONGO_SECRET_KEY . ":")
     ],
 ]);
 
@@ -72,18 +66,16 @@ $response = curl_exec($curl);
 $error = curl_error($curl);
 curl_close($curl);
 
-// 🔹 ERROR CHECK
 if ($error) {
     die("cURL Error: " . $error);
 }
 
 $result = json_decode($response, true);
 
-// 🔹 EXTRACT RESPONSE
 $checkoutSessionId = $result["data"]["id"] ?? null;
 $checkoutUrl = $result["data"]["attributes"]["checkout_url"] ?? null;
 
-// 🔹 SAVE SESSION (VERY IMPORTANT)
+// ✅ SAVE SESSION DATA
 if ($checkoutSessionId) {
     $_SESSION["checkout_session_id"] = $checkoutSessionId;
     $_SESSION["amount"] = $amount;
@@ -92,18 +84,15 @@ if ($checkoutSessionId) {
     $_SESSION["customer_name"] = $name;
     $_SESSION["customer_email"] = $email;
     $_SESSION["customer_phone"] = $phone;
-
-    // ✅ SAVE SOURCE (FIXES YOUR PROBLEM)
-    $_SESSION["payment_source"] = $paymentSource;
 }
 
-// 🔹 REDIRECT TO PAYMONGO
+// ✅ REDIRECT TO PAYMONGO CHECKOUT
 if ($checkoutUrl) {
     header("Location: " . $checkoutUrl);
     exit;
 }
 
-// 🔹 DEBUG (if something breaks)
+// ❌ DEBUG OUTPUT
 echo "<pre>";
 print_r($result);
 echo "</pre>";

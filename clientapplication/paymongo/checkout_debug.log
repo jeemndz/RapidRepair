@@ -1,0 +1,608 @@
+Array
+(
+    [data] => Array
+        (
+            [id] => cs_f2f08c536ffa05aaf67d15b9
+            [type] => checkout_session
+            [attributes] => Array
+                (
+                    [billing] => Array
+                        (
+                            [address] => Array
+                                (
+                                    [city] => 
+                                    [country] => 
+                                    [line1] => 
+                                    [line2] => 
+                                    [postal_code] => 
+                                    [state] => 
+                                )
+
+                            [email] => jekide9322@cadinr.com
+                            [name] => Customer
+                            [phone] => 09171234567
+                        )
+
+                    [billing_information_fields_editable] => enabled
+                    [cancel_url] => http://localhost/RapidRepair/clientapplication/paymongo/payment_failed.php
+                    [checkout_url] => https://checkout.paymongo.com/f2f08c536ffa05aaf67d15b9
+                    [client_key] => cs_f2f08c536ffa05aaf67d15b9_client_32dedbcdd270262d6e7ba7ff
+                    [collection] => Array
+                        (
+                            [customer_info] => Array
+                                (
+                                    [email] => Array
+                                        (
+                                            [state] => auto
+                                        )
+
+                                    [name] => Array
+                                        (
+                                            [state] => auto
+                                        )
+
+                                    [mobile_phone] => Array
+                                        (
+                                            [state] => auto
+                                        )
+
+                                    [address] => Array
+                                        (
+                                            [state] => auto
+                                        )
+
+                                )
+
+                        )
+
+                    [customer_email] => 
+                    [customer_id] => 
+                    [description] => Tenant ID: 5
+                    [line_items] => Array
+                        (
+                            [0] => Array
+                                (
+                                    [amount] => 899700
+                                    [currency] => PHP
+                                    [description] => Standard Plan Plan - Quarterly Billing
+                                    [images] => Array
+                                        (
+                                        )
+
+                                    [name] => Standard Plan Plan - Quarterly Billing
+                                    [quantity] => 1
+                                )
+
+                        )
+
+                    [livemode] => 
+                    [merchant] => Jm Mendoza
+                    [metadata] => 
+                    [organization_id] => org_VQKLsWT9TvGXP6NYszXuas6Z
+                    [paid_at] => 1777547024
+                    [pass_on_fees] => 
+                    [payment_intent] => Array
+                        (
+                            [id] => pi_QKjyiFWugXSexh7FfkoybGaF
+                            [type] => payment_intent
+                            [attributes] => Array
+                                (
+                                    [amount] => 899700
+                                    [capture_type] => automatic
+                                    [client_key] => pi_QKjyiFWugXSexh7FfkoybGaF_client_tngJLsecTyQVrgHkXfpfwfFR
+                                    [currency] => PHP
+                                    [description] => Tenant ID: 5
+                                    [last_payment_error] => 
+                                    [livemode] => 
+                                    [metadata] => 
+                                    [next_action] => 
+                                    [original_amount] => 899700
+                                    [payment_method_allowed] => Array
+                                        (
+                                            [0] => grab_pay
+                                            [1] => gcash
+                                            [2] => paymaya
+                                            [3] => qrph
+                                            [4] => card
+                                        )
+
+                                    [payment_method_options] => Array
+                                        (
+                                            [card] => Array
+                                                (
+                                                    [request_three_d_secure] => any
+                                                )
+
+                                        )
+
+                                    [payments] => Array
+                                        (
+                                            [0] => Array
+                                                (
+                                                    [id] => pay_Evdj4qCJkg4agTpWYEeZDAov
+                                                    [type] => payment
+                                                    [attributes] => Array
+                                                        (
+                                                            [access_url] => 
+                                                            [amount] => 899700
+                                                            [available_at] => 1777971600
+                                                            [balance_transaction_id] => bal_txn_ppk9nAgy1PeWH6h8Rm5DDL1h
+                                                            [billing] => Array
+                                                                (
+                                                                    [address] => Array
+                                                                        (
+                                                                            [city] => 
+                                                                            [country] => 
+                                                                            [line1] => 
+                                                                            [line2] => 
+                                                                            [postal_code] => 
+                                                                            [state] => 
+                                                                        )
+
+                                                                    [email] => jekide9322@cadinr.com
+                                                                    [name] => Customer
+                                                                    [phone] => 09171234567
+                                                                )
+
+                                                            [checkout_session_id] => 
+                                                            [credited_at] => 1778115600
+                                                            [currency] => PHP
+                                                            [description] => Tenant ID: 5
+                                                            [digital_withholding_vat_amount] => 0
+                                                            [disputed] => 
+                                                            [external_reference_number] => 
+                                                            [fee] => 22493
+                                                            [instant_settlement] => 
+                                                            [livemode] => 
+                                                            [metadata] => 
+                                                            [net_amount] => 877207
+                                                            [origin] => api
+                                                            [paid_at] => 1777547024
+                                                            [payment_intent_id] => pi_QKjyiFWugXSexh7FfkoybGaF
+                                                            [payout] => 
+                                                            [promotion] => 
+                                                            [refunds] => Array
+                                                                (
+                                                                )
+
+                                                            [source] => Array
+                                                                (
+                                                                    [id] => src_CHFLcN3Ezc27fonA5AqXAJct
+                                                                    [provider] => Array
+                                                                        (
+                                                                            [id] => 
+                                                                        )
+
+                                                                    [provider_id] => 
+                                                                    [type] => gcash
+                                                                )
+
+                                                            [statement_descriptor] => Jm Mendoza
+                                                            [status] => paid
+                                                            [tax_amount] => 
+                                                            [taxes] => Array
+                                                                (
+                                                                )
+
+                                                            [created_at] => 1777547024
+                                                            [updated_at] => 1777547024
+                                                        )
+
+                                                )
+
+                                        )
+
+                                    [setup_future_usage] => 
+                                    [statement_descriptor] => Jm Mendoza
+                                    [status] => succeeded
+                                    [created_at] => 1777547014
+                                    [updated_at] => 1777547025
+                                )
+
+                        )
+
+                    [payment_method_types] => Array
+                        (
+                            [0] => card
+                            [1] => gcash
+                            [2] => paymaya
+                            [3] => grab_pay
+                            [4] => qrph
+                        )
+
+                    [payment_method_used] => gcash
+                    [payments] => Array
+                        (
+                            [0] => Array
+                                (
+                                    [id] => pay_Evdj4qCJkg4agTpWYEeZDAov
+                                    [type] => payment
+                                    [attributes] => Array
+                                        (
+                                            [access_url] => 
+                                            [amount] => 899700
+                                            [available_at] => 1777971600
+                                            [balance_transaction_id] => bal_txn_ppk9nAgy1PeWH6h8Rm5DDL1h
+                                            [billing] => Array
+                                                (
+                                                    [address] => Array
+                                                        (
+                                                            [city] => 
+                                                            [country] => 
+                                                            [line1] => 
+                                                            [line2] => 
+                                                            [postal_code] => 
+                                                            [state] => 
+                                                        )
+
+                                                    [email] => jekide9322@cadinr.com
+                                                    [name] => Customer
+                                                    [phone] => 09171234567
+                                                )
+
+                                            [checkout_session_id] => 
+                                            [credited_at] => 1778115600
+                                            [currency] => PHP
+                                            [description] => Tenant ID: 5
+                                            [digital_withholding_vat_amount] => 0
+                                            [disputed] => 
+                                            [external_reference_number] => 
+                                            [fee] => 22493
+                                            [instant_settlement] => 
+                                            [livemode] => 
+                                            [metadata] => 
+                                            [net_amount] => 877207
+                                            [origin] => api
+                                            [paid_at] => 1777547024
+                                            [payment_intent_id] => pi_QKjyiFWugXSexh7FfkoybGaF
+                                            [payout] => 
+                                            [promotion] => 
+                                            [refunds] => Array
+                                                (
+                                                )
+
+                                            [source] => Array
+                                                (
+                                                    [id] => src_CHFLcN3Ezc27fonA5AqXAJct
+                                                    [provider] => Array
+                                                        (
+                                                            [id] => 
+                                                        )
+
+                                                    [provider_id] => 
+                                                    [type] => gcash
+                                                )
+
+                                            [statement_descriptor] => Jm Mendoza
+                                            [status] => paid
+                                            [tax_amount] => 
+                                            [taxes] => Array
+                                                (
+                                                )
+
+                                            [created_at] => 1777547024
+                                            [updated_at] => 1777547024
+                                        )
+
+                                )
+
+                        )
+
+                    [public_key] => pk_test_CfWMPmNbK7DqqeujPDs8xfsx
+                    [reference_number] => 
+                    [send_email_receipt] => 
+                    [show_description] => 1
+                    [show_line_items] => 1
+                    [status] => active
+                    [success_url] => http://localhost/RapidRepair/clientapplication/paymongo/payment_success.php
+                    [created_at] => 1777547014
+                    [updated_at] => 1777547022
+                )
+
+        )
+
+)
+Array
+(
+    [data] => Array
+        (
+            [id] => cs_f2f08c536ffa05aaf67d15b9
+            [type] => checkout_session
+            [attributes] => Array
+                (
+                    [billing] => Array
+                        (
+                            [address] => Array
+                                (
+                                    [city] => 
+                                    [country] => 
+                                    [line1] => 
+                                    [line2] => 
+                                    [postal_code] => 
+                                    [state] => 
+                                )
+
+                            [email] => jekide9322@cadinr.com
+                            [name] => Customer
+                            [phone] => 09171234567
+                        )
+
+                    [billing_information_fields_editable] => enabled
+                    [cancel_url] => http://localhost/RapidRepair/clientapplication/paymongo/payment_failed.php
+                    [checkout_url] => https://checkout.paymongo.com/f2f08c536ffa05aaf67d15b9
+                    [client_key] => cs_f2f08c536ffa05aaf67d15b9_client_32dedbcdd270262d6e7ba7ff
+                    [collection] => Array
+                        (
+                            [customer_info] => Array
+                                (
+                                    [email] => Array
+                                        (
+                                            [state] => auto
+                                        )
+
+                                    [name] => Array
+                                        (
+                                            [state] => auto
+                                        )
+
+                                    [mobile_phone] => Array
+                                        (
+                                            [state] => auto
+                                        )
+
+                                    [address] => Array
+                                        (
+                                            [state] => auto
+                                        )
+
+                                )
+
+                        )
+
+                    [customer_email] => 
+                    [customer_id] => 
+                    [description] => Tenant ID: 5
+                    [line_items] => Array
+                        (
+                            [0] => Array
+                                (
+                                    [amount] => 899700
+                                    [currency] => PHP
+                                    [description] => Standard Plan Plan - Quarterly Billing
+                                    [images] => Array
+                                        (
+                                        )
+
+                                    [name] => Standard Plan Plan - Quarterly Billing
+                                    [quantity] => 1
+                                )
+
+                        )
+
+                    [livemode] => 
+                    [merchant] => Jm Mendoza
+                    [metadata] => 
+                    [organization_id] => org_VQKLsWT9TvGXP6NYszXuas6Z
+                    [paid_at] => 1777547024
+                    [pass_on_fees] => 
+                    [payment_intent] => Array
+                        (
+                            [id] => pi_QKjyiFWugXSexh7FfkoybGaF
+                            [type] => payment_intent
+                            [attributes] => Array
+                                (
+                                    [amount] => 899700
+                                    [capture_type] => automatic
+                                    [client_key] => pi_QKjyiFWugXSexh7FfkoybGaF_client_tngJLsecTyQVrgHkXfpfwfFR
+                                    [currency] => PHP
+                                    [description] => Tenant ID: 5
+                                    [last_payment_error] => 
+                                    [livemode] => 
+                                    [metadata] => 
+                                    [next_action] => 
+                                    [original_amount] => 899700
+                                    [payment_method_allowed] => Array
+                                        (
+                                            [0] => grab_pay
+                                            [1] => gcash
+                                            [2] => paymaya
+                                            [3] => qrph
+                                            [4] => card
+                                        )
+
+                                    [payment_method_options] => Array
+                                        (
+                                            [card] => Array
+                                                (
+                                                    [request_three_d_secure] => any
+                                                )
+
+                                        )
+
+                                    [payments] => Array
+                                        (
+                                            [0] => Array
+                                                (
+                                                    [id] => pay_Evdj4qCJkg4agTpWYEeZDAov
+                                                    [type] => payment
+                                                    [attributes] => Array
+                                                        (
+                                                            [access_url] => 
+                                                            [amount] => 899700
+                                                            [available_at] => 1777971600
+                                                            [balance_transaction_id] => bal_txn_ppk9nAgy1PeWH6h8Rm5DDL1h
+                                                            [billing] => Array
+                                                                (
+                                                                    [address] => Array
+                                                                        (
+                                                                            [city] => 
+                                                                            [country] => 
+                                                                            [line1] => 
+                                                                            [line2] => 
+                                                                            [postal_code] => 
+                                                                            [state] => 
+                                                                        )
+
+                                                                    [email] => jekide9322@cadinr.com
+                                                                    [name] => Customer
+                                                                    [phone] => 09171234567
+                                                                )
+
+                                                            [checkout_session_id] => 
+                                                            [credited_at] => 1778115600
+                                                            [currency] => PHP
+                                                            [description] => Tenant ID: 5
+                                                            [digital_withholding_vat_amount] => 0
+                                                            [disputed] => 
+                                                            [external_reference_number] => 
+                                                            [fee] => 22493
+                                                            [instant_settlement] => 
+                                                            [livemode] => 
+                                                            [metadata] => 
+                                                            [net_amount] => 877207
+                                                            [origin] => api
+                                                            [paid_at] => 1777547024
+                                                            [payment_intent_id] => pi_QKjyiFWugXSexh7FfkoybGaF
+                                                            [payout] => 
+                                                            [promotion] => 
+                                                            [refunds] => Array
+                                                                (
+                                                                )
+
+                                                            [source] => Array
+                                                                (
+                                                                    [id] => src_CHFLcN3Ezc27fonA5AqXAJct
+                                                                    [provider] => Array
+                                                                        (
+                                                                            [id] => 
+                                                                        )
+
+                                                                    [provider_id] => 
+                                                                    [type] => gcash
+                                                                )
+
+                                                            [statement_descriptor] => Jm Mendoza
+                                                            [status] => paid
+                                                            [tax_amount] => 
+                                                            [taxes] => Array
+                                                                (
+                                                                )
+
+                                                            [created_at] => 1777547024
+                                                            [updated_at] => 1777547024
+                                                        )
+
+                                                )
+
+                                        )
+
+                                    [setup_future_usage] => 
+                                    [statement_descriptor] => Jm Mendoza
+                                    [status] => succeeded
+                                    [created_at] => 1777547014
+                                    [updated_at] => 1777547025
+                                )
+
+                        )
+
+                    [payment_method_types] => Array
+                        (
+                            [0] => card
+                            [1] => gcash
+                            [2] => paymaya
+                            [3] => grab_pay
+                            [4] => qrph
+                        )
+
+                    [payment_method_used] => gcash
+                    [payments] => Array
+                        (
+                            [0] => Array
+                                (
+                                    [id] => pay_Evdj4qCJkg4agTpWYEeZDAov
+                                    [type] => payment
+                                    [attributes] => Array
+                                        (
+                                            [access_url] => 
+                                            [amount] => 899700
+                                            [available_at] => 1777971600
+                                            [balance_transaction_id] => bal_txn_ppk9nAgy1PeWH6h8Rm5DDL1h
+                                            [billing] => Array
+                                                (
+                                                    [address] => Array
+                                                        (
+                                                            [city] => 
+                                                            [country] => 
+                                                            [line1] => 
+                                                            [line2] => 
+                                                            [postal_code] => 
+                                                            [state] => 
+                                                        )
+
+                                                    [email] => jekide9322@cadinr.com
+                                                    [name] => Customer
+                                                    [phone] => 09171234567
+                                                )
+
+                                            [checkout_session_id] => 
+                                            [credited_at] => 1778115600
+                                            [currency] => PHP
+                                            [description] => Tenant ID: 5
+                                            [digital_withholding_vat_amount] => 0
+                                            [disputed] => 
+                                            [external_reference_number] => 
+                                            [fee] => 22493
+                                            [instant_settlement] => 
+                                            [livemode] => 
+                                            [metadata] => 
+                                            [net_amount] => 877207
+                                            [origin] => api
+                                            [paid_at] => 1777547024
+                                            [payment_intent_id] => pi_QKjyiFWugXSexh7FfkoybGaF
+                                            [payout] => 
+                                            [promotion] => 
+                                            [refunds] => Array
+                                                (
+                                                )
+
+                                            [source] => Array
+                                                (
+                                                    [id] => src_CHFLcN3Ezc27fonA5AqXAJct
+                                                    [provider] => Array
+                                                        (
+                                                            [id] => 
+                                                        )
+
+                                                    [provider_id] => 
+                                                    [type] => gcash
+                                                )
+
+                                            [statement_descriptor] => Jm Mendoza
+                                            [status] => paid
+                                            [tax_amount] => 
+                                            [taxes] => Array
+                                                (
+                                                )
+
+                                            [created_at] => 1777547024
+                                            [updated_at] => 1777547024
+                                        )
+
+                                )
+
+                        )
+
+                    [public_key] => pk_test_CfWMPmNbK7DqqeujPDs8xfsx
+                    [reference_number] => 
+                    [send_email_receipt] => 
+                    [show_description] => 1
+                    [show_line_items] => 1
+                    [status] => active
+                    [success_url] => http://localhost/RapidRepair/clientapplication/paymongo/payment_success.php
+                    [created_at] => 1777547014
+                    [updated_at] => 1777547022
+                )
+
+        )
+
+)

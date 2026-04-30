@@ -1,12 +1,27 @@
 <?php
 session_start();
 
-$shopSlug = $_SESSION['login_slug'] ?? '';
-$billingUrl = "../../tenant/accountbillingadmin.php";
+$paymentSource = $_GET["source"] ?? $_SESSION["payment_source"] ?? "clientpayment";
+$_SESSION["payment_source"] = $paymentSource;
 
-if ($shopSlug !== '') {
-    $billingUrl .= "?shop=" . urlencode($shopSlug);
+$shopSlug = $_SESSION['login_slug'] ?? '';
+
+if ($paymentSource === "accountbillingadmin") {
+    $returnUrl = "../../tenant/accountbillingadmin.php";
+
+    if ($shopSlug !== '') {
+        $returnUrl .= "?shop=" . urlencode($shopSlug);
+    }
+
+    $returnText = "Go to Billing Dashboard";
+    $tryAgainText = "Try Payment Again";
+} else {
+    $returnUrl = "../clientlanding.php";
+    $returnText = "Return to Home";
+    $tryAgainText = "Try Again";
 }
+
+$checkoutSessionId = $_SESSION["checkout_session_id"] ?? null;
 ?>
 
 <!DOCTYPE html>
@@ -40,28 +55,28 @@ if ($shopSlug !== '') {
         <div style="padding:30px; text-align:center;">
 
             <p style="margin:0 0 22px; color:#475569; line-height:1.6; font-size:15px;">
-                No successful payment was confirmed. You can try again or return to your billing dashboard.
+                No successful payment was confirmed. You can try again or return safely.
             </p>
 
-            <?php if (isset($_SESSION["checkout_session_id"])): ?>
+            <?php if ($checkoutSessionId): ?>
                 <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:12px; padding:16px; margin-bottom:24px; text-align:left;">
                     <p style="margin:0 0 6px; font-size:12px; color:#64748b; font-weight:bold; text-transform:uppercase; letter-spacing:.08em;">
                         Checkout Session ID
                     </p>
                     <p style="margin:0; font-size:13px; color:#0f172a; word-break:break-all;">
-                        <?= htmlspecialchars($_SESSION["checkout_session_id"]) ?>
+                        <?= htmlspecialchars($checkoutSessionId) ?>
                     </p>
                 </div>
             <?php endif; ?>
 
-            <a href="<?= htmlspecialchars($billingUrl) ?>"
+            <a href="<?= htmlspecialchars($returnUrl) ?>"
                style="display:block; width:100%; padding:15px 0; background:#1152d4; color:#fff; text-decoration:none; border-radius:10px; font-weight:800; font-size:14px; text-transform:uppercase; letter-spacing:.06em;">
-                Try Payment Again
+                <?= htmlspecialchars($tryAgainText) ?>
             </a>
 
-            <a href="<?= htmlspecialchars($billingUrl) ?>"
+            <a href="<?= htmlspecialchars($returnUrl) ?>"
                style="display:block; margin-top:14px; padding:14px 0; color:#475569; text-decoration:none; font-size:14px; font-weight:600;">
-                Go to Billing Dashboard
+                <?= htmlspecialchars($returnText) ?>
             </a>
 
         </div>
