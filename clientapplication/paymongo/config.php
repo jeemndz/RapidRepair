@@ -10,7 +10,7 @@
 $PAYMONGO_SECRET_KEY = "sk_test_Z6ynXiE7Ywm2KmTCoKsHZnz2";
 
 // 👉 Add your webhook secret from PayMongo dashboard
-$PAYMONGO_WEBHOOK_SECRET = "whsk_j2z67VgiLucpqtkJn6J38ZSFS";
+$PAYMONGO_WEBHOOK_SECRET = "whsk_j2z67VgiLucpqtkJn6J38ZSF";
 
 /**
  * ============================================
