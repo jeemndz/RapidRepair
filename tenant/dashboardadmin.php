@@ -566,7 +566,7 @@ if ($repairTableStmt) {
                                 <?php echo ($revenueChange >= 0 ? '+' : '') . number_format($revenueChange, 1); ?>%
                             </span>
                         </div>
-                        <p class="text-sm text-slate-500 dark:text-slate-400 font-medium">Monthly Revenue</p>
+                        <p class="text-sm text-slate-500 dark:text-slate-400 font-medium">Monthly Sales</p>
                         <p class="text-2xl font-bold mt-1"><?php echo h(format_money($monthlyRevenue)); ?></p>
                     </div>
                     <div class="bg-white dark:bg-slate-900 p-6 rounded-xl border border-slate-200 dark:border-slate-800">
@@ -606,7 +606,7 @@ if ($repairTableStmt) {
                         <div class="flex items-center justify-between mb-8">
                             <div>
                                 <h3 class="text-lg font-bold">Weekly Performance</h3>
-                                <p class="text-sm text-slate-500">Revenue tracking for the last 7 days (Total: <?php echo h(format_money($weekTotal)); ?>)</p>
+                                <p class="text-sm text-slate-500">Sales tracking for the last 7 days (Total: <?php echo h(format_money($weekTotal)); ?>)</p>
                             </div>
                             <select class="bg-slate-100 dark:bg-slate-800 border-none rounded-lg text-xs font-semibold focus:ring-primary">
                                 <option>This Week</option>

@@ -113,6 +113,15 @@ if ($tenantFilter !== 'all' && !empty($tenantFilter)) {
 }
 $revenueWhere[] = "paymentStatus IN ('Paid', 'Partial')";
 $revenueWhere[] = "amountPaid > 0";
+$revenueWhereDate = [];
+if ($dateRange !== 'all') {
+    if (in_array($dateRange, ['7', '30', '90'], true)) {
+        $revenueWhere[] = "paymentDate >= DATE_SUB(NOW(), INTERVAL " . intval($dateRange) . " DAY)";
+    } elseif ($dateRange === 'ytd') {
+        $revenueWhere[] = "YEAR(paymentDate) = YEAR(CURDATE())";
+    }
+}
+
 $revenueSql = "SELECT SUM(amountPaid) AS total_revenue FROM payments " . buildWhereSql($revenueWhere);
 $revenueResult = $conn->query($revenueSql);
 $totalRevenue = $revenueResult ? ($revenueResult->fetch_assoc()['total_revenue'] ?? 0) : 0;
@@ -692,7 +701,7 @@ $dateStart = match ($dateRange) {
                                 <?php echo $revenueChangeStr; ?>%
                             </span>
                         </div>
-                        <p class="text-slate-500 text-xs font-semibold uppercase tracking-wider">Total Sales / Revenue
+                        <p class="text-slate-500 text-xs font-semibold uppercase tracking-wider">Total Sales
                         </p>
                         <h3 class="text-2xl font-black mt-1"><?php echo formatCurrency($totalRevenue); ?></h3>
                         <p class="text-[10px] text-slate-400 mt-2 font-medium">vs.
@@ -745,7 +754,7 @@ $dateStart = match ($dateRange) {
                     <div
                         class="lg:col-span-2 bg-white border border-slate-200 rounded-lg shadow-sm flex flex-col">
                         <div class="p-6 border-b border-slate-100 flex items-center justify-between">
-                            <h4 class="font-bold text-sm">Revenue Trends</h4>
+                            <h4 class="font-bold text-sm">Sales Trends</h4>
                             <div class="flex bg-slate-100 p-1 rounded-lg gap-1">
                                 <a href="?dateRange=<?php echo $dateRange; ?>&tenantFilter=<?php echo $tenantFilter; ?>&statusFilter=<?php echo $statusFilter; ?>&granularity=daily"
                                     class="px-3 py-1 text-[10px] font-bold rounded <?php echo $granularity === 'daily' ? 'bg-white text-primary shadow-sm' : 'text-slate-600 hover:text-primary'; ?> transition-colors">Daily</a>
@@ -842,7 +851,7 @@ $dateStart = match ($dateRange) {
                     <div
                         class="p-6 border-b border-slate-100 flex flex-col md:flex-row md:items-center justify-between gap-4">
                         <div>
-                            <h4 class="font-bold text-sm">Tenant Revenue Breakdown</h4>
+                            <h4 class="font-bold text-sm">Tenant Sales Breakdown</h4>
                             <p class="text-[11px] text-slate-500">Overview of revenue by tenant during selected period
                             </p>
                         </div>
@@ -868,7 +877,7 @@ $dateStart = match ($dateRange) {
                                         Tenant Name</th>
                                     <th
                                         class="px-6 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                                        Total Revenue</th>
+                                        Total Sales</th>
                                     <th
                                         class="px-6 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest">
                                         Subscriptions</th>

@@ -447,8 +447,7 @@ foreach ($trendData as $data) {
                         <span
                             class="text-[10px] font-bold <?php echo $totalRevenue > 100000 ? 'text-green-600 bg-green-50' : 'text-slate-400 bg-slate-50'; ?> px-2 py-0.5 rounded-full"><?php echo $totalRevenue > 100000 ? '+12.4%' : 'Stable'; ?></span>
                     </div>
-                    <p class="text-slate-500 text-xs font-bold uppercase tracking-wider mb-1 text-left">Total Revenue
-                        (Period)</p>
+                    <p class="text-slate-500 text-xs font-bold uppercase tracking-wider mb-1 text-left">Total Sales</p>
                     <h3 class="text-2xl font-black text-slate-900 text-left">₱<?php echo number_format($totalRevenue, 2); ?></h3>
                 </div>
                 <!-- Avg Repair Cost -->
@@ -527,7 +526,7 @@ foreach ($trendData as $data) {
                 </div>
                 <div class="bg-white border border-slate-200 rounded-xl p-6 shadow-sm relative overflow-hidden">
                     <div class="flex justify-between items-center mb-6">
-                        <h4 class="text-sm font-bold uppercase tracking-widest text-slate-400 text-left">Revenue Trends
+                        <h4 class="text-sm font-bold uppercase tracking-widest text-slate-400 text-left">Sales Trends
                         </h4>
                     </div>
                     <div class="h-48 flex items-end justify-start gap-1 relative z-10">
@@ -571,7 +570,7 @@ foreach ($trendData as $data) {
                                     Success Rate</th>
                                 <th
                                     class="px-6 py-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest text-left">
-                                    Revenue Generated</th>
+                                    Sales Generated</th>
                                 <th
                                     class="px-6 py-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest text-left">
                                     Avg Hours</th>
