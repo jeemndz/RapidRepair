@@ -932,12 +932,25 @@ if ($upcomingResult) {
 }
 
 $historyRange = isset($_GET['history_range']) ? trim((string) $_GET['history_range']) : 'all';
-$allowedHistoryRanges = ['all', 'today', 'week', 'month'];
+$allowedHistoryRanges = ['all', 'today', 'week', 'month', 'range'];
 if (!in_array($historyRange, $allowedHistoryRanges, true)) {
     $historyRange = 'all';
 }
 $historySearch = isset($_GET['history_search']) ? trim((string) $_GET['history_search']) : '';
-
+// Optional custom date range filter (YYYY-MM-DD)
+$historyDateFrom = isset($_GET['date_from']) ? trim((string) $_GET['date_from']) : '';
+$historyDateTo = isset($_GET['date_to']) ? trim((string) $_GET['date_to']) : '';
+// Validate date inputs
+$validDateFrom = false;
+$validDateTo = false;
+if ($historyDateFrom !== '') {
+    $d = DateTime::createFromFormat('Y-m-d', $historyDateFrom);
+    $validDateFrom = $d && $d->format('Y-m-d') === $historyDateFrom;
+}
+if ($historyDateTo !== '') {
+    $d2 = DateTime::createFromFormat('Y-m-d', $historyDateTo);
+    $validDateTo = $d2 && $d2->format('Y-m-d') === $historyDateTo;
+}
 // Pagination variables
 $itemsPerPage = 5;
 $currentPage = isset($_GET['history_page']) ? (int) $_GET['history_page'] : 1;
@@ -947,7 +960,19 @@ if ($currentPage < 1) {
 $offset = ($currentPage - 1) * $itemsPerPage;
 
 $historyDateFilterSql = '';
-if ($historyRange === 'today') {
+// If a valid custom range is provided, use it (and prefer it over the preset ranges)
+if ($validDateFrom && $validDateTo) {
+    // ensure from <= to
+    if ($historyDateFrom > $historyDateTo) {
+        // swap
+        [$historyDateFrom, $historyDateTo] = [$historyDateTo, $historyDateFrom];
+    }
+    $safeFrom = mysqli_real_escape_string($conn, $historyDateFrom);
+    $safeTo = mysqli_real_escape_string($conn, $historyDateTo);
+    $historyDateFilterSql = " AND a.appointment_date BETWEEN '$safeFrom' AND '$safeTo'";
+    // mark active range
+    $historyRange = 'range';
+} elseif ($historyRange === 'today') {
     $historyDateFilterSql = ' AND a.appointment_date = CURDATE()';
 } elseif ($historyRange === 'week') {
     $historyDateFilterSql = ' AND YEARWEEK(a.appointment_date, 1) = YEARWEEK(CURDATE(), 1)';
@@ -1775,6 +1800,7 @@ if ($historyStmt) {
                                 'today' => 'Today',
                                 'week' => 'This Week',
                                 'month' => 'This Month',
+                                'range' => 'Custom Range',
                             ];
                         ?>
                         <?php foreach ($historyLabels as $rangeValue => $rangeLabel): ?>
@@ -1789,18 +1815,23 @@ if ($historyStmt) {
                             </a>
                         <?php endforeach; ?>
                     </div>
-
-                    <form method="get" class="flex flex-wrap items-center gap-2">
+                    <form method="get" class="flex flex-wrap items-center gap-2" id="historyFilterForm">
                         <input type="hidden" name="shop" value="<?php echo h($loginSlug); ?>">
                         <input type="hidden" name="search" value="<?php echo h($search); ?>">
                         <input type="hidden" name="status" value="<?php echo h($statusFilter); ?>">
-                        <input type="hidden" name="history_range" value="<?php echo h($historyRange); ?>">
+                        <input type="hidden" name="history_range" value="<?php echo h($historyRange); ?>" id="history_range_input">
                         <input
                             type="text"
                             name="history_search"
                             value="<?php echo h($historySearch); ?>"
                             placeholder="Search completed history..."
                             class="w-full md:w-96 rounded-lg border-slate-300 text-sm">
+                        <div class="flex items-center gap-2">
+                            <label class="text-xs text-slate-600">From</label>
+                            <input type="date" name="date_from" id="date_from" value="<?php echo h($historyDateFrom); ?>" class="rounded-lg border-slate-300 text-sm">
+                            <label class="text-xs text-slate-600">To</label>
+                            <input type="date" name="date_to" id="date_to" value="<?php echo h($historyDateTo); ?>" class="rounded-lg border-slate-300 text-sm">
+                        </div>
                         <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-semibold">Apply</button>
                         <a
                             href="appointmentadmin.php?<?php echo h(http_build_query(array_filter([
@@ -2062,6 +2093,19 @@ if ($historyStmt) {
             dropdown.classList.add('hidden');
         }
     });
+
+    // History date range quick behavior: when user fills dates, mark history_range as 'range'
+    const historyForm = document.getElementById('historyFilterForm');
+    if (historyForm) {
+        const dateFrom = document.getElementById('date_from');
+        const dateTo = document.getElementById('date_to');
+        const rangeInput = document.getElementById('history_range_input');
+        historyForm.addEventListener('submit', function() {
+            if (dateFrom && dateTo && dateFrom.value !== '' && dateTo.value !== '') {
+                if (rangeInput) rangeInput.value = 'range';
+            }
+        });
+    }
 </script>
 
 </html>
