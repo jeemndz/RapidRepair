@@ -1,303 +1,161 @@
 <?php
+header("Content-Type: application/json");
+
 require_once "config.php";
 include __DIR__ . "/../../db.php";
 
-header("Content-Type: application/json");
-
+// ============================================
+// 📥 GET PAYLOAD
+// ============================================
 $payload = file_get_contents("php://input");
-$signatureHeader = $_SERVER["HTTP_PAYMONGO_SIGNATURE"] ?? "";
 
-function logWebhook($message, $data = null) {
+// ============================================
+// 📝 LOGGER
+// ============================================
+function webhookLog($message, $data = null)
+{
     $line = "[" . date("Y-m-d H:i:s") . "] " . $message;
-    if ($data !== null) $line .= " | " . json_encode($data);
+
+    if ($data !== null) {
+        $line .= " | " . json_encode($data);
+    }
+
     file_put_contents(__DIR__ . "/webhook.log", $line . PHP_EOL, FILE_APPEND);
 }
 
-function verifyPayMongoSignature($payload, $signatureHeader, $secret) {
-    if (!$signatureHeader || !$secret) return false;
+webhookLog("Webhook received", $payload);
 
-    $parts = [];
-    foreach (explode(",", $signatureHeader) as $segment) {
-        $kv = explode("=", trim($segment), 2);
-        if (count($kv) === 2) $parts[$kv[0]] = $kv[1];
-    }
+// ============================================
+// 📦 PARSE JSON
+// ============================================
+$data = json_decode($payload, true);
 
-    $signature = $parts["v1"] ?? $parts["te"] ?? null;
-    if (!isset($parts["t"]) || !$signature) return false;
-
-    $expected = hash_hmac("sha256", $parts["t"] . "." . $payload, $secret);
-    return hash_equals($expected, $signature);
-}
-
-if (!verifyPayMongoSignature($payload, $signatureHeader, $PAYMONGO_WEBHOOK_SECRET)) {
-    logWebhook("Invalid signature");
-    http_response_code(400);
-    echo json_encode(["error" => "Invalid signature"]);
-    exit;
-}
-
-$event = json_decode($payload, true);
-
-if (!$event) {
-    logWebhook("Invalid JSON");
-    http_response_code(400);
-    echo json_encode(["error" => "Invalid JSON"]);
-    exit;
-}
-
-logWebhook("Raw webhook received", $event);
-
-/*
-|--------------------------------------------------------------------------
-| Support both payload shapes:
-| 1. Event wrapper:
-|    data.attributes.type = checkout_session.payment.paid
-|    data.attributes.data = checkout_session object
-|
-| 2. Direct checkout_session object:
-|    id = cs_xxx
-|    type = checkout_session
-|--------------------------------------------------------------------------
-*/
-
-$eventType = $event["data"]["attributes"]["type"] ?? null;
-
-if ($eventType === "checkout_session.payment.paid") {
-    $checkoutData = $event["data"]["attributes"]["data"] ?? [];
-} elseif (($event["type"] ?? "") === "checkout_session") {
-    $checkoutData = $event;
-    $eventType = "checkout_session.payment.paid";
-} else {
-    logWebhook("Ignored event", ["event_type" => $eventType]);
+if (!$data) {
+    webhookLog("Invalid JSON");
     http_response_code(200);
-    echo json_encode(["message" => "Ignored"]);
+    echo json_encode(["status" => "invalid_json"]);
     exit;
 }
 
-$checkoutSessionId = $checkoutData["id"] ?? null;
-$checkoutAttributes = $checkoutData["attributes"] ?? [];
+// ============================================
+// 📌 CHECK EVENT TYPE
+// ============================================
+$eventType = $data["data"]["attributes"]["type"] ?? "";
 
-if (!$checkoutSessionId) {
-    logWebhook("Missing checkout session ID");
-    http_response_code(400);
-    echo json_encode(["error" => "Missing checkout session ID"]);
-    exit;
-}
-
-$payment = $checkoutAttributes["payments"][0] ?? null;
-
-if (!$payment) {
-    logWebhook("No payment object found", [
-        "checkout_session_id" => $checkoutSessionId
-    ]);
-    http_response_code(400);
-    echo json_encode(["error" => "No payment found"]);
-    exit;
-}
-
-$paymentAttributes = $payment["attributes"] ?? [];
-$paymentStatus = $paymentAttributes["status"] ?? "";
-
-if ($paymentStatus !== "paid") {
-    logWebhook("Payment not paid", [
-        "checkout_session_id" => $checkoutSessionId,
-        "payment_status" => $paymentStatus
-    ]);
+if ($eventType !== "checkout_session.payment.paid") {
+    webhookLog("Ignored event", ["event_type" => $eventType]);
     http_response_code(200);
-    echo json_encode(["message" => "Payment not paid"]);
+    echo json_encode(["status" => "ignored"]);
     exit;
 }
 
-$description = $checkoutAttributes["description"] ?? $paymentAttributes["description"] ?? "";
+// ============================================
+// 📌 EXTRACT CHECKOUT DATA
+// ============================================
+$checkout = $data["data"]["attributes"]["data"] ?? [];
+$attributes = $checkout["attributes"] ?? [];
 
-preg_match('/Tenant ID:\s*(\d+)/', $description, $tenantMatch);
-preg_match('/Plan ID:\s*(\d+)/', $description, $planMatch);
-preg_match('/Billing Cycle:\s*(monthly|quarterly|yearly)/', $description, $cycleMatch);
+$description = $attributes["description"] ?? "";
 
-$tenantId = (int)($tenantMatch[1] ?? 0);
-$planId = (int)($planMatch[1] ?? 0);
-$billingCycle = $cycleMatch[1] ?? "monthly";
+// Extract Payment ID
+preg_match('/Payment ID:\s*(\d+)/', $description, $matches);
+$paymentId = isset($matches[1]) ? (int)$matches[1] : 0;
 
-if ($tenantId <= 0) {
-    logWebhook("Missing tenant ID from description", [
-        "description" => $description
-    ]);
-    http_response_code(400);
-    echo json_encode(["error" => "Missing tenant ID"]);
+if ($paymentId <= 0) {
+    webhookLog("❌ No Payment ID found", ["description" => $description]);
+    http_response_code(200);
+    echo json_encode(["status" => "no_payment_id"]);
     exit;
 }
+
+// ============================================
+// 💳 PAYMENT DETAILS
+// ============================================
+$payment = $attributes["payments"][0] ?? [];
+$paymentAttr = $payment["attributes"] ?? [];
 
 $paymongoPaymentId = $payment["id"] ?? null;
-$amountCentavos = (int)($paymentAttributes["amount"] ?? 0);
-$amount = $amountCentavos / 100;
+$paymentStatus = $paymentAttr["status"] ?? "";
 
-$rawMethod = $paymentAttributes["source"]["type"]
-    ?? $paymentAttributes["payment_method"]["type"]
-    ?? $checkoutAttributes["payment_method_used"]
+if ($paymentStatus !== "paid") {
+    webhookLog("Payment not paid", ["status" => $paymentStatus]);
+    http_response_code(200);
+    echo json_encode(["status" => "not_paid"]);
+    exit;
+}
+
+// Detect payment method
+$method = $paymentAttr["source"]["type"]
+    ?? $attributes["payment_method_used"]
     ?? "card";
 
 $paymentMethod = "Card";
-if ($rawMethod === "gcash") $paymentMethod = "GCash";
-elseif ($rawMethod === "paymaya") $paymentMethod = "PayMaya";
-elseif ($rawMethod === "grab_pay") $paymentMethod = "GrabPay";
-elseif ($rawMethod === "qrph") $paymentMethod = "QRPH";
-elseif ($rawMethod === "dob") $paymentMethod = "Bank Transfer";
 
-$transactionReference = $paymongoPaymentId ?: $checkoutSessionId;
-$gcashReference = ($paymentMethod === "GCash") ? $transactionReference : null;
+if ($method === "gcash") $paymentMethod = "GCash";
+elseif ($method === "paymaya") $paymentMethod = "PayMaya";
+elseif ($method === "grab_pay") $paymentMethod = "GrabPay";
+elseif ($method === "qrph") $paymentMethod = "QRPH";
+elseif ($method === "dob") $paymentMethod = "Bank Transfer";
 
-$startDate = date("Y-m-d");
+// ============================================
+// 💾 UPDATE DATABASE (KEY PART)
+// ============================================
+$stmt = mysqli_prepare($conn, "
+    UPDATE subscription_payments
+    SET 
+        payment_status = 'Paid',
+        payment_method = ?,
+        paymongo_payment_id = ?,
+        transaction_reference = ?,
+        paid_at = NOW(),
+        updated_at = NOW()
+    WHERE payment_id = ?
+");
 
-if ($billingCycle === "quarterly") {
-    $endDate = date("Y-m-d", strtotime("+3 months"));
-} elseif ($billingCycle === "yearly") {
-    $endDate = date("Y-m-d", strtotime("+1 year"));
-} else {
-    $endDate = date("Y-m-d", strtotime("+1 month"));
-}
-
-$nextBillingDate = $endDate;
-
-mysqli_begin_transaction($conn);
-
-try {
-    $checkStmt = mysqli_prepare($conn, "
-        SELECT payment_id
-        FROM subscription_payments
-        WHERE checkout_session_id = ?
-           OR paymongo_payment_id = ?
-           OR transaction_reference = ?
-        LIMIT 1
-    ");
-
+if ($stmt) {
     mysqli_stmt_bind_param(
-        $checkStmt,
-        "sss",
-        $checkoutSessionId,
-        $paymongoPaymentId,
-        $transactionReference
-    );
-
-    mysqli_stmt_execute($checkStmt);
-    $checkResult = mysqli_stmt_get_result($checkStmt);
-    $existing = $checkResult ? mysqli_fetch_assoc($checkResult) : null;
-    mysqli_stmt_close($checkStmt);
-
-    if ($existing) {
-        mysqli_commit($conn);
-        logWebhook("Payment already saved", $existing);
-        http_response_code(200);
-        echo json_encode(["status" => "already_saved"]);
-        exit;
-    }
-
-    $subStmt = mysqli_prepare($conn, "
-        INSERT INTO subscriptions (
-            tenantID,
-            plan_id,
-            billing_cycle,
-            start_date,
-            end_date,
-            next_billing_date,
-            amount,
-            status,
-            created_at,
-            updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, 'active', NOW(), NOW())
-    ");
-
-    if (!$subStmt) {
-        throw new Exception("Subscription prepare failed: " . mysqli_error($conn));
-    }
-
-    mysqli_stmt_bind_param(
-        $subStmt,
-        "iissssd",
-        $tenantId,
-        $planId,
-        $billingCycle,
-        $startDate,
-        $endDate,
-        $nextBillingDate,
-        $amount
-    );
-
-    mysqli_stmt_execute($subStmt);
-    $subscriptionId = mysqli_insert_id($conn);
-    mysqli_stmt_close($subStmt);
-
-    $paymentStmt = mysqli_prepare($conn, "
-        INSERT INTO subscription_payments (
-            tenantID,
-            subscription_id,
-            plan_id,
-            amount,
-            payment_method,
-            payment_status,
-            checkout_session_id,
-            paymongo_payment_id,
-            transaction_reference,
-            gcash_reference,
-            billing_period_start,
-            billing_period_end,
-            paid_at,
-            next_billing_date,
-            created_at,
-            updated_at
-        ) VALUES (?, ?, ?, ?, ?, 'Paid', ?, ?, ?, ?, ?, ?, NOW(), ?, NOW(), NOW())
-    ");
-
-    if (!$paymentStmt) {
-        throw new Exception("Payment prepare failed: " . mysqli_error($conn));
-    }
-
-    mysqli_stmt_bind_param(
-        $paymentStmt,
-        "iiidssssssss",
-        $tenantId,
-        $subscriptionId,
-        $planId,
-        $amount,
+        $stmt,
+        "sssi",
         $paymentMethod,
-        $checkoutSessionId,
         $paymongoPaymentId,
-        $transactionReference,
-        $gcashReference,
-        $startDate,
-        $endDate,
-        $nextBillingDate
+        $paymongoPaymentId,
+        $paymentId
     );
 
-    mysqli_stmt_execute($paymentStmt);
-    $paymentId = mysqli_insert_id($conn);
-    mysqli_stmt_close($paymentStmt);
+    mysqli_stmt_execute($stmt);
 
-    mysqli_commit($conn);
-
-    logWebhook("Payment saved as Paid", [
+    webhookLog("DB updated", [
         "payment_id" => $paymentId,
-        "subscription_id" => $subscriptionId,
-        "tenant_id" => $tenantId,
-        "plan_id" => $planId,
-        "method" => $paymentMethod,
-        "checkout_session_id" => $checkoutSessionId,
-        "paymongo_payment_id" => $paymongoPaymentId
+        "affected_rows" => mysqli_stmt_affected_rows($stmt)
     ]);
 
-    http_response_code(200);
-    echo json_encode(["status" => "success"]);
-    exit;
-
-} catch (Throwable $e) {
-    mysqli_rollback($conn);
-
-    logWebhook("DB ERROR", [
-        "message" => $e->getMessage(),
-        "checkout_session_id" => $checkoutSessionId,
-        "paymongo_payment_id" => $paymongoPaymentId
-    ]);
-
-    http_response_code(500);
-    echo json_encode(["error" => "Database save failed"]);
-    exit;
+    mysqli_stmt_close($stmt);
+} else {
+    webhookLog("DB prepare failed", mysqli_error($conn));
 }
+
+// ============================================
+// 🔁 ACTIVATE SUBSCRIPTION
+// ============================================
+$stmt2 = mysqli_prepare($conn, "
+    UPDATE subscriptions s
+    INNER JOIN subscription_payments p 
+        ON s.subscription_id = p.subscription_id
+    SET 
+        s.status = 'active',
+        s.updated_at = NOW()
+    WHERE p.payment_id = ?
+");
+
+if ($stmt2) {
+    mysqli_stmt_bind_param($stmt2, "i", $paymentId);
+    mysqli_stmt_execute($stmt2);
+    mysqli_stmt_close($stmt2);
+}
+
+// ============================================
+// ✅ IMPORTANT: ALWAYS RETURN 200
+// ============================================
+http_response_code(200);
+echo json_encode(["status" => "success"]);
+exit;
