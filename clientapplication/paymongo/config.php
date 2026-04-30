@@ -6,10 +6,10 @@
  * ============================================
  */
 
-// You said you want it hardcoded — OK for testing
+// Hardcoded (OK for testing)
 $PAYMONGO_SECRET_KEY = "sk_test_Z6ynXiE7Ywm2KmTCoKsHZnz2";
 
-// 👉 Add your webhook secret from PayMongo dashboard
+// Webhook signing secret (from PayMongo dashboard)
 $PAYMONGO_WEBHOOK_SECRET = "whsk_j2z67VgiLucpqtkJn6J38ZSF";
 
 /**
@@ -24,23 +24,19 @@ $isLocal = (
     strpos($host, '127.0.0.1') !== false
 );
 
-// Force HTTPS on Azure
 $protocol = $isLocal ? "http://" : "https://";
 
-// Base path
 $basePath = "/RapidRepair/clientapplication/paymongo";
 
-// Local vs Azure URL
 if ($isLocal) {
     $BASE_URL = $protocol . $host . $basePath;
 } else {
-    // Your Azure domain
     $BASE_URL = "https://rapidrepair-gygpcbczgyg0czek.southeastasia-01.azurewebsites.net/clientapplication/paymongo";
 }
 
 /**
  * ============================================
- * 🧪 DEBUG MODE (TURN OFF IN PRODUCTION)
+ * 🧪 DEBUG MODE
  * ============================================
  */
 
@@ -53,7 +49,7 @@ if ($DEBUG_MODE) {
 
 /**
  * ============================================
- * 📝 HELPER: LOGGING (FOR WEBHOOK DEBUG)
+ * 📝 LOGGER
  * ============================================
  */
 
@@ -72,7 +68,7 @@ function logPaymongo($message, $data = null)
 
 /**
  * ============================================
- * 🔐 VERIFY WEBHOOK SIGNATURE
+ * 🔐 VERIFY WEBHOOK SIGNATURE (FIXED)
  * ============================================
  */
 
@@ -83,6 +79,7 @@ function verifyPaymongoSignature($payload, $signatureHeader, $secret)
     }
 
     $parts = [];
+
     foreach (explode(',', $signatureHeader) as $segment) {
         $kv = explode('=', trim($segment), 2);
         if (count($kv) === 2) {
@@ -90,12 +87,15 @@ function verifyPaymongoSignature($payload, $signatureHeader, $secret)
         }
     }
 
-    if (!isset($parts['t']) || !isset($parts['te'])) {
+    // ✅ FIX: use v1 (not te)
+    $signature = $parts['v1'] ?? null;
+
+    if (!isset($parts['t']) || !$signature) {
         return false;
     }
 
     $signedPayload = $parts['t'] . "." . $payload;
     $expectedSignature = hash_hmac('sha256', $signedPayload, $secret);
 
-    return hash_equals($expectedSignature, $parts['te']);
+    return hash_equals($expectedSignature, $signature);
 }
