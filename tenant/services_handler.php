@@ -37,24 +37,22 @@ function jsonResponse(int $statusCode, array $payload): void {
     exit;
 }
 
-// Start session if not already started
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
 
-// Include database connection
 require_once '../db.php';
 
-// Get the action from the request
-$action = isset($_GET['action']) ? $_GET['action'] : (isset($_POST['action']) ? $_POST['action'] : null);
-$tenantID = isset($_SESSION['tenantID']) ? $_SESSION['tenantID'] : null;
+$action = $_GET['action'] ?? $_POST['action'] ?? null;
+$tenantID = $_SESSION['tenantID'] ?? null;
 
-// Verify tenant is logged in
 if (!$tenantID) {
     jsonResponse(401, ['success' => false, 'message' => 'Unauthorized']);
 }
 
-switch($action) {
+$tenantID = (int) $tenantID;
+
+switch ($action) {
     case 'get_all':
         getServices($conn, $tenantID);
         break;
@@ -80,28 +78,185 @@ switch($action) {
         jsonResponse(400, ['success' => false, 'message' => 'Invalid action']);
 }
 
-/**
- * Get all services for the tenant
- */
-function getServices($conn, $tenantID) {
-    $query = "SELECT * FROM services WHERE tenantID = ? ORDER BY created_at DESC";
+function normalizeCategory($category) {
+    $allowedCategories = [
+        'Engine',
+        'Electrical',
+        'Maintenance',
+        'Brakes',
+        'Suspension',
+        'Transmission',
+        'Cooling System',
+        'Diagnostics',
+        'Other'
+    ];
+
+    $category = trim((string) $category);
+
+    if (!$category || !in_array($category, $allowedCategories, true)) {
+        return 'Other';
+    }
+
+    return $category;
+}
+
+function normalizeStatus($status) {
+    return in_array($status, ['Active', 'Inactive'], true) ? $status : 'Active';
+}
+
+function normalizeServiceType($service_type) {
+    return in_array($service_type, ['Main', 'Sub'], true) ? $service_type : 'Main';
+}
+
+function validateParentService($conn, $tenantID, $parent_service_id, $current_service_id = null) {
+    if (!$parent_service_id) {
+        return null;
+    }
+
+    $parent_service_id = (int) $parent_service_id;
+
+    if ($current_service_id && $parent_service_id === (int) $current_service_id) {
+        jsonResponse(400, [
+            'success' => false,
+            'message' => 'A service cannot be its own parent'
+        ]);
+    }
+
+    $query = "
+        SELECT service_id 
+        FROM services 
+        WHERE service_id = ? 
+        AND tenantID = ? 
+        AND service_type = 'Main'
+    ";
+
     $stmt = $conn->prepare($query);
-    
+
     if (!$stmt) {
         jsonResponse(500, ['success' => false, 'message' => 'Database error: ' . $conn->error]);
     }
-    
+
+    $stmt->bind_param('ii', $parent_service_id, $tenantID);
+    $stmt->execute();
+    $result = $stmt->get_result();
+
+    if ($result->num_rows === 0) {
+        $stmt->close();
+        jsonResponse(400, [
+            'success' => false,
+            'message' => 'Invalid parent service. Please select an existing main service.'
+        ]);
+    }
+
+    $stmt->close();
+
+    return $parent_service_id;
+}
+
+function insertServiceRow(
+    $conn,
+    int $tenantID,
+    $parent_service_id,
+    string $service_type,
+    string $service_name,
+    string $description,
+    float $price,
+    int $duration_minutes,
+    string $category,
+    string $status
+) {
+    $query = "
+        INSERT INTO services (
+            tenantID,
+            parent_service_id,
+            service_type,
+            service_name,
+            description,
+            price,
+            duration_minutes,
+            category,
+            status
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ";
+
+    $stmt = $conn->prepare($query);
+
+    if (!$stmt) {
+        return [
+            'success' => false,
+            'error' => 'Database error: ' . $conn->error,
+            'insert_id' => 0
+        ];
+    }
+
+    $stmt->bind_param(
+        'iisssdiss',
+        $tenantID,
+        $parent_service_id,
+        $service_type,
+        $service_name,
+        $description,
+        $price,
+        $duration_minutes,
+        $category,
+        $status
+    );
+
+    if (!$stmt->execute()) {
+        $error = $stmt->error ?: $conn->error;
+        $stmt->close();
+
+        return [
+            'success' => false,
+            'error' => $error,
+            'insert_id' => 0
+        ];
+    }
+
+    $insert_id = $stmt->insert_id;
+    $stmt->close();
+
+    return [
+        'success' => true,
+        'error' => null,
+        'insert_id' => $insert_id
+    ];
+}
+
+function getServices($conn, $tenantID) {
+    $query = "
+        SELECT 
+            s.*,
+            p.service_name AS parent_service_name
+        FROM services s
+        LEFT JOIN services p 
+            ON s.parent_service_id = p.service_id
+            AND p.tenantID = s.tenantID
+        WHERE s.tenantID = ?
+        ORDER BY 
+            COALESCE(s.parent_service_id, s.service_id),
+            CASE WHEN s.service_type = 'Main' THEN 0 ELSE 1 END,
+            s.service_name ASC
+    ";
+
+    $stmt = $conn->prepare($query);
+
+    if (!$stmt) {
+        jsonResponse(500, ['success' => false, 'message' => 'Database error: ' . $conn->error]);
+    }
+
     $stmt->bind_param('i', $tenantID);
     $stmt->execute();
     $result = $stmt->get_result();
-    
+
     $services = [];
-    while($row = $result->fetch_assoc()) {
+
+    while ($row = $result->fetch_assoc()) {
         $services[] = $row;
     }
-    
+
     $stmt->close();
-    
+
     jsonResponse(200, [
         'success' => true,
         'services' => $services,
@@ -109,287 +264,538 @@ function getServices($conn, $tenantID) {
     ]);
 }
 
-/**
- * Get count of all services for the tenant
- */
 function getServicesCount($conn, $tenantID) {
-    $query = "SELECT COUNT(*) as total FROM services WHERE tenantID = ? AND status = 'Active'";
+    $query = "
+        SELECT COUNT(*) AS total 
+        FROM services 
+        WHERE tenantID = ? 
+        AND status = 'Active'
+    ";
+
     $stmt = $conn->prepare($query);
-    
+
     if (!$stmt) {
         jsonResponse(500, ['success' => false, 'message' => 'Database error: ' . $conn->error]);
     }
-    
+
     $stmt->bind_param('i', $tenantID);
     $stmt->execute();
     $result = $stmt->get_result();
     $row = $result->fetch_assoc();
     $stmt->close();
-    
+
     jsonResponse(200, [
         'success' => true,
-        'count' => (int)$row['total']
+        'count' => (int) $row['total']
     ]);
 }
 
-/**
- * Get a single service by ID
- */
 function getServiceById($conn, $tenantID) {
-    $service_id = isset($_GET['service_id']) ? intval($_GET['service_id']) : null;
-    
+    $service_id = isset($_GET['service_id']) ? (int) $_GET['service_id'] : 0;
+
     if (!$service_id) {
         jsonResponse(400, ['success' => false, 'message' => 'Service ID is required']);
     }
-    
-    $query = "SELECT * FROM services WHERE service_id = ? AND tenantID = ?";
+
+    $query = "
+        SELECT 
+            s.*,
+            p.service_name AS parent_service_name
+        FROM services s
+        LEFT JOIN services p 
+            ON s.parent_service_id = p.service_id
+            AND p.tenantID = s.tenantID
+        WHERE s.service_id = ? 
+        AND s.tenantID = ?
+    ";
+
     $stmt = $conn->prepare($query);
-    
+
     if (!$stmt) {
         jsonResponse(500, ['success' => false, 'message' => 'Database error: ' . $conn->error]);
     }
-    
+
     $stmt->bind_param('ii', $service_id, $tenantID);
     $stmt->execute();
     $result = $stmt->get_result();
-    
+
     if ($result->num_rows === 0) {
         $stmt->close();
         jsonResponse(404, ['success' => false, 'message' => 'Service not found']);
     }
-    
+
     $service = $result->fetch_assoc();
     $stmt->close();
-    
+
     jsonResponse(200, [
         'success' => true,
         'service' => $service
     ]);
 }
 
-/**
- * Add a new service
- */
 function addService($conn, $tenantID) {
-    $service_name = isset($_POST['service_name']) ? trim($_POST['service_name']) : null;
-    $description = isset($_POST['description']) ? trim($_POST['description']) : null;
-    $price = isset($_POST['price']) ? floatval($_POST['price']) : null;
-    $duration_minutes = isset($_POST['duration_minutes']) ? intval($_POST['duration_minutes']) : null;
-    $category = isset($_POST['category']) ? trim($_POST['category']) : null;
-    $status = isset($_POST['status']) ? $_POST['status'] : 'Active';
-    
-    // Validate required fields
+    $service_type = normalizeServiceType($_POST['service_type'] ?? 'Main');
+    $parent_service_id = $_POST['parent_service_id'] ?? null;
+
+    $service_name = trim($_POST['service_name'] ?? '');
+    $description = trim($_POST['description'] ?? '');
+    $price = isset($_POST['price']) ? (float) $_POST['price'] : null;
+    $duration_minutes = isset($_POST['duration_minutes']) && $_POST['duration_minutes'] !== ''
+        ? (int) $_POST['duration_minutes']
+        : 0;
+    $category = normalizeCategory($_POST['category'] ?? 'Other');
+    $status = normalizeStatus($_POST['status'] ?? 'Active');
+
     if (!$service_name || $price === null) {
-        jsonResponse(400, ['success' => false, 'message' => 'Service name and price are required']);
-    }
-    
-    if ($price < 0) {
-        jsonResponse(400, ['success' => false, 'message' => 'Price must be a positive number']);
+        jsonResponse(400, [
+            'success' => false,
+            'message' => 'Service name and price are required'
+        ]);
     }
 
-    $allowedCategories = ['Engine', 'Electrical', 'Maintenance', 'Brakes', 'Suspension', 'Transmission', 'Cooling System', 'Diagnostics', 'Other'];
-    if (!$category || !in_array($category, $allowedCategories, true)) {
-        $category = 'Other';
-    }
-    
-    $query = "INSERT INTO services (tenantID, service_name, description, price, duration_minutes, category, status) 
-              VALUES (?, ?, ?, ?, ?, ?, ?)";
-    $stmt = $conn->prepare($query);
-    
-    if (!$stmt) {
-        jsonResponse(500, ['success' => false, 'message' => 'Database error: ' . $conn->error]);
-    }
-    
-    $stmt->bind_param('issidss', $tenantID, $service_name, $description, $price, $duration_minutes, $category, $status);
-    
-    if ($stmt->execute()) {
-        $service_id = $stmt->insert_id;
-        $stmt->close();
-        
-        jsonResponse(200, [
-            'success' => true,
-            'message' => 'Service added successfully',
-            'service_id' => $service_id
+    if ($price < 0) {
+        jsonResponse(400, [
+            'success' => false,
+            'message' => 'Price must be a positive number'
         ]);
+    }
+
+    if ($duration_minutes < 0) {
+        jsonResponse(400, [
+            'success' => false,
+            'message' => 'Duration must be a positive number'
+        ]);
+    }
+
+    if ($service_type === 'Main') {
+        $parent_service_id = null;
     } else {
-        $stmt->close();
-        
-        // Check for duplicate service name error
-        if (strpos($conn->error, 'Duplicate entry') !== false) {
-            jsonResponse(409, ['success' => false, 'message' => 'A service with this name already exists']);
-        } else {
-            jsonResponse(500, ['success' => false, 'message' => 'Error adding service: ' . $conn->error]);
+        if (!$parent_service_id) {
+            jsonResponse(400, [
+                'success' => false,
+                'message' => 'Parent main service is required for sub-services'
+            ]);
+        }
+
+        $parent_service_id = validateParentService($conn, $tenantID, $parent_service_id);
+    }
+
+    $conn->begin_transaction();
+
+    $insertMain = insertServiceRow(
+        $conn,
+        $tenantID,
+        $parent_service_id,
+        $service_type,
+        $service_name,
+        $description,
+        $price,
+        $duration_minutes,
+        $category,
+        $status
+    );
+
+    if (!$insertMain['success']) {
+        $conn->rollback();
+
+        if (strpos($insertMain['error'], 'Duplicate entry') !== false) {
+            jsonResponse(409, [
+                'success' => false,
+                'message' => 'A service with this name already exists'
+            ]);
+        }
+
+        jsonResponse(500, [
+            'success' => false,
+            'message' => 'Error adding service: ' . $insertMain['error']
+        ]);
+    }
+
+    $service_id = (int) $insertMain['insert_id'];
+    $sub_services_added = 0;
+
+    if ($service_type === 'Main' && !empty($_POST['sub_services'])) {
+        $subServices = json_decode($_POST['sub_services'], true);
+
+        if (!is_array($subServices)) {
+            $conn->rollback();
+            jsonResponse(400, [
+                'success' => false,
+                'message' => 'Invalid sub-services data'
+            ]);
+        }
+
+        foreach ($subServices as $index => $sub) {
+            $sub_name = trim($sub['service_name'] ?? $sub['name'] ?? '');
+            $sub_description = trim($sub['description'] ?? '');
+            $sub_price = isset($sub['price']) && $sub['price'] !== ''
+                ? (float) $sub['price']
+                : null;
+            $sub_duration = isset($sub['duration_minutes']) && $sub['duration_minutes'] !== ''
+                ? (int) $sub['duration_minutes']
+                : 0;
+
+            if ($sub_name === '' && $sub_price === null && $sub_description === '') {
+                continue;
+            }
+
+            if ($sub_name === '') {
+                $conn->rollback();
+                jsonResponse(400, [
+                    'success' => false,
+                    'message' => 'Sub-service #' . ($index + 1) . ' must have a name'
+                ]);
+            }
+
+            if ($sub_price === null || $sub_price < 0) {
+                $conn->rollback();
+                jsonResponse(400, [
+                    'success' => false,
+                    'message' => 'Sub-service #' . ($index + 1) . ' must have a valid price'
+                ]);
+            }
+
+            if ($sub_duration < 0) {
+                $conn->rollback();
+                jsonResponse(400, [
+                    'success' => false,
+                    'message' => 'Sub-service #' . ($index + 1) . ' duration must be valid'
+                ]);
+            }
+
+            $insertSub = insertServiceRow(
+                $conn,
+                $tenantID,
+                $service_id,
+                'Sub',
+                $sub_name,
+                $sub_description,
+                $sub_price,
+                $sub_duration,
+                $category,
+                'Active'
+            );
+
+            if (!$insertSub['success']) {
+                $conn->rollback();
+                jsonResponse(500, [
+                    'success' => false,
+                    'message' => 'Error adding sub-service "' . $sub_name . '": ' . $insertSub['error']
+                ]);
+            }
+
+            $sub_services_added++;
         }
     }
+
+    $conn->commit();
+
+    jsonResponse(200, [
+        'success' => true,
+        'message' => $sub_services_added > 0
+            ? 'Service and sub-services added successfully'
+            : 'Service added successfully',
+        'service_id' => $service_id,
+        'sub_services_added' => $sub_services_added
+    ]);
 }
 
-/**
- * Update an existing service
- */
 function updateService($conn, $tenantID) {
-    $service_id = isset($_POST['service_id']) ? intval($_POST['service_id']) : null;
-    $service_name = isset($_POST['service_name']) ? trim($_POST['service_name']) : null;
-    $description = isset($_POST['description']) ? trim($_POST['description']) : null;
-    $price = isset($_POST['price']) ? floatval($_POST['price']) : null;
-    $duration_minutes = isset($_POST['duration_minutes']) ? intval($_POST['duration_minutes']) : null;
-    $category = isset($_POST['category']) ? trim($_POST['category']) : null;
-    $status = isset($_POST['status']) ? $_POST['status'] : null;
-    
-    // Validate required fields
+    $service_id = isset($_POST['service_id']) ? (int) $_POST['service_id'] : 0;
+    $service_type = normalizeServiceType($_POST['service_type'] ?? 'Main');
+    $parent_service_id = $_POST['parent_service_id'] ?? null;
+
+    $service_name = trim($_POST['service_name'] ?? '');
+    $description = trim($_POST['description'] ?? '');
+    $price = isset($_POST['price']) ? (float) $_POST['price'] : null;
+    $duration_minutes = isset($_POST['duration_minutes']) && $_POST['duration_minutes'] !== ''
+        ? (int) $_POST['duration_minutes']
+        : 0;
+    $category = normalizeCategory($_POST['category'] ?? 'Other');
+    $status = normalizeStatus($_POST['status'] ?? 'Active');
+
     if (!$service_id || !$service_name || $price === null) {
-        jsonResponse(400, ['success' => false, 'message' => 'Service ID, name and price are required']);
-    }
-    
-    if ($price < 0) {
-        jsonResponse(400, ['success' => false, 'message' => 'Price must be a positive number']);
+        jsonResponse(400, [
+            'success' => false,
+            'message' => 'Service ID, name and price are required'
+        ]);
     }
 
-    $allowedCategories = ['Engine', 'Electrical', 'Maintenance', 'Brakes', 'Suspension', 'Transmission', 'Cooling System', 'Diagnostics', 'Other'];
-    if (!$category || !in_array($category, $allowedCategories, true)) {
-        $category = 'Other';
+    if ($price < 0) {
+        jsonResponse(400, [
+            'success' => false,
+            'message' => 'Price must be a positive number'
+        ]);
     }
-    
-    // Verify service belongs to tenant
-    $verify_query = "SELECT service_id FROM services WHERE service_id = ? AND tenantID = ?";
+
+    if ($duration_minutes < 0) {
+        jsonResponse(400, [
+            'success' => false,
+            'message' => 'Duration must be a positive number'
+        ]);
+    }
+
+    $verify_query = "
+        SELECT service_id 
+        FROM services 
+        WHERE service_id = ? 
+        AND tenantID = ?
+    ";
+
     $verify_stmt = $conn->prepare($verify_query);
+
     if (!$verify_stmt) {
         jsonResponse(500, ['success' => false, 'message' => 'Database error: ' . $conn->error]);
     }
+
     $verify_stmt->bind_param('ii', $service_id, $tenantID);
     $verify_stmt->execute();
-    
+
     if ($verify_stmt->get_result()->num_rows === 0) {
         $verify_stmt->close();
-        jsonResponse(403, ['success' => false, 'message' => 'Service not found or unauthorized']);
+        jsonResponse(403, [
+            'success' => false,
+            'message' => 'Service not found or unauthorized'
+        ]);
     }
+
     $verify_stmt->close();
-    
-    if ($status) {
-        $query = "UPDATE services SET service_name = ?, description = ?, price = ?, duration_minutes = ?, category = ?, status = ? WHERE service_id = ?";
-        $stmt = $conn->prepare($query);
-        if (!$stmt) {
-            jsonResponse(500, ['success' => false, 'message' => 'Database error: ' . $conn->error]);
-        }
-        $stmt->bind_param('ssdissi', $service_name, $description, $price, $duration_minutes, $category, $status, $service_id);
+
+    if ($service_type === 'Main') {
+        $parent_service_id = null;
     } else {
-        $query = "UPDATE services SET service_name = ?, description = ?, price = ?, duration_minutes = ?, category = ? WHERE service_id = ?";
-        $stmt = $conn->prepare($query);
-        if (!$stmt) {
-            jsonResponse(500, ['success' => false, 'message' => 'Database error: ' . $conn->error]);
+        if (!$parent_service_id) {
+            jsonResponse(400, [
+                'success' => false,
+                'message' => 'Parent main service is required for sub-services'
+            ]);
         }
-        $stmt->bind_param('ssdisi', $service_name, $description, $price, $duration_minutes, $category, $service_id);
+
+        $parent_service_id = validateParentService($conn, $tenantID, $parent_service_id, $service_id);
     }
-    
+
+    $query = "
+        UPDATE services 
+        SET 
+            parent_service_id = ?,
+            service_type = ?,
+            service_name = ?,
+            description = ?,
+            price = ?,
+            duration_minutes = ?,
+            category = ?,
+            status = ?
+        WHERE service_id = ? 
+        AND tenantID = ?
+    ";
+
+    $stmt = $conn->prepare($query);
+
+    if (!$stmt) {
+        jsonResponse(500, ['success' => false, 'message' => 'Database error: ' . $conn->error]);
+    }
+
+    $stmt->bind_param(
+        'isssdissii',
+        $parent_service_id,
+        $service_type,
+        $service_name,
+        $description,
+        $price,
+        $duration_minutes,
+        $category,
+        $status,
+        $service_id,
+        $tenantID
+    );
+
     if ($stmt->execute()) {
         $stmt->close();
-        
+
         jsonResponse(200, [
             'success' => true,
             'message' => 'Service updated successfully'
         ]);
-    } else {
-        $stmt->close();
-        
-        if (strpos($conn->error, 'Duplicate entry') !== false) {
-            jsonResponse(409, ['success' => false, 'message' => 'A service with this name already exists']);
-        } else {
-            jsonResponse(500, ['success' => false, 'message' => 'Error updating service: ' . $conn->error]);
-        }
     }
+
+    $error = $stmt->error ?: $conn->error;
+    $stmt->close();
+
+    if (strpos($error, 'Duplicate entry') !== false) {
+        jsonResponse(409, [
+            'success' => false,
+            'message' => 'A service with this name already exists'
+        ]);
+    }
+
+    jsonResponse(500, [
+        'success' => false,
+        'message' => 'Error updating service: ' . $error
+    ]);
 }
 
-/**
- * Delete a service
- */
 function deleteService($conn, $tenantID) {
-    $service_id = isset($_POST['service_id']) ? intval($_POST['service_id']) : null;
-    
+    $service_id = isset($_POST['service_id']) ? (int) $_POST['service_id'] : 0;
+
     if (!$service_id) {
         jsonResponse(400, ['success' => false, 'message' => 'Service ID is required']);
     }
-    
-    // Verify service belongs to tenant
-    $verify_query = "SELECT service_id FROM services WHERE service_id = ? AND tenantID = ?";
+
+    $verify_query = "
+        SELECT service_id, service_type 
+        FROM services 
+        WHERE service_id = ? 
+        AND tenantID = ?
+    ";
+
     $verify_stmt = $conn->prepare($verify_query);
+
     if (!$verify_stmt) {
         jsonResponse(500, ['success' => false, 'message' => 'Database error: ' . $conn->error]);
     }
+
     $verify_stmt->bind_param('ii', $service_id, $tenantID);
     $verify_stmt->execute();
-    
-    if ($verify_stmt->get_result()->num_rows === 0) {
+    $verify_result = $verify_stmt->get_result();
+
+    if ($verify_result->num_rows === 0) {
         $verify_stmt->close();
-        jsonResponse(403, ['success' => false, 'message' => 'Service not found or unauthorized']);
+        jsonResponse(403, [
+            'success' => false,
+            'message' => 'Service not found or unauthorized'
+        ]);
     }
+
+    $service = $verify_result->fetch_assoc();
     $verify_stmt->close();
-    
-    $query = "DELETE FROM services WHERE service_id = ? AND tenantID = ?";
+
+    if ($service['service_type'] === 'Main') {
+        $check_query = "
+            SELECT COUNT(*) AS total 
+            FROM services 
+            WHERE parent_service_id = ? 
+            AND tenantID = ?
+        ";
+
+        $check_stmt = $conn->prepare($check_query);
+
+        if (!$check_stmt) {
+            jsonResponse(500, ['success' => false, 'message' => 'Database error: ' . $conn->error]);
+        }
+
+        $check_stmt->bind_param('ii', $service_id, $tenantID);
+        $check_stmt->execute();
+        $check_result = $check_stmt->get_result();
+        $check_row = $check_result->fetch_assoc();
+        $check_stmt->close();
+
+        if ((int) $check_row['total'] > 0) {
+            jsonResponse(400, [
+                'success' => false,
+                'message' => 'Cannot delete this main service because it still has sub-services'
+            ]);
+        }
+    }
+
+    $query = "
+        DELETE FROM services 
+        WHERE service_id = ? 
+        AND tenantID = ?
+    ";
+
     $stmt = $conn->prepare($query);
-    
+
     if (!$stmt) {
         jsonResponse(500, ['success' => false, 'message' => 'Database error: ' . $conn->error]);
     }
-    
+
     $stmt->bind_param('ii', $service_id, $tenantID);
-    
+
     if ($stmt->execute()) {
         $stmt->close();
-        
+
         jsonResponse(200, [
             'success' => true,
             'message' => 'Service deleted successfully'
         ]);
-    } else {
-        $stmt->close();
-        jsonResponse(500, ['success' => false, 'message' => 'Error deleting service: ' . $conn->error]);
     }
+
+    $error = $stmt->error ?: $conn->error;
+    $stmt->close();
+
+    jsonResponse(500, [
+        'success' => false,
+        'message' => 'Error deleting service: ' . $error
+    ]);
 }
 
-/**
- * Change service status (Active/Inactive)
- */
 function changeServiceStatus($conn, $tenantID) {
-    $service_id = isset($_POST['service_id']) ? intval($_POST['service_id']) : null;
-    $status = isset($_POST['status']) ? $_POST['status'] : null;
-    
-    if (!$service_id || !$status || !in_array($status, ['Active', 'Inactive'])) {
-        jsonResponse(400, ['success' => false, 'message' => 'Service ID and valid status are required']);
+    $service_id = isset($_POST['service_id']) ? (int) $_POST['service_id'] : 0;
+    $status = $_POST['status'] ?? null;
+
+    if (!$service_id || !in_array($status, ['Active', 'Inactive'], true)) {
+        jsonResponse(400, [
+            'success' => false,
+            'message' => 'Service ID and valid status are required'
+        ]);
     }
-    
-    // Verify service belongs to tenant
-    $verify_query = "SELECT service_id FROM services WHERE service_id = ? AND tenantID = ?";
+
+    $verify_query = "
+        SELECT service_id 
+        FROM services 
+        WHERE service_id = ? 
+        AND tenantID = ?
+    ";
+
     $verify_stmt = $conn->prepare($verify_query);
+
     if (!$verify_stmt) {
         jsonResponse(500, ['success' => false, 'message' => 'Database error: ' . $conn->error]);
     }
+
     $verify_stmt->bind_param('ii', $service_id, $tenantID);
     $verify_stmt->execute();
-    
+
     if ($verify_stmt->get_result()->num_rows === 0) {
         $verify_stmt->close();
-        jsonResponse(403, ['success' => false, 'message' => 'Service not found or unauthorized']);
+        jsonResponse(403, [
+            'success' => false,
+            'message' => 'Service not found or unauthorized'
+        ]);
     }
+
     $verify_stmt->close();
-    
-    $query = "UPDATE services SET status = ? WHERE service_id = ? AND tenantID = ?";
+
+    $query = "
+        UPDATE services 
+        SET status = ? 
+        WHERE service_id = ? 
+        AND tenantID = ?
+    ";
+
     $stmt = $conn->prepare($query);
-    
+
     if (!$stmt) {
         jsonResponse(500, ['success' => false, 'message' => 'Database error: ' . $conn->error]);
     }
-    
+
     $stmt->bind_param('sii', $status, $service_id, $tenantID);
-    
+
     if ($stmt->execute()) {
         $stmt->close();
-        
+
         jsonResponse(200, [
             'success' => true,
             'message' => 'Service status updated successfully'
         ]);
-    } else {
-        $stmt->close();
-        jsonResponse(500, ['success' => false, 'message' => 'Error updating status: ' . $conn->error]);
     }
+
+    $error = $stmt->error ?: $conn->error;
+    $stmt->close();
+
+    jsonResponse(500, [
+        'success' => false,
+        'message' => 'Error updating status: ' . $error
+    ]);
 }
 ?>
