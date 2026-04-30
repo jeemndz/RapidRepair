@@ -144,6 +144,7 @@ $checkoutAmountCentavos = (int) round($displayAmount * 100);
 
             const amount = calculateAmount(plan.monthly_price, currentBillingCycle);
 
+            document.getElementById('checkoutPlanId').value = plan.plan_id;
             document.getElementById('selectedPlanCode').value = plan.plan_code;
             document.getElementById('checkoutPlanName').value = plan.plan_name + ' Plan - ' + currentBillingCycle.charAt(0).toUpperCase() + currentBillingCycle.slice(1) + ' Billing';
             document.getElementById('checkoutAmount').value = Math.round(amount * 100);
@@ -353,9 +354,12 @@ $checkoutAmountCentavos = (int) round($displayAmount * 100);
 
                         <form id="paymentForm" class="space-y-6" method="post" action="paymongo/create_checkout.php">
 
-                            <input type="hidden" name="payment_source" value="clientpayment">         
+                            <input type="hidden" name="payment_source" value="clientpayment">
 
                             <input type="hidden" name="tenant_id" value="<?php echo htmlspecialchars($tenantID); ?>" />
+
+                            <input type="hidden" id="checkoutPlanId" name="plan_id"
+                                value="<?php echo htmlspecialchars($selectedPlan['plan_id']); ?>" />
 
                             <input type="hidden" id="selectedPlanCode" name="selectedPlanCode"
                                 value="<?php echo htmlspecialchars($selectedPlan['plan_code']); ?>" />
@@ -381,40 +385,32 @@ $checkoutAmountCentavos = (int) round($displayAmount * 100);
                             <div id="payment-error" class="text-red-600 text-sm"></div>
 
                             <div style="margin-bottom:20px;">
-
                                 <h3 style="margin-bottom:10px;">Preview Payment Methods</h3>
 
                                 <div style="display:flex; gap:20px; justify-content:center; flex-wrap:wrap;">
-
-                                    <!-- GCash -->
                                     <div style="text-align:center;">
                                         <p style="font-weight:bold;">GCash</p>
                                         <img src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=GCash-Test"
                                             style="border:1px solid #ddd; padding:8px; border-radius:10px;">
                                     </div>
 
-                                    <!-- PayMaya -->
                                     <div style="text-align:center;">
                                         <p style="font-weight:bold;">PayMaya</p>
                                         <img src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=PayMaya-Test"
                                             style="border:1px solid #ddd; padding:8px; border-radius:10px;">
                                     </div>
 
-                                    <!-- GrabPay -->
                                     <div style="text-align:center;">
                                         <p style="font-weight:bold;">GrabPay</p>
                                         <img src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=GrabPay-Test"
                                             style="border:1px solid #ddd; padding:8px; border-radius:10px;">
                                     </div>
-
                                 </div>
 
                                 <p style="font-size:12px; color:#777; margin-top:10px; text-align:center;">
                                     Preview only. Actual payment happens securely via PayMongo.
                                 </p>
-
                             </div>
-
 
                             <div class="pt-4 border-t border-slate-200">
                                 <button type="submit" id="paymentButton"
@@ -479,8 +475,7 @@ $checkoutAmountCentavos = (int) round($displayAmount * 100);
                                 </div>
                             </div>
 
-                            <p
-                                class="mt-6 text-[10px] text-center text-slate-500 uppercase tracking-widest leading-relaxed">
+                            <p class="mt-6 text-[10px] text-center text-slate-500 uppercase tracking-widest leading-relaxed">
                                 Secure Encrypted Payment. You will be redirected to PayMongo Checkout.
                             </p>
                         </div>
@@ -518,5 +513,4 @@ $checkoutAmountCentavos = (int) round($displayAmount * 100);
     </footer>
 
 </body>
-
 </html>
