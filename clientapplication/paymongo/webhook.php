@@ -82,38 +82,30 @@ if (!$checkoutSessionId) {
     exit;
 }
 
-/*
-|--------------------------------------------------------------------------
-| Get Local Payment ID from description
-|--------------------------------------------------------------------------
-| Example:
-| Tenant ID: 1 | Payment ID: 5
-*/
 $description = $checkoutAttributes["description"] ?? "";
 
-preg_match('/Payment ID:\s*(\d+)/', $description, $matches);
-$localPaymentId = isset($matches[1]) ? (int) $matches[1] : 0;
+preg_match('/Tenant ID:\s*(\d+)/', $description, $tenantMatch);
+preg_match('/Plan ID:\s*(\d+)/', $description, $planMatch);
+preg_match('/Billing Cycle:\s*(monthly|quarterly|yearly)/', $description, $cycleMatch);
 
-if ($localPaymentId <= 0) {
-    logWebhook("Missing local Payment ID", [
-        "description" => $description,
-        "checkout_session_id" => $checkoutSessionId
-    ]);
+$tenantId = isset($tenantMatch[1]) ? intval($tenantMatch[1]) : 0;
+$planId = isset($planMatch[1]) ? intval($planMatch[1]) : 0;
+$billingCycle = $cycleMatch[1] ?? "monthly";
 
+if ($tenantId <= 0) {
+    logWebhook("Missing tenant ID", ["description" => $description]);
     http_response_code(400);
-    echo json_encode(["error" => "Missing local Payment ID"]);
+    echo json_encode(["error" => "Missing tenant ID"]);
     exit;
 }
 
-/*
-|--------------------------------------------------------------------------
-| Get PayMongo Payment Info
-|--------------------------------------------------------------------------
-*/
 $payment = $checkoutAttributes["payments"][0] ?? [];
 $paymentAttributes = $payment["attributes"] ?? [];
 
 $paymongoPaymentId = $payment["id"] ?? null;
+
+$amountCentavos = intval($paymentAttributes["amount"] ?? ($checkoutAttributes["line_items"][0]["amount"] ?? 0));
+$amount = $amountCentavos / 100;
 
 $rawMethod = $paymentAttributes["source"]["type"]
     ?? $paymentAttributes["payment_method"]["type"]
@@ -132,100 +124,152 @@ if ($rawMethod === "gcash") {
     $paymentMethod = "QRPH";
 } elseif ($rawMethod === "dob") {
     $paymentMethod = "Bank Transfer";
-} elseif ($rawMethod === "card") {
-    $paymentMethod = "Card";
 }
 
 $transactionReference = $paymongoPaymentId ?: $checkoutSessionId;
 $gcashReference = ($paymentMethod === "GCash") ? $transactionReference : null;
 
-logWebhook("Matching payment", [
-    "local_payment_id" => $localPaymentId,
-    "checkout_session_id" => $checkoutSessionId,
-    "paymongo_payment_id" => $paymongoPaymentId,
-    "payment_method" => $paymentMethod
-]);
+$startDate = date("Y-m-d");
+
+if ($billingCycle === "quarterly") {
+    $endDate = date("Y-m-d", strtotime("+3 months"));
+} elseif ($billingCycle === "yearly") {
+    $endDate = date("Y-m-d", strtotime("+1 year"));
+} else {
+    $endDate = date("Y-m-d", strtotime("+1 month"));
+}
+
+$nextBillingDate = $endDate;
 
 mysqli_begin_transaction($conn);
 
 try {
-    /*
-    |--------------------------------------------------------------------------
-    | 1. Update subscription_payments using local payment_id
-    |--------------------------------------------------------------------------
-    */
-    $stmt = mysqli_prepare($conn, "
-        UPDATE subscription_payments
-        SET 
-            payment_status = 'Paid',
-            payment_method = ?,
-            checkout_session_id = ?,
-            paymongo_payment_id = ?,
-            transaction_reference = ?,
-            gcash_reference = ?,
-            paid_at = NOW(),
-            updated_at = NOW()
-        WHERE payment_id = ?
+    $checkStmt = mysqli_prepare($conn, "
+        SELECT payment_id 
+        FROM subscription_payments 
+        WHERE checkout_session_id = ? 
+           OR paymongo_payment_id = ?
+           OR transaction_reference = ?
         LIMIT 1
     ");
 
-    if (!$stmt) {
-        throw new Exception("Payment update prepare failed: " . mysqli_error($conn));
+    mysqli_stmt_bind_param(
+        $checkStmt,
+        "sss",
+        $checkoutSessionId,
+        $paymongoPaymentId,
+        $transactionReference
+    );
+
+    mysqli_stmt_execute($checkStmt);
+    $checkResult = mysqli_stmt_get_result($checkStmt);
+    $existingPayment = $checkResult ? mysqli_fetch_assoc($checkResult) : null;
+    mysqli_stmt_close($checkStmt);
+
+    if ($existingPayment) {
+        mysqli_commit($conn);
+
+        logWebhook("Payment already exists", [
+            "checkout_session_id" => $checkoutSessionId,
+            "paymongo_payment_id" => $paymongoPaymentId
+        ]);
+
+        http_response_code(200);
+        echo json_encode(["status" => "already_exists"]);
+        exit;
+    }
+
+    $subStmt = mysqli_prepare($conn, "
+        INSERT INTO subscriptions (
+            tenantID,
+            plan_id,
+            billing_cycle,
+            start_date,
+            end_date,
+            next_billing_date,
+            amount,
+            status,
+            created_at,
+            updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, 'active', NOW(), NOW())
+    ");
+
+    if (!$subStmt) {
+        throw new Exception("Subscription prepare failed: " . mysqli_error($conn));
     }
 
     mysqli_stmt_bind_param(
-        $stmt,
-        "sssssi",
+        $subStmt,
+        "iissssd",
+        $tenantId,
+        $planId,
+        $billingCycle,
+        $startDate,
+        $endDate,
+        $nextBillingDate,
+        $amount
+    );
+
+    mysqli_stmt_execute($subStmt);
+    $subscriptionId = mysqli_insert_id($conn);
+    mysqli_stmt_close($subStmt);
+
+    $paymentStmt = mysqli_prepare($conn, "
+        INSERT INTO subscription_payments (
+            tenantID,
+            subscription_id,
+            plan_id,
+            amount,
+            payment_method,
+            payment_status,
+            checkout_session_id,
+            paymongo_payment_id,
+            transaction_reference,
+            gcash_reference,
+            billing_period_start,
+            billing_period_end,
+            paid_at,
+            next_billing_date,
+            created_at,
+            updated_at
+        ) VALUES (?, ?, ?, ?, ?, 'Paid', ?, ?, ?, ?, ?, ?, NOW(), ?, NOW(), NOW())
+    ");
+
+    if (!$paymentStmt) {
+        throw new Exception("Payment prepare failed: " . mysqli_error($conn));
+    }
+
+    mysqli_stmt_bind_param(
+        $paymentStmt,
+        "iiidssssssss",
+        $tenantId,
+        $subscriptionId,
+        $planId,
+        $amount,
         $paymentMethod,
         $checkoutSessionId,
         $paymongoPaymentId,
         $transactionReference,
         $gcashReference,
-        $localPaymentId
+        $startDate,
+        $endDate,
+        $nextBillingDate
     );
 
-    mysqli_stmt_execute($stmt);
-    $affectedPaymentRows = mysqli_stmt_affected_rows($stmt);
-    mysqli_stmt_close($stmt);
-
-    if ($affectedPaymentRows <= 0) {
-        logWebhook("No payment row updated", [
-            "local_payment_id" => $localPaymentId,
-            "checkout_session_id" => $checkoutSessionId
-        ]);
-    }
-
-    /*
-    |--------------------------------------------------------------------------
-    | 2. Activate related subscription
-    |--------------------------------------------------------------------------
-    */
-    $stmt2 = mysqli_prepare($conn, "
-        UPDATE subscriptions s
-        INNER JOIN subscription_payments p 
-            ON s.subscription_id = p.subscription_id
-        SET 
-            s.status = 'active',
-            s.updated_at = NOW()
-        WHERE p.payment_id = ?
-        LIMIT 1
-    ");
-
-    if (!$stmt2) {
-        throw new Exception("Subscription update prepare failed: " . mysqli_error($conn));
-    }
-
-    mysqli_stmt_bind_param($stmt2, "i", $localPaymentId);
-    mysqli_stmt_execute($stmt2);
-    $affectedSubRows = mysqli_stmt_affected_rows($stmt2);
-    mysqli_stmt_close($stmt2);
+    mysqli_stmt_execute($paymentStmt);
+    $paymentId = mysqli_insert_id($conn);
+    mysqli_stmt_close($paymentStmt);
 
     mysqli_commit($conn);
 
-    logWebhook("Payment webhook processed", [
-        "local_payment_id" => $localPaymentId,
-        "payment_rows_affected" => $affectedPaymentRows,
-        "subscription_rows_affected" => $affectedSubRows
+    logWebhook("Payment saved as Paid", [
+        "payment_id" => $paymentId,
+        "subscription_id" => $subscriptionId,
+        "tenant_id" => $tenantId,
+        "plan_id" => $planId,
+        "payment_method" => $paymentMethod,
+        "checkout_session_id" => $checkoutSessionId,
+        "paymongo_payment_id" => $paymongoPaymentId
     ]);
 
 } catch (Throwable $e) {
@@ -233,7 +277,8 @@ try {
 
     logWebhook("DB ERROR", [
         "message" => $e->getMessage(),
-        "local_payment_id" => $localPaymentId
+        "checkout_session_id" => $checkoutSessionId,
+        "paymongo_payment_id" => $paymongoPaymentId
     ]);
 
     http_response_code(500);
