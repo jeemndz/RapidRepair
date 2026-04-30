@@ -7,42 +7,25 @@ header("Content-Type: application/json");
 $payload = file_get_contents("php://input");
 $signatureHeader = $_SERVER["HTTP_PAYMONGO_SIGNATURE"] ?? "";
 
-function logWebhook($message, $data = null)
-{
+function logWebhook($message, $data = null) {
     $line = "[" . date("Y-m-d H:i:s") . "] " . $message;
-
-    if ($data !== null) {
-        $line .= " | " . json_encode($data);
-    }
-
+    if ($data !== null) $line .= " | " . json_encode($data);
     file_put_contents(__DIR__ . "/webhook.log", $line . PHP_EOL, FILE_APPEND);
 }
 
-function verifyPayMongoSignature($payload, $signatureHeader, $secret)
-{
-    if (!$signatureHeader || !$secret) {
-        return false;
-    }
+function verifyPayMongoSignature($payload, $signatureHeader, $secret) {
+    if (!$signatureHeader || !$secret) return false;
 
     $parts = [];
-
     foreach (explode(",", $signatureHeader) as $segment) {
         $kv = explode("=", trim($segment), 2);
-
-        if (count($kv) === 2) {
-            $parts[$kv[0]] = $kv[1];
-        }
+        if (count($kv) === 2) $parts[$kv[0]] = $kv[1];
     }
 
     $signature = $parts["v1"] ?? $parts["te"] ?? null;
+    if (!isset($parts["t"]) || !$signature) return false;
 
-    if (!isset($parts["t"]) || !$signature) {
-        return false;
-    }
-
-    $signedPayload = $parts["t"] . "." . $payload;
-    $expected = hash_hmac("sha256", $signedPayload, $secret);
-
+    $expected = hash_hmac("sha256", $parts["t"] . "." . $payload, $secret);
     return hash_equals($expected, $signature);
 }
 
@@ -62,49 +45,90 @@ if (!$event) {
     exit;
 }
 
-$eventType = $event["data"]["attributes"]["type"] ?? "";
-logWebhook("Event received", ["event_type" => $eventType]);
+logWebhook("Raw webhook received", $event);
 
-if ($eventType !== "checkout_session.payment.paid") {
+/*
+|--------------------------------------------------------------------------
+| Support both payload shapes:
+| 1. Event wrapper:
+|    data.attributes.type = checkout_session.payment.paid
+|    data.attributes.data = checkout_session object
+|
+| 2. Direct checkout_session object:
+|    id = cs_xxx
+|    type = checkout_session
+|--------------------------------------------------------------------------
+*/
+
+$eventType = $event["data"]["attributes"]["type"] ?? null;
+
+if ($eventType === "checkout_session.payment.paid") {
+    $checkoutData = $event["data"]["attributes"]["data"] ?? [];
+} elseif (($event["type"] ?? "") === "checkout_session") {
+    $checkoutData = $event;
+    $eventType = "checkout_session.payment.paid";
+} else {
+    logWebhook("Ignored event", ["event_type" => $eventType]);
     http_response_code(200);
     echo json_encode(["message" => "Ignored"]);
     exit;
 }
 
-$checkoutData = $event["data"]["attributes"]["data"] ?? [];
 $checkoutSessionId = $checkoutData["id"] ?? null;
 $checkoutAttributes = $checkoutData["attributes"] ?? [];
 
 if (!$checkoutSessionId) {
-    logWebhook("Missing checkout_session_id");
+    logWebhook("Missing checkout session ID");
     http_response_code(400);
-    echo json_encode(["error" => "Missing checkout_session_id"]);
+    echo json_encode(["error" => "Missing checkout session ID"]);
     exit;
 }
 
-$description = $checkoutAttributes["description"] ?? "";
+$payment = $checkoutAttributes["payments"][0] ?? null;
+
+if (!$payment) {
+    logWebhook("No payment object found", [
+        "checkout_session_id" => $checkoutSessionId
+    ]);
+    http_response_code(400);
+    echo json_encode(["error" => "No payment found"]);
+    exit;
+}
+
+$paymentAttributes = $payment["attributes"] ?? [];
+$paymentStatus = $paymentAttributes["status"] ?? "";
+
+if ($paymentStatus !== "paid") {
+    logWebhook("Payment not paid", [
+        "checkout_session_id" => $checkoutSessionId,
+        "payment_status" => $paymentStatus
+    ]);
+    http_response_code(200);
+    echo json_encode(["message" => "Payment not paid"]);
+    exit;
+}
+
+$description = $checkoutAttributes["description"] ?? $paymentAttributes["description"] ?? "";
 
 preg_match('/Tenant ID:\s*(\d+)/', $description, $tenantMatch);
 preg_match('/Plan ID:\s*(\d+)/', $description, $planMatch);
 preg_match('/Billing Cycle:\s*(monthly|quarterly|yearly)/', $description, $cycleMatch);
 
-$tenantId = isset($tenantMatch[1]) ? intval($tenantMatch[1]) : 0;
-$planId = isset($planMatch[1]) ? intval($planMatch[1]) : 0;
+$tenantId = (int)($tenantMatch[1] ?? 0);
+$planId = (int)($planMatch[1] ?? 0);
 $billingCycle = $cycleMatch[1] ?? "monthly";
 
 if ($tenantId <= 0) {
-    logWebhook("Missing tenant ID", ["description" => $description]);
+    logWebhook("Missing tenant ID from description", [
+        "description" => $description
+    ]);
     http_response_code(400);
     echo json_encode(["error" => "Missing tenant ID"]);
     exit;
 }
 
-$payment = $checkoutAttributes["payments"][0] ?? [];
-$paymentAttributes = $payment["attributes"] ?? [];
-
 $paymongoPaymentId = $payment["id"] ?? null;
-
-$amountCentavos = intval($paymentAttributes["amount"] ?? ($checkoutAttributes["line_items"][0]["amount"] ?? 0));
+$amountCentavos = (int)($paymentAttributes["amount"] ?? 0);
 $amount = $amountCentavos / 100;
 
 $rawMethod = $paymentAttributes["source"]["type"]
@@ -113,18 +137,11 @@ $rawMethod = $paymentAttributes["source"]["type"]
     ?? "card";
 
 $paymentMethod = "Card";
-
-if ($rawMethod === "gcash") {
-    $paymentMethod = "GCash";
-} elseif ($rawMethod === "paymaya") {
-    $paymentMethod = "PayMaya";
-} elseif ($rawMethod === "grab_pay") {
-    $paymentMethod = "GrabPay";
-} elseif ($rawMethod === "qrph") {
-    $paymentMethod = "QRPH";
-} elseif ($rawMethod === "dob") {
-    $paymentMethod = "Bank Transfer";
-}
+if ($rawMethod === "gcash") $paymentMethod = "GCash";
+elseif ($rawMethod === "paymaya") $paymentMethod = "PayMaya";
+elseif ($rawMethod === "grab_pay") $paymentMethod = "GrabPay";
+elseif ($rawMethod === "qrph") $paymentMethod = "QRPH";
+elseif ($rawMethod === "dob") $paymentMethod = "Bank Transfer";
 
 $transactionReference = $paymongoPaymentId ?: $checkoutSessionId;
 $gcashReference = ($paymentMethod === "GCash") ? $transactionReference : null;
@@ -145,9 +162,9 @@ mysqli_begin_transaction($conn);
 
 try {
     $checkStmt = mysqli_prepare($conn, "
-        SELECT payment_id 
-        FROM subscription_payments 
-        WHERE checkout_session_id = ? 
+        SELECT payment_id
+        FROM subscription_payments
+        WHERE checkout_session_id = ?
            OR paymongo_payment_id = ?
            OR transaction_reference = ?
         LIMIT 1
@@ -163,19 +180,14 @@ try {
 
     mysqli_stmt_execute($checkStmt);
     $checkResult = mysqli_stmt_get_result($checkStmt);
-    $existingPayment = $checkResult ? mysqli_fetch_assoc($checkResult) : null;
+    $existing = $checkResult ? mysqli_fetch_assoc($checkResult) : null;
     mysqli_stmt_close($checkStmt);
 
-    if ($existingPayment) {
+    if ($existing) {
         mysqli_commit($conn);
-
-        logWebhook("Payment already exists", [
-            "checkout_session_id" => $checkoutSessionId,
-            "paymongo_payment_id" => $paymongoPaymentId
-        ]);
-
+        logWebhook("Payment already saved", $existing);
         http_response_code(200);
-        echo json_encode(["status" => "already_exists"]);
+        echo json_encode(["status" => "already_saved"]);
         exit;
     }
 
@@ -267,10 +279,14 @@ try {
         "subscription_id" => $subscriptionId,
         "tenant_id" => $tenantId,
         "plan_id" => $planId,
-        "payment_method" => $paymentMethod,
+        "method" => $paymentMethod,
         "checkout_session_id" => $checkoutSessionId,
         "paymongo_payment_id" => $paymongoPaymentId
     ]);
+
+    http_response_code(200);
+    echo json_encode(["status" => "success"]);
+    exit;
 
 } catch (Throwable $e) {
     mysqli_rollback($conn);
@@ -282,9 +298,6 @@ try {
     ]);
 
     http_response_code(500);
-    echo json_encode(["error" => "Database update failed"]);
+    echo json_encode(["error" => "Database save failed"]);
     exit;
 }
-
-http_response_code(200);
-echo json_encode(["status" => "success"]);
