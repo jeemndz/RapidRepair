@@ -983,7 +983,7 @@ function buildPageUrl($pageNumber, $shopQuery, $search, $statusFilter, $methodFi
                                 style="font-variation-settings:'FILL' 1;">account_balance_wallet</span>
                         </div>
                     </div>
-                    <p class="text-xs font-semibold text-on-surface-variant uppercase tracking-wider">Total Revenue</p>
+                    <p class="text-xs font-semibold text-on-surface-variant uppercase tracking-wider">Total Sales</p>
                     <h3 class="text-2xl font-bold text-on-surface mt-1">PHP
                         <?php echo number_format($totalRevenue, 2); ?></h3>
                 </div>
@@ -1270,7 +1270,7 @@ function buildPageUrl($pageNumber, $shopQuery, $search, $statusFilter, $methodFi
                                         <td class="px-6 py-4 text-right">
                                             <div class="inline-flex items-center gap-2">
                                                 <a href="paymentsadmin.php?shop=<?php echo h($shopQuery); ?>&print_receipt=<?php echo (int) $payment['payment_id']; ?>"
-                                                    class="px-3 py-1.5 text-xs font-bold text-blue-700 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100">Receipt</a>
+                                                    class="px-3 py-1.5 text-xs font-bold text-blue-700 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100">Sales Invoice</a>
                                                 <button
                                                     type="button"
                                                     class="openStatusModal px-3 py-1.5 text-xs font-bold text-slate-700 bg-slate-100 border border-slate-200 rounded-lg hover:bg-slate-200"
