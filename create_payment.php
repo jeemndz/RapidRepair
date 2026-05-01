@@ -7,11 +7,14 @@ function respond($status, $message, $data = null) {
         'status' => $status,
         'message' => $message,
         'data' => $data
-    ]);
+    ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
     exit;
 }
 
 $data = json_decode(file_get_contents("php://input"), true);
+if (!is_array($data)) {
+    $data = $_POST;
+}
 
 $repair_job_id = (int)($data['repair_job_id'] ?? 0);
 $tenantID = (int)($data['tenantID'] ?? 0);
@@ -58,18 +61,18 @@ try {
     $stmt = $conn->prepare("
         SELECT payment_id
         FROM payments
-        WHERE appointment_id = ?
+        WHERE repair_job_id = ?
         AND tenantID = ?
         AND user_id = ?
         LIMIT 1
     ");
-    $stmt->bind_param('iii', $appointment_id, $tenantID, $user_id);
+    $stmt->bind_param('iii', $repair_job_id, $tenantID, $user_id);
     $stmt->execute();
     $exists = $stmt->get_result()->fetch_assoc();
     $stmt->close();
 
     if ($exists) {
-        throw new Exception('Payment already exists for this job');
+        throw new Exception('Payment already exists for this repair job');
     }
 
     $stmt = $conn->prepare("
@@ -89,30 +92,19 @@ try {
     $stmt->execute();
     $result = $stmt->get_result();
 
-    $services = [];
-
+    $invoiceItems = [];
     while ($row = $result->fetch_assoc()) {
-        $services[] = [
+        $invoiceItems[] = [
             'service_id' => (int)$row['service_id'],
             'service_name' => $row['service_name'],
             'service_price' => (float)$row['service_price'],
             'estimated_duration_minutes' => (int)$row['estimated_duration_minutes'],
         ];
     }
-
     $stmt->close();
 
-    $invoiceData = [
-        'repair_job_id' => $repair_job_id,
-        'appointment_id' => $appointment_id,
-        'labor_total' => $labor_total,
-        'parts_total' => $parts_total,
-        'grand_total' => $grand_total,
-        'services' => $services,
-    ];
-
-    $servicesJson = json_encode(
-        $services,
+    $invoiceItemsJson = json_encode(
+        $invoiceItems,
         JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES
     );
 
@@ -123,28 +115,37 @@ try {
             tenantID,
             user_id,
             appointment_id,
+            repair_job_id,
             paymentAmount,
+            labor_total,
+            parts_total,
+            grand_total,
             amountPaid,
             balance,
             paymentMethod,
             paymentStatus,
             referenceNumber,
+            invoice_items,
             remarks,
             created_at,
             updated_at
         )
-        VALUES (?, ?, ?, ?, 0.00, ?, 'Cash', 'Pending', ?, ?, NOW(), NOW())
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0.00, ?, 'Cash', 'Pending', ?, ?, '', NOW(), NOW())
     ");
 
     $stmt->bind_param(
-        'iiiddss',
+        'iiiidddddss',
         $tenantID,
         $user_id,
         $appointment_id,
+        $repair_job_id,
+        $grand_total,
+        $labor_total,
+        $parts_total,
         $grand_total,
         $grand_total,
         $referenceNumber,
-        $servicesJson
+        $invoiceItemsJson
     );
 
     if (!$stmt->execute()) {
@@ -160,10 +161,13 @@ try {
         'payment_id' => $payment_id,
         'repair_job_id' => $repair_job_id,
         'appointment_id' => $appointment_id,
-        'amount' => $grand_total,
+        'paymentAmount' => $grand_total,
+        'labor_total' => $labor_total,
+        'parts_total' => $parts_total,
+        'grand_total' => $grand_total,
         'balance' => $grand_total,
-        'reference' => $referenceNumber,
-        'invoice' => $invoiceData
+        'referenceNumber' => $referenceNumber,
+        'invoice_items' => $invoiceItems
     ]);
 
 } catch (Exception $e) {

@@ -16,26 +16,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     exit;
 }
 
-if (!file_exists(__DIR__ . '/../db.php')) {
-    ob_end_clean();
-    http_response_code(500);
-    echo json_encode([
-        'status' => 'error',
-        'message' => 'Database configuration file not found',
-    ]);
-    exit;
-}
-
 require_once __DIR__ . '/../db.php';
 
 function sendResponse($statusCode, $data)
 {
-    while (ob_get_level() > 0) {
-        ob_end_clean();
-    }
-
+    while (ob_get_level() > 0) ob_end_clean();
     http_response_code($statusCode);
-
     echo json_encode($data, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
     exit;
 }
@@ -71,22 +57,23 @@ function normalizePayment($row)
         'tenantID' => (int)($row['tenantID'] ?? 0),
         'user_id' => (int)($row['user_id'] ?? 0),
         'appointment_id' => (int)($row['appointment_id'] ?? 0),
+        'repair_job_id' => (int)($row['repair_job_id'] ?? 0),
 
         'paymentAmount' => (float)($row['paymentAmount'] ?? 0),
         'amountPaid' => (float)($row['amountPaid'] ?? 0),
         'balance' => (float)($row['balance'] ?? 0),
 
-        'grand_total' => (float)($row['grand_total'] ?? 0),
         'labor_total' => (float)($row['labor_total'] ?? 0),
         'parts_total' => (float)($row['parts_total'] ?? 0),
+        'grand_total' => (float)($row['grand_total'] ?? 0),
 
         'paymentMethod' => (string)($row['paymentMethod'] ?? 'Cash'),
         'paymentDate' => $row['paymentDate'] ?? null,
         'paymentStatus' => (string)($row['paymentStatus'] ?? 'Pending'),
         'referenceNumber' => $row['referenceNumber'] ?? null,
         'gcashReferenceNumber' => $row['gcashReferenceNumber'] ?? null,
-
         'remarks' => $row['remarks'] ?? null,
+        'invoice_items' => $row['invoice_items'] ?? null,
 
         'created_at' => (string)($row['created_at'] ?? ''),
         'updated_at' => (string)($row['updated_at'] ?? ''),
@@ -95,7 +82,6 @@ function normalizePayment($row)
         'appointment_time' => $row['appointment_time'] ?? '',
         'appointment_status' => (string)($row['appointment_status'] ?? ''),
 
-        'repair_job_id' => (int)($row['repair_job_id'] ?? 0),
         'job_order_no' => $row['job_order_no'] ?? null,
         'job_status' => (string)($row['job_status'] ?? 'Pending'),
     ];
@@ -124,12 +110,9 @@ if (stripos($contentType, 'application/json') !== false && !empty($rawInput)) {
     }
 }
 
-if (!is_array($jsonInput)) {
-    $jsonInput = [];
-}
+if (!is_array($jsonInput)) $jsonInput = [];
 
 $action = '';
-
 if (!empty($jsonInput['action'])) {
     $action = sanitizeString($jsonInput['action']);
 } elseif (!empty($_POST['action'])) {
@@ -137,7 +120,6 @@ if (!empty($jsonInput['action'])) {
 } elseif (!empty($_GET['action'])) {
     $action = sanitizeString($_GET['action']);
 }
-
 $action = strtolower($action);
 
 if ($action === '') {
@@ -153,11 +135,9 @@ try {
         case 'list':
             handleList($conn, $jsonInput);
             break;
-
         case 'pay':
             handlePay($conn, $jsonInput);
             break;
-
         default:
             sendResponse(403, [
                 'status' => 'error',
@@ -171,13 +151,8 @@ try {
         'message' => $e->getMessage(),
     ]);
 } finally {
-    while (ob_get_level() > 0) {
-        ob_end_clean();
-    }
-
-    if (isset($conn) && $conn) {
-        $conn->close();
-    }
+    while (ob_get_level() > 0) ob_end_clean();
+    if (isset($conn) && $conn) $conn->close();
 }
 
 function handleList($conn, $jsonInput = [])
@@ -185,7 +160,6 @@ function handleList($conn, $jsonInput = [])
     $data = !empty($jsonInput) ? $jsonInput : array_merge($_GET, $_POST);
 
     $tenantID = normalizeId($data['tenantID'] ?? 0);
-
     if ($tenantID <= 0) {
         sendResponse(400, [
             'status' => 'error',
@@ -204,6 +178,7 @@ function handleList($conn, $jsonInput = [])
             p.tenantID,
             p.user_id,
             p.appointment_id,
+            p.repair_job_id,
             p.paymentAmount,
             p.amountPaid,
             p.balance,
@@ -213,27 +188,25 @@ function handleList($conn, $jsonInput = [])
             p.referenceNumber,
             p.gcashReferenceNumber,
             p.remarks,
+            p.invoice_items,
             p.created_at,
             p.updated_at,
+            p.labor_total,
+            p.parts_total,
+            p.grand_total,
 
             a.appointment_date,
             a.appointment_time,
             a.status AS appointment_status,
 
-            rj.repair_job_id,
             rj.job_order_no,
-            rj.job_status,
-            rj.labor_total,
-            rj.parts_total,
-            rj.grand_total
+            rj.job_status
 
         FROM payments p
         LEFT JOIN appointments a 
             ON a.appointment_id = p.appointment_id
         LEFT JOIN repair_jobs rj
-            ON rj.appointment_id = p.appointment_id
-            AND rj.tenantID = p.tenantID
-            AND rj.user_id = p.user_id
+            ON rj.repair_job_id = p.repair_job_id
         WHERE p.tenantID = ?
     ";
 
@@ -253,9 +226,7 @@ function handleList($conn, $jsonInput = [])
     }
 
     $query .= "
-        ORDER BY 
-            COALESCE(p.paymentDate, p.created_at) DESC,
-            p.payment_id DESC
+        ORDER BY COALESCE(p.paymentDate, p.created_at) DESC, p.payment_id DESC
         LIMIT ? OFFSET ?
     ";
 
@@ -311,27 +282,17 @@ function handlePay($conn, $jsonInput = [])
     $paymentMethod = normalizeMethod($data['paymentMethod'] ?? 'GCash');
     $gcashReferenceNumber = sanitizeString($data['gcashReferenceNumber'] ?? '');
 
-    if ($payment_id <= 0) {
-        sendResponse(400, ['status' => 'error', 'message' => 'Invalid payment_id']);
-    }
-
-    if ($tenantID <= 0) {
-        sendResponse(400, ['status' => 'error', 'message' => 'Invalid tenantID']);
-    }
-
-    if ($user_id <= 0) {
-        sendResponse(400, ['status' => 'error', 'message' => 'Invalid user_id']);
-    }
-
-    if ($amountPaid <= 0) {
-        sendResponse(400, ['status' => 'error', 'message' => 'Amount paid must be greater than 0']);
-    }
+    if ($payment_id <= 0) sendResponse(400, ['status' => 'error', 'message' => 'Invalid payment_id']);
+    if ($tenantID <= 0) sendResponse(400, ['status' => 'error', 'message' => 'Invalid tenantID']);
+    if ($user_id <= 0) sendResponse(400, ['status' => 'error', 'message' => 'Invalid user_id']);
+    if ($amountPaid <= 0) sendResponse(400, ['status' => 'error', 'message' => 'Amount paid must be greater than 0']);
 
     $stmt = $conn->prepare("
         SELECT 
             payment_id,
             tenantID,
             user_id,
+            grand_total,
             paymentAmount,
             amountPaid,
             paymentStatus
@@ -370,21 +331,23 @@ function handlePay($conn, $jsonInput = [])
         ]);
     }
 
-    $paymentAmount = round((float)$payment['paymentAmount'], 2);
+    $grandTotal = round((float)($payment['grand_total'] ?? 0), 2);
+    $paymentAmount = round((float)($payment['paymentAmount'] ?? 0), 2);
+    $totalToPay = $grandTotal > 0 ? $grandTotal : $paymentAmount;
+
     $previousAmountPaid = round((float)$payment['amountPaid'], 2);
     $paymentThisTime = round((float)$amountPaid, 2);
-
     $newAmountPaid = round($previousAmountPaid + $paymentThisTime, 2);
 
-    if ($newAmountPaid > $paymentAmount) {
-        $newAmountPaid = $paymentAmount;
+    if ($newAmountPaid > $totalToPay) {
+        $newAmountPaid = $totalToPay;
     }
 
-    $balance = round($paymentAmount - $newAmountPaid, 2);
+    $balance = round($totalToPay - $newAmountPaid, 2);
 
     if ($newAmountPaid <= 0) {
         $status = 'Pending';
-    } elseif ($newAmountPaid < $paymentAmount) {
+    } elseif ($newAmountPaid < $totalToPay) {
         $status = 'Partial';
     } else {
         $status = 'Paid';
@@ -442,6 +405,7 @@ function handlePay($conn, $jsonInput = [])
         'data' => [
             'payment_id' => $payment_id,
             'paymentAmount' => $paymentAmount,
+            'grand_total' => $totalToPay,
             'amountPaid' => $newAmountPaid,
             'balance' => $balance,
             'paymentStatus' => $status,
