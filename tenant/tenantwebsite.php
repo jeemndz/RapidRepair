@@ -43,12 +43,26 @@ if (!$owner) {
 }
 
 // Function to get website customization
+function websiteCustomizationsTableExists($conn) {
+    $check = mysqli_query($conn, "SHOW TABLES LIKE 'website_customizations'");
+    return $check && mysqli_num_rows($check) > 0;
+}
+
 function getWebsiteCustomization($conn, $tenantID) {
+    if (!websiteCustomizationsTableExists($conn)) {
+        return array();
+    }
+
     $stmt = mysqli_prepare($conn, "
         SELECT * FROM website_customizations 
         WHERE tenantID = ? 
         LIMIT 1
     ");
+
+    if (!$stmt) {
+        return array();
+    }
+
     mysqli_stmt_bind_param($stmt, "i", $tenantID);
     mysqli_stmt_execute($stmt);
     $result = mysqli_stmt_get_result($stmt);
