@@ -748,8 +748,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['complete_with_parts']
             'UPDATE appointments a
              INNER JOIN repair_jobs rj ON rj.appointment_id = a.appointment_id AND rj.tenantID = a.tenantID
              SET a.status = "Completed", a.total_amount = ?, a.updated_at = NOW()
-             WHERE rj.repair_job_id = ? AND rj.tenantID = ?
-             LIMIT 1'
+             WHERE rj.repair_job_id = ? AND rj.tenantID = ?'
         );
         if ($updateApptStmt) {
             mysqli_stmt_bind_param($updateApptStmt, 'dii', $newGrandTotal, $repairJobId, $tenantID);

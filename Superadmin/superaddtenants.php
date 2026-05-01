@@ -435,6 +435,9 @@ function sendTenantActivationDetailsEmail($ownerRow, $planName, $billingCycle, $
     $loginLink = $loginSlug !== ''
         ? $baseURL . '/tenant/tenantlogin.php?shop=' . urlencode($loginSlug)
         : $baseURL . '/tenant/tenantlogin.php';
+    $tenantWebsiteLink = $loginSlug !== ''
+        ? $baseURL . '/tenant/tenantwebsite.php?shop=' . urlencode($loginSlug)
+        : $baseURL . '/tenant/tenantwebsite.php';
 
     $safeOwnerName = htmlspecialchars($ownerName, ENT_QUOTES, 'UTF-8');
     $safeShopName = htmlspecialchars($shopName, ENT_QUOTES, 'UTF-8');
@@ -446,6 +449,7 @@ function sendTenantActivationDetailsEmail($ownerRow, $planName, $billingCycle, $
     $safeNextBillingDate = htmlspecialchars((string) $nextBillingDate, ENT_QUOTES, 'UTF-8');
     $safePlanPrice = htmlspecialchars(number_format((float) $planTotalPrice, 2), ENT_QUOTES, 'UTF-8');
     $safeLoginLink = htmlspecialchars($loginLink, ENT_QUOTES, 'UTF-8');
+    $safeTenantWebsiteLink = htmlspecialchars($tenantWebsiteLink, ENT_QUOTES, 'UTF-8');
     $safeUsername = htmlspecialchars((string) $username, ENT_QUOTES, 'UTF-8');
     $safeTempPassword = htmlspecialchars((string) $tempPassword, ENT_QUOTES, 'UTF-8');
     $safeInviteCode = htmlspecialchars((string) $inviteCode, ENT_QUOTES, 'UTF-8');
@@ -493,11 +497,16 @@ function sendTenantActivationDetailsEmail($ownerRow, $planName, $billingCycle, $
                                         <tr><td style='padding:14px 16px;font-size:14px;color:#0f172a;'><strong>Email:</strong> {$safeEmail}</td></tr>
                                         <tr><td style='padding:0 16px 14px 16px;font-size:14px;color:#0f172a;'><strong>Username:</strong> {$safeUsername}</td></tr>
                                         <tr><td style='padding:0 16px 14px 16px;font-size:14px;color:#0f172a;'><strong>Temporary Password:</strong> {$safeTempPassword}</td></tr>
-                                        <tr><td style='padding:0 16px 16px 16px;font-size:14px;color:#0f172a;'><strong>Invite Code:</strong> {$safeInviteCode}</td></tr>
+                                        <tr><td style='padding:0 16px 14px 16px;font-size:14px;color:#0f172a;'><strong>Invite Code:</strong> {$safeInviteCode}</td></tr>
+                                        <tr><td style='padding:0 16px 16px 16px;font-size:13px;line-height:20px;color:#475569;'><strong>Invite Code Note:</strong> This code is for customer registration so customers can sign up under your tenant.</td></tr>
                                     </table>
 
                                     <p style='margin:0 0 18px 0;font-size:14px;line-height:22px;word-break:break-all;'>
                                         <strong>Tenant login link:</strong> <a href='{$safeLoginLink}' style='color:#1d4ed8;text-decoration:underline;'>{$safeLoginLink}</a>
+                                    </p>
+
+                                    <p style='margin:0 0 18px 0;font-size:14px;line-height:22px;word-break:break-all;'>
+                                        <strong>Tenant website link:</strong> <a href='{$safeTenantWebsiteLink}' style='color:#1d4ed8;text-decoration:underline;'>{$safeTenantWebsiteLink}</a>
                                     </p>
                                     
                                     <p style='margin:0 0 0 0;font-size:12px;line-height:18px;color:#666666;'>
@@ -532,7 +541,9 @@ function sendTenantActivationDetailsEmail($ownerRow, $planName, $billingCycle, $
         . "Username: {$username}\n"
         . "Temporary Password: {$tempPassword}\n"
         . "Invite Code: {$inviteCode}\n\n"
+        . "Invite Code Note: This code is for customer registration so customers can sign up under your tenant.\n\n"
         . "Tenant Login Link: {$loginLink}\n\n"
+        . "Tenant Website Link: {$tenantWebsiteLink}\n\n"
         . "Note: Please change your temporary password on your first login.\n";
 
     $emailFailureReason = '';
@@ -733,7 +744,7 @@ if (isset($_POST['updateTenantStatus'])) {
         if ($ownersUpdated && $subscriptionSynced) {
             mysqli_commit($conn);
 
-            $ownerRes = mysqli_query($conn, "SELECT ownerName, shopName, email, login_slug, username, password FROM owners WHERE tenantID = '$tenantID' LIMIT 1");
+            $ownerRes = mysqli_query($conn, "SELECT ownerName, shopName, email, login_slug, username, password, invite_code FROM owners WHERE tenantID = '$tenantID' LIMIT 1");
             $ownerRow = $ownerRes && mysqli_num_rows($ownerRes) > 0 ? mysqli_fetch_assoc($ownerRes) : [];
             
             // If username is empty, generate one
