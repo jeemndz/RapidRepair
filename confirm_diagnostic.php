@@ -59,7 +59,7 @@ try {
     );
 
     mysqli_stmt_bind_param($approvedStmt, 'i', $diagnosticId);
-    mysqli_stmt_execute($approvedResult = null);
+    mysqli_stmt_execute($approvedStmt);
     $approvedResult = mysqli_stmt_get_result($approvedStmt);
 
     $approvedServices = [];
