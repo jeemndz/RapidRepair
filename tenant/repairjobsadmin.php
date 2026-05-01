@@ -1326,6 +1326,7 @@ $jobsSql = "SELECT
         COALESCE(GROUP_CONCAT(DISTINCT s.service_name ORDER BY s.service_name SEPARATOR ', '), 'No services linked') AS services,
         COALESCE(SUM(rjs.actual_duration_minutes), 0) AS total_actual_minutes,
         COALESCE(SUM(rjs.estimated_duration_minutes), 0) AS total_estimated_minutes,
+        COALESCE(SUM(CASE WHEN s.category = 'Diagnostics' OR LOWER(s.service_name) LIKE '%diagnostic%' THEN 1 ELSE 0 END), 0) AS diagnostic_service_count,
         dr.diagnostic_id,
         dr.customer_approval,
         dr.diagnosis_status
@@ -1879,6 +1880,7 @@ if ($diagnosticStmt) {
                                 $estimatedHours = ((float) ($job['total_estimated_minutes'] ?? 0)) / 60;
                                 $actualHours = ((float) ($job['total_actual_minutes'] ?? 0)) / 60;
                                 $hasDiagnosticReport = !empty($job['diagnostic_id']);
+                                $hasDiagnosticMainService = ((int) ($job['diagnostic_service_count'] ?? 0)) > 0;
                                 ?>
                                 <tr class="hover:bg-slate-50/50 transition-colors">
                                     <td class="px-6 py-4">
@@ -1923,7 +1925,7 @@ if ($diagnosticStmt) {
                                                     </select>
                                                 </form>
 
-                                                <?php if ($job['job_status'] === 'Diagnostics' || $job['job_status'] === 'In Progress'): ?>
+                                                <?php if ($job['job_status'] === 'Diagnostics' || ($job['job_status'] === 'In Progress' && !$hasDiagnosticMainService)): ?>
                                                     <a href="repairjobsadmin.php?<?php echo h(http_build_query(array_filter([
                                                         'shop' => $loginSlug,
                                                         'q' => $search,
@@ -1936,6 +1938,11 @@ if ($diagnosticStmt) {
                                                         <span class="material-symbols-outlined text-sm">clinical_notes</span>
                                                         <?php echo $hasDiagnosticReport ? 'Edit Diagnostic' : 'Create Diagnostic'; ?>
                                                     </a>
+                                                <?php elseif ($job['job_status'] === 'In Progress' && $hasDiagnosticMainService): ?>
+                                                    <span class="inline-flex items-center justify-center gap-1 rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-bold text-slate-600">
+                                                        <span class="material-symbols-outlined text-sm">hourglass_top</span>
+                                                        In Progress
+                                                    </span>
                                                 <?php endif; ?>
                                             </div>
                                         <?php endif; ?>
