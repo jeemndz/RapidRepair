@@ -2032,7 +2032,7 @@ if (isset($_POST['createTenant'])) {
                                                     $planPrice = $subscriptionPlans[$pendingPlanKey]['monthly_price'] * $billingDivisor;
                                                 ?>
                                                 <button
-                                                    onclick="openApplicantReview('<?php echo addslashes($pendingRow['tenantID']); ?>', '<?php echo addslashes($pendingRow['ownerName']); ?>', '<?php echo addslashes($pendingRow['shopName']); ?>', '<?php echo addslashes($pendingRow['shopAddress']); ?>', '<?php echo addslashes($pendingRow['email']); ?>', '<?php echo addslashes($pendingRow['contactNumber']); ?>', '<?php echo addslashes($tenantPlan); ?>', '<?php echo addslashes($planBillingCycle); ?>', '<?php echo addslashes($paymentInfo['status']); ?>', '<?php echo addslashes($paymentInfo['amount']); ?>', '<?php echo addslashes($paymentInfo['payment_method']); ?>', '<?php echo addslashes((string)$planPrice); ?>')"
+                                                    onclick="openApplicantReview(<?php echo htmlspecialchars(json_encode($pendingRow['tenantID'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>, <?php echo htmlspecialchars(json_encode($pendingRow['ownerName'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>, <?php echo htmlspecialchars(json_encode($pendingRow['shopName'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>, <?php echo htmlspecialchars(json_encode($pendingRow['shopAddress'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>, <?php echo htmlspecialchars(json_encode($pendingRow['email'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>, <?php echo htmlspecialchars(json_encode($pendingRow['contactNumber'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>, <?php echo htmlspecialchars(json_encode($tenantPlan ?? ''), ENT_QUOTES, 'UTF-8'); ?>, <?php echo htmlspecialchars(json_encode($planBillingCycle ?? 'monthly'), ENT_QUOTES, 'UTF-8'); ?>, <?php echo htmlspecialchars(json_encode($paymentInfo['status'] ?? 'unpaid'), ENT_QUOTES, 'UTF-8'); ?>, <?php echo htmlspecialchars(json_encode($paymentInfo['amount'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>, <?php echo htmlspecialchars(json_encode($paymentInfo['payment_method'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>, <?php echo htmlspecialchars(json_encode((string) ($planPrice ?? '')), ENT_QUOTES, 'UTF-8'); ?>, <?php echo htmlspecialchars(json_encode($pendingRow['business_permit_image'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>, <?php echo htmlspecialchars(json_encode($pendingRow['valid_id_image'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>, <?php echo htmlspecialchars(json_encode($pendingRow['bir_certificate_image'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>)"
                                                     class="px-3 py-1.5 border border-blue-200 text-blue-600 text-xs font-bold rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/10 transition-colors">
                                                     <span class="flex items-center gap-1">
                                                         <span class="material-symbols-outlined text-sm">info</span>
@@ -2350,6 +2350,27 @@ if (isset($_POST['createTenant'])) {
                             </div>
                         </div>
 
+                        <!-- Uploaded Documents Section -->
+                        <div>
+                            <h3 class="text-lg font-bold mb-4 flex items-center gap-2">
+                                <span class="material-symbols-outlined text-red-600">folder_open</span>
+                                Uploaded Documents
+                            </h3>
+                            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                <div class="border border-slate-200 dark:border-slate-700 rounded-lg p-4 bg-slate-50 dark:bg-slate-800">
+                                    <p class="text-xs font-bold uppercase text-gray-500 mb-3">Business Permit</p>
+                                    <div id="reviewBusinessPermit">-</div>
+                                </div>
+                                <div class="border border-slate-200 dark:border-slate-700 rounded-lg p-4 bg-slate-50 dark:bg-slate-800">
+                                    <p class="text-xs font-bold uppercase text-gray-500 mb-3">Valid Owner ID</p>
+                                    <div id="reviewValidId">-</div>
+                                </div>
+                                <div class="border border-slate-200 dark:border-slate-700 rounded-lg p-4 bg-slate-50 dark:bg-slate-800">
+                                    <p class="text-xs font-bold uppercase text-gray-500 mb-3">BIR Certificate</p>
+                                    <div id="reviewBirCertificate">-</div>
+                                </div>
+                            </div>
+                        </div>
                         <!-- Action Buttons -->
                         <div class="flex gap-4 pt-4 border-t">
                             <button type="button" onclick="closeApplicantReviewModal()"
@@ -2772,9 +2793,35 @@ if (isset($_POST['createTenant'])) {
             document.body.appendChild(form);
             form.submit();
         }
-
         // Applicant Review Modal Functions
-        function openApplicantReview(tenantID, ownerName, shopName, shopAddress, email, contactNumber, subscriptionPlan, billingCycle, paymentStatus, paymentAmount, paymentMethod, planPrice) {
+        function renderDocumentPreview(containerId, filePath, label) {
+            const container = document.getElementById(containerId);
+            if (!container) return;
+
+            if (!filePath || String(filePath).trim() === "") {
+                container.innerHTML = "<div class=\"h-32 rounded-lg border border-dashed border-slate-300 flex items-center justify-center text-xs text-slate-400 text-center px-3\">No document uploaded</div>";
+                return;
+            }
+
+            const cleanPath = String(filePath).replace(/^\/+/, "");
+            const imageUrl = cleanPath.startsWith("http://") || cleanPath.startsWith("https://") ? cleanPath : "../" + cleanPath;
+
+            container.innerHTML = `
+                <a href="${imageUrl}" target="_blank" rel="noopener" class="block group">
+                    <img src="${imageUrl}"
+                         alt="${label}"
+                         class="w-full h-32 object-cover rounded-lg border border-slate-200 dark:border-slate-700 mb-3 bg-white group-hover:opacity-80 transition"
+                         onerror="this.style.display=\"none\"; this.nextElementSibling.classList.remove(\"hidden\");" />
+                    <div class="hidden h-32 rounded-lg border border-dashed border-slate-300 mb-3 items-center justify-center text-xs text-slate-400 text-center px-3">
+                        Preview unavailable. Click view to open file.
+                    </div>
+                    <span class="inline-flex items-center justify-center w-full px-3 py-2 bg-red-600 text-white text-xs font-bold rounded-lg hover:bg-red-700 transition-colors">
+                        View Document
+                    </span>
+                </a>
+            `;
+        }
+        function openApplicantReview(tenantID, ownerName, shopName, shopAddress, email, contactNumber, subscriptionPlan, billingCycle, paymentStatus, paymentAmount, paymentMethod, planPrice, businessPermitImage, validIdImage, birCertificateImage) {
             // Set applicant details
             document.getElementById('reviewOwnerName').textContent = ownerName || '-';
             document.getElementById('reviewShopName').textContent = shopName || '-';
@@ -2799,7 +2846,11 @@ if (isset($_POST['createTenant'])) {
                 'failed': '<span class="px-3 py-1 bg-red-100 text-red-700 text-xs font-bold rounded-md inline-block">✗ Failed</span>',
                 'unpaid': '<span class="px-3 py-1 bg-slate-100 text-slate-700 text-xs font-bold rounded-md inline-block">- No Payment</span>'
             };
-            document.getElementById('reviewPaymentBadge').innerHTML = paymentBadges[paymentStatus.toLowerCase()] || paymentBadges['unpaid'];
+            document.getElementById('reviewPaymentBadge').innerHTML = paymentBadges[(paymentStatus || 'unpaid').toLowerCase()] || paymentBadges['unpaid'];
+
+            renderDocumentPreview('reviewBusinessPermit', businessPermitImage, 'Business Permit');
+            renderDocumentPreview('reviewValidId', validIdImage, 'Valid Owner ID');
+            renderDocumentPreview('reviewBirCertificate', birCertificateImage, 'BIR Certificate');
             
             // Store tenantID and applicant details for later use
             document.getElementById('applicantReviewModal').dataset.tenantID = tenantID;
@@ -2807,7 +2858,7 @@ if (isset($_POST['createTenant'])) {
             document.getElementById('applicantReviewModal').dataset.billingCycle = billingCycle || 'monthly';
             document.getElementById('applicantReviewModal').dataset.shopName = shopName || '';
             document.getElementById('applicantReviewModal').dataset.ownerName = ownerName || '';
-            document.getElementById('applicantReviewModal').dataset.isPaid = paymentStatus.toLowerCase() === 'paid' ? 'true' : 'false';
+            document.getElementById('applicantReviewModal').dataset.isPaid = (paymentStatus || 'unpaid').toLowerCase() === 'paid' ? 'true' : 'false';
             
             // Open the modal
             document.getElementById("applicantReviewModal").classList.remove("hidden");

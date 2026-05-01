@@ -60,14 +60,6 @@ function subscriptionPlansTableExists($conn)
     return $check && mysqli_num_rows($check) > 0;
 }
 
-function subscriptionPlansColumnExists($conn, $columnName)
-{
-    $safeColumn = mysqli_real_escape_string($conn, $columnName);
-    $checkSql = "SHOW COLUMNS FROM subscription_plans LIKE '$safeColumn'";
-    $check = mysqli_query($conn, $checkSql);
-    return $check && mysqli_num_rows($check) > 0;
-}
-
 function normalizePlanKey($value)
 {
     $normalized = strtolower(trim((string) $value));
@@ -105,15 +97,14 @@ function loadSubscriptionPlansWithDetails($conn)
             $planCode = normalizePlanKey($planName);
         }
 
-        // Parse plan features - try JSON first, fall back to newline/comma separated
         $features = [];
         $rawFeatures = trim((string) ($row['plan_features'] ?? ''));
-        if (!empty($rawFeatures)) {
+
+        if ($rawFeatures !== '') {
             $decoded = json_decode($rawFeatures, true);
             if (is_array($decoded)) {
                 $features = $decoded;
             } else {
-                // Fall back to splitting by newline or comma
                 $features = preg_split('/[\r\n,]+/', $rawFeatures);
                 $features = array_map('trim', $features);
                 $features = array_filter($features);
@@ -133,8 +124,8 @@ function loadSubscriptionPlansWithDetails($conn)
     return $plans;
 }
 
-
 $subscriptionPlans = loadSubscriptionPlansWithDetails($conn);
+
 if (count($subscriptionPlans) === 0) {
     $subscriptionPlans = [
         [
@@ -169,6 +160,7 @@ function generateSlugForApplication($conn, $shopName)
     $slug = strtolower(trim((string) $shopName));
     $slug = preg_replace('/[^a-z0-9]+/', '-', $slug);
     $slug = trim((string) $slug, '-');
+
     if ($slug === '') {
         $slug = 'shop';
     }
@@ -177,10 +169,13 @@ function generateSlugForApplication($conn, $shopName)
     $counter = 1;
 
     while (true) {
-        $check = mysqli_query($conn, "SELECT tenantID FROM owners WHERE login_slug='" . mysqli_real_escape_string($conn, $slug) . "' LIMIT 1");
+        $safeSlug = mysqli_real_escape_string($conn, $slug);
+        $check = mysqli_query($conn, "SELECT tenantID FROM owners WHERE login_slug='$safeSlug' LIMIT 1");
+
         if ($check && mysqli_num_rows($check) === 0) {
             break;
         }
+
         $slug = $originalSlug . '-' . $counter;
         $counter++;
     }
@@ -193,9 +188,11 @@ function generateTemporaryPasswordForApplication($length = 12)
     $alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
     $maxIndex = strlen($alphabet) - 1;
     $password = '';
+
     for ($i = 0; $i < $length; $i++) {
         $password .= $alphabet[random_int(0, $maxIndex)];
     }
+
     return $password;
 }
 
@@ -203,18 +200,76 @@ function generateUniqueInviteCode($conn, $length = 6)
 {
     $digits = '0123456789';
     $maxIndex = strlen($digits) - 1;
-    
+
     while (true) {
         $code = '';
+
         for ($i = 0; $i < $length; $i++) {
             $code .= $digits[random_int(0, $maxIndex)];
         }
-        
-        $check = mysqli_query($conn, "SELECT tenantID FROM owners WHERE invite_code='" . mysqli_real_escape_string($conn, $code) . "' LIMIT 1");
+
+        $safeCode = mysqli_real_escape_string($conn, $code);
+        $check = mysqli_query($conn, "SELECT tenantID FROM owners WHERE invite_code='$safeCode' LIMIT 1");
+
         if ($check && mysqli_num_rows($check) === 0) {
             return $code;
         }
     }
+}
+
+function uploadRequiredDocumentImage($fieldName, $tenantID, &$errors)
+{
+    $label = ucwords(str_replace('_', ' ', $fieldName));
+
+    if (!isset($_FILES[$fieldName]) || $_FILES[$fieldName]['error'] === UPLOAD_ERR_NO_FILE) {
+        $errors[] = $label . ' is required.';
+        return '';
+    }
+
+    if ($_FILES[$fieldName]['error'] !== UPLOAD_ERR_OK) {
+        $errors[] = 'Upload failed for ' . $label . '.';
+        return '';
+    }
+
+    $allowedTypes = ['image/jpeg', 'image/png', 'image/webp'];
+    $maxSize = 5 * 1024 * 1024;
+
+    $fileTmp = $_FILES[$fieldName]['tmp_name'];
+    $fileSize = (int) $_FILES[$fieldName]['size'];
+    $mimeType = mime_content_type($fileTmp);
+
+    if (!in_array($mimeType, $allowedTypes, true)) {
+        $errors[] = $label . ' must be JPG, PNG, or WEBP only.';
+        return '';
+    }
+
+    if ($fileSize > $maxSize) {
+        $errors[] = $label . ' must not exceed 5MB.';
+        return '';
+    }
+
+    $uploadDir = __DIR__ . '/../uploads/tenant_documents/';
+
+    if (!is_dir($uploadDir)) {
+        mkdir($uploadDir, 0777, true);
+    }
+
+    $extensionMap = [
+        'image/jpeg' => 'jpg',
+        'image/png' => 'png',
+        'image/webp' => 'webp'
+    ];
+
+    $extension = $extensionMap[$mimeType] ?? 'jpg';
+    $safeFileName = $tenantID . '_' . $fieldName . '_' . time() . '_' . random_int(1000, 9999) . '.' . $extension;
+    $targetPath = $uploadDir . $safeFileName;
+
+    if (!move_uploaded_file($fileTmp, $targetPath)) {
+        $errors[] = 'Could not save ' . $label . '.';
+        return '';
+    }
+
+    return 'uploads/tenant_documents/' . $safeFileName;
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['createTenantApplication'])) {
@@ -230,20 +285,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['createTenantApplicati
         $formData['subscriptionPlan'] = strtolower(trim((string) ($_POST['subscriptionPlan'] ?? '')));
         $formData['billingCycle'] = strtolower(trim((string) ($_POST['billingCycle'] ?? 'monthly')));
 
-        if ($formData['shopName'] === '' || $formData['shopAddress'] === '' || $formData['ownerName'] === '' || $formData['countryCode'] === '' || $formData['contactNumber'] === '' || $formData['email'] === '' || $formData['subscriptionPlan'] === '' || $formData['billingCycle'] === '') {
+        if (
+            $formData['shopName'] === '' ||
+            $formData['shopAddress'] === '' ||
+            $formData['ownerName'] === '' ||
+            $formData['countryCode'] === '' ||
+            $formData['contactNumber'] === '' ||
+            $formData['email'] === '' ||
+            $formData['subscriptionPlan'] === '' ||
+            $formData['billingCycle'] === ''
+        ) {
             $errors[] = 'All fields are required.';
         }
 
-        $allowedPlans = array_map(function($plan) {
+        $allowedPlans = array_map(function ($plan) {
             return $plan['plan_code'];
         }, $subscriptionPlans);
+
         if ($formData['subscriptionPlan'] !== '' && !in_array($formData['subscriptionPlan'], $allowedPlans, true)) {
             $errors[] = 'Please choose a valid plan.';
         }
 
-        $validCountryCodes = array_map(function($country) {
+        $validCountryCodes = array_map(function ($country) {
             return $country['code'];
         }, getCountriesWithPhoneCodes());
+
         if ($formData['countryCode'] !== '' && !in_array($formData['countryCode'], $validCountryCodes, true)) {
             $errors[] = 'Please choose a valid country.';
         }
@@ -258,11 +324,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['createTenantApplicati
 
         $existingEmailSql = "SELECT tenantID FROM owners WHERE email='" . mysqli_real_escape_string($conn, $formData['email']) . "' LIMIT 1";
         $existingEmailResult = mysqli_query($conn, $existingEmailSql);
+
         if ($existingEmailResult && mysqli_num_rows($existingEmailResult) > 0) {
             $errors[] = 'This email is already registered.';
         }
 
         $allowedBillingCycles = ['monthly', 'quarterly', 'yearly'];
+
         if ($formData['billingCycle'] !== '' && !in_array($formData['billingCycle'], $allowedBillingCycles, true)) {
             $errors[] = 'Please choose a valid billing cycle.';
         }
@@ -282,64 +350,99 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['createTenantApplicati
             $temporaryPassword = generateTemporaryPasswordForApplication();
             $inviteCode = generateUniqueInviteCode($conn);
 
-            $insertColumns = ['tenantID', 'ownerName', 'shopName', 'email', 'contactNumber', 'shopAddress', 'password', 'first_login', 'status'];
-            $insertValues = [
-                "'" . mysqli_real_escape_string($conn, $tenantID) . "'",
-                "'" . mysqli_real_escape_string($conn, $formData['ownerName']) . "'",
-                "'" . mysqli_real_escape_string($conn, $formData['shopName']) . "'",
-                "'" . mysqli_real_escape_string($conn, $formData['email']) . "'",
-                "'" . mysqli_real_escape_string($conn, $formData['contactNumber']) . "'",
-                "'" . mysqli_real_escape_string($conn, $formData['shopAddress']) . "'",
-                "'" . mysqli_real_escape_string($conn, $temporaryPassword) . "'",
-                '1',
-                "'Pending'"
-            ];
+            $businessPermitImage = uploadRequiredDocumentImage('business_permit_image', $tenantID, $errors);
+            $validIdImage = uploadRequiredDocumentImage('valid_id_image', $tenantID, $errors);
+            $birCertificateImage = uploadRequiredDocumentImage('bir_certificate_image', $tenantID, $errors);
 
-            if (ownersColumnExists($conn, 'login_slug')) {
-                $insertColumns[] = 'login_slug';
-                $insertValues[] = "'" . mysqli_real_escape_string($conn, $loginSlug) . "'";
-            }
+            if (count($errors) === 0) {
+                $insertColumns = [
+                    'tenantID',
+                    'ownerName',
+                    'shopName',
+                    'email',
+                    'contactNumber',
+                    'shopAddress',
+                    'password',
+                    'first_login',
+                    'status'
+                ];
 
-            if (ownersColumnExists($conn, 'subscription_plan')) {
-                $insertColumns[] = 'subscription_plan';
-                $insertValues[] = "'" . mysqli_real_escape_string($conn, $formData['subscriptionPlan']) . "'";
-            }
+                $insertValues = [
+                    "'" . mysqli_real_escape_string($conn, $tenantID) . "'",
+                    "'" . mysqli_real_escape_string($conn, $formData['ownerName']) . "'",
+                    "'" . mysqli_real_escape_string($conn, $formData['shopName']) . "'",
+                    "'" . mysqli_real_escape_string($conn, $formData['email']) . "'",
+                    "'" . mysqli_real_escape_string($conn, $formData['contactNumber']) . "'",
+                    "'" . mysqli_real_escape_string($conn, $formData['shopAddress']) . "'",
+                    "'" . mysqli_real_escape_string($conn, $temporaryPassword) . "'",
+                    '1',
+                    "'Pending'"
+                ];
 
-            if (ownersColumnExists($conn, 'billing_cycle')) {
-                $insertColumns[] = 'billing_cycle';
-                $insertValues[] = "'" . mysqli_real_escape_string($conn, $formData['billingCycle']) . "'";
-            }
+                if (ownersColumnExists($conn, 'login_slug')) {
+                    $insertColumns[] = 'login_slug';
+                    $insertValues[] = "'" . mysqli_real_escape_string($conn, $loginSlug) . "'";
+                }
 
-            if (ownersColumnExists($conn, 'country_code')) {
-                $insertColumns[] = 'country_code';
-                $insertValues[] = "'" . mysqli_real_escape_string($conn, $formData['countryCode']) . "'";
-            }
+                if (ownersColumnExists($conn, 'subscription_plan')) {
+                    $insertColumns[] = 'subscription_plan';
+                    $insertValues[] = "'" . mysqli_real_escape_string($conn, $formData['subscriptionPlan']) . "'";
+                }
 
-            if (ownersColumnExists($conn, 'invite_code')) {
-                $insertColumns[] = 'invite_code';
-                $insertValues[] = "'" . mysqli_real_escape_string($conn, $inviteCode) . "'";
-            }
+                if (ownersColumnExists($conn, 'billing_cycle')) {
+                    $insertColumns[] = 'billing_cycle';
+                    $insertValues[] = "'" . mysqli_real_escape_string($conn, $formData['billingCycle']) . "'";
+                }
 
-            if (ownersColumnExists($conn, 'created_at')) {
-                $insertColumns[] = 'created_at';
-                $insertValues[] = 'NOW()';
-            }
+                if (ownersColumnExists($conn, 'country_code')) {
+                    $insertColumns[] = 'country_code';
+                    $insertValues[] = "'" . mysqli_real_escape_string($conn, $formData['countryCode']) . "'";
+                }
 
-            $insertSql = "INSERT INTO owners (" . implode(', ', $insertColumns) . ") VALUES (" . implode(', ', $insertValues) . ")";
-            $insertResult = mysqli_query($conn, $insertSql);
+                if (ownersColumnExists($conn, 'invite_code')) {
+                    $insertColumns[] = 'invite_code';
+                    $insertValues[] = "'" . mysqli_real_escape_string($conn, $inviteCode) . "'";
+                }
 
-            if ($insertResult) {
-                header('Location: clientpayment.php?tenantID=' . urlencode($tenantID));
-                exit();
-            } else {
-                $errors[] = 'Unable to submit your application right now. Please try again.';
+                if (ownersColumnExists($conn, 'business_permit_image')) {
+                    $insertColumns[] = 'business_permit_image';
+                    $insertValues[] = "'" . mysqli_real_escape_string($conn, $businessPermitImage) . "'";
+                }
+
+                if (ownersColumnExists($conn, 'valid_id_image')) {
+                    $insertColumns[] = 'valid_id_image';
+                    $insertValues[] = "'" . mysqli_real_escape_string($conn, $validIdImage) . "'";
+                }
+
+                if (ownersColumnExists($conn, 'bir_certificate_image')) {
+                    $insertColumns[] = 'bir_certificate_image';
+                    $insertValues[] = "'" . mysqli_real_escape_string($conn, $birCertificateImage) . "'";
+                }
+
+                if (ownersColumnExists($conn, 'created_at')) {
+                    $insertColumns[] = 'created_at';
+                    $insertValues[] = 'NOW()';
+                }
+
+                $insertSql = "INSERT INTO owners (" . implode(', ', $insertColumns) . ") VALUES (" . implode(', ', $insertValues) . ")";
+                $insertResult = mysqli_query($conn, $insertSql);
+
+                if ($insertResult) {
+                    header(
+                        'Location: clientpayment.php?tenantID=' . urlencode($tenantID) .
+                        '&plan=' . urlencode($formData['subscriptionPlan']) .
+                        '&billingCycle=' . urlencode($formData['billingCycle'])
+                    );
+                    exit();
+                } else {
+                    $errors[] = 'Unable to submit your application right now. Please try again.';
+                }
             }
         }
     }
 }
 ?>
 <!DOCTYPE html>
-
 <html class="scroll-smooth" lang="en">
 
 <head>
@@ -352,9 +455,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['createTenantApplicati
     <link
         href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap"
         rel="stylesheet" />
-    <link
-        href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap"
-        rel="stylesheet" />
+
     <script id="tailwind-config">
         tailwind.config = {
             darkMode: "class",
@@ -414,29 +515,39 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['createTenantApplicati
                         "body": ["Inter"],
                         "label": ["Inter"]
                     },
-                    borderRadius: { "DEFAULT": "0.125rem", "lg": "0.25rem", "xl": "0.5rem", "full": "0.75rem" },
+                    borderRadius: {
+                        "DEFAULT": "0.125rem",
+                        "lg": "0.25rem",
+                        "xl": "0.5rem",
+                        "full": "0.75rem"
+                    },
                 },
             },
         }
     </script>
+
     <script>
         function selectPlanAndScroll(planKey) {
-            // Set the subscription plan dropdown value
             const planSelect = document.querySelector('select[name="subscriptionPlan"]');
+
             if (planSelect) {
                 planSelect.value = planKey;
             }
 
-            // Scroll to the application form with smooth behavior
             const applicationSection = document.getElementById('application');
+
             if (applicationSection) {
-                applicationSection.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                
-                // Add a subtle highlight animation to the form
+                applicationSection.scrollIntoView({
+                    behavior: 'smooth',
+                    block: 'center'
+                });
+
                 const formCard = applicationSection.querySelector('.ring-4');
+
                 if (formCard) {
                     formCard.style.transition = 'all 0.3s ease';
                     formCard.style.boxShadow = '0 0 20px rgba(17, 82, 212, 0.3)';
+
                     setTimeout(() => {
                         formCard.style.boxShadow = '';
                     }, 2000);
@@ -444,6 +555,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['createTenantApplicati
             }
         }
     </script>
+
     <style>
         body {
             font-family: 'Inter', sans-serif;
@@ -478,11 +590,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['createTenantApplicati
 </head>
 
 <body class="bg-surface text-on-surface">
-    <!-- TopNavBar Component -->
     <nav
         class="fixed top-0 w-full z-50 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-none">
         <div class="max-w-7xl mx-auto flex justify-between items-center px-6 py-3">
             <div class="text-xl font-black tracking-tighter text-[#1152d4] dark:text-[#3b82f6]">RapidRepairCo.</div>
+
             <div class="hidden md:flex items-center gap-8">
                 <a class="font-medium text-sm tracking-tight text-slate-600 dark:text-slate-400 hover:text-[#1152d4] transition-colors"
                     href="#features">Features</a>
@@ -493,6 +605,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['createTenantApplicati
                 <a class="font-medium text-sm tracking-tight text-slate-600 dark:text-slate-400 hover:text-[#1152d4] transition-colors"
                     href="#support">Support</a>
             </div>
+
             <div class="flex items-center gap-3">
                 <?php if ($isClientLoggedIn): ?>
                     <a href="#"
@@ -508,42 +621,45 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['createTenantApplicati
                         Register
                     </a>
                 <?php endif; ?>
+
                 <a href="#application"
-                    class="bg-primary text-on-primary px-5 py-2 rounded-lg text-sm font-bold tracking-tight hover:opacity-90 transition-all active:scale-95">Get
-                    Started</a>
+                    class="bg-primary text-on-primary px-5 py-2 rounded-lg text-sm font-bold tracking-tight hover:opacity-90 transition-all active:scale-95">
+                    Get Started
+                </a>
             </div>
         </div>
     </nav>
+
     <main class="pt-16">
-        <!-- Hero Section & Shop Onboarding Form -->
         <section class="relative min-h-[921px] flex items-center overflow-hidden py-20 px-6" id="application">
             <div class="absolute inset-0 z-0 bg-gradient-to-br from-primary/5 to-transparent"></div>
+
             <div class="max-w-7xl mx-auto w-full grid grid-cols-1 lg:grid-cols-2 gap-16 items-center relative z-10">
-                <!-- Left: Brand Message -->
                 <div class="space-y-8">
                     <span
-                        class="inline-block px-3 py-1 bg-primary-container text-primary text-[10px] font-bold tracking-widest uppercase rounded">Operational
-                        Excellence</span>
+                        class="inline-block px-3 py-1 bg-primary-container text-primary text-[10px] font-bold tracking-widest uppercase rounded">
+                        Operational Excellence
+                    </span>
+
                     <h1 class="text-5xl md:text-6xl font-black tracking-tighter leading-[1.1] text-on-background">
                         The Clinical Standard for <span class="text-primary">Modern Repair.</span>
                     </h1>
+
                     <p class="text-lg text-on-surface-variant max-w-lg leading-relaxed">
                         High-fidelity operational tools designed for professional shop owners. Move beyond legacy
                         systems with RapidRepairCo.'s architectural rigor and real-time fleet management.
                     </p>
+
                     <div class="flex items-center gap-4 text-sm font-semibold text-on-surface">
                         <div class="flex -space-x-2">
-                            <div class="w-8 h-8 rounded-full border-2 border-white bg-slate-200"
-                                data-alt="User avatar 1"></div>
-                            <div class="w-8 h-8 rounded-full border-2 border-white bg-slate-300"
-                                data-alt="User avatar 2"></div>
-                            <div class="w-8 h-8 rounded-full border-2 border-white bg-slate-400"
-                                data-alt="User avatar 3"></div>
+                            <div class="w-8 h-8 rounded-full border-2 border-white bg-slate-200"></div>
+                            <div class="w-8 h-8 rounded-full border-2 border-white bg-slate-300"></div>
+                            <div class="w-8 h-8 rounded-full border-2 border-white bg-slate-400"></div>
                         </div>
                         <span>Trusted by 500+ premium auto shops nationwide.</span>
                     </div>
                 </div>
-                <!-- Right: Onboarding Form (Screen 60) -->
+
                 <div
                     class="bg-surface-container border border-outline rounded-xl p-8 shadow-sm relative ring-4 ring-primary/5">
                     <div
@@ -553,10 +669,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['createTenantApplicati
                             Here</span>
                         <span class="material-symbols-outlined text-4xl">arrow_forward</span>
                     </div>
+
                     <div class="mb-8">
                         <h2 class="text-2xl font-bold tracking-tight mb-2">Application Form</h2>
                         <p class="text-sm text-on-surface-variant">Initialize your digital operational environment.</p>
                     </div>
+
                     <?php if ($successMessage !== ''): ?>
                         <div class="mb-5 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">
                             <?php echo htmlspecialchars($successMessage, ENT_QUOTES, 'UTF-8'); ?>
@@ -573,46 +691,55 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['createTenantApplicati
 
                     <?php if (!$isClientLoggedIn): ?>
                         <div class="mb-5 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-                            Please <a href="clientregister.php" class="font-bold underline">register</a> first then <a href="clientlogin.php" class="font-bold underline">login</a> to use this application
-                            form.
+                            Please <a href="clientregister.php" class="font-bold underline">register</a> first then
+                            <a href="clientlogin.php" class="font-bold underline">login</a> to use this application form.
                         </div>
                     <?php endif; ?>
 
-                    <form class="space-y-5" method="post" action="">
+                    <form class="space-y-5" method="post" action="" enctype="multipart/form-data">
                         <input type="hidden" name="createTenantApplication" value="1" />
+
                         <fieldset <?php echo !$isClientLoggedIn ? 'disabled' : ''; ?>>
                             <div class="grid grid-cols-1 gap-5">
                                 <div class="space-y-1.5">
                                     <label
-                                        class="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">Shop
-                                        Name</label>
+                                        class="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">
+                                        Shop Name
+                                    </label>
                                     <input
                                         class="w-full bg-surface-variant border-transparent rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent text-sm py-3 px-4"
                                         placeholder="e.g. Precision Euro Works" type="text" name="shopName" required
                                         value="<?php echo htmlspecialchars($formData['shopName'], ENT_QUOTES, 'UTF-8'); ?>" />
                                 </div>
+
                                 <div class="space-y-1.5">
                                     <label
-                                        class="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">Business
-                                        Address</label>
+                                        class="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">
+                                        Business Address
+                                    </label>
                                     <input
                                         class="w-full bg-surface-variant border-transparent rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent text-sm py-3 px-4"
                                         placeholder="Street, City, State, ZIP" type="text" name="shopAddress" required
                                         value="<?php echo htmlspecialchars($formData['shopAddress'], ENT_QUOTES, 'UTF-8'); ?>" />
                                 </div>
+
                                 <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
                                     <div class="space-y-1.5">
                                         <label
-                                            class="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">Owner
-                                            Name</label>
+                                            class="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">
+                                            Owner Name
+                                        </label>
                                         <input
                                             class="w-full bg-surface-variant border-transparent rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent text-sm py-3 px-4"
                                             placeholder="Full Name" type="text" name="ownerName" required
                                             value="<?php echo htmlspecialchars($formData['ownerName'], ENT_QUOTES, 'UTF-8'); ?>" />
                                     </div>
+
                                     <div class="space-y-1.5">
                                         <label
-                                            class="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">Country</label>
+                                            class="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">
+                                            Country
+                                        </label>
                                         <select
                                             class="w-full bg-surface-variant border-transparent rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent text-sm py-3 px-4"
                                             name="countryCode" required>
@@ -620,39 +747,48 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['createTenantApplicati
                                                 <option
                                                     value="<?php echo htmlspecialchars($country['code'], ENT_QUOTES, 'UTF-8'); ?>"
                                                     <?php echo $formData['countryCode'] === $country['code'] ? 'selected' : ''; ?>>
-                                                    <?php echo htmlspecialchars($country['name'], ENT_QUOTES, 'UTF-8'); ?> (<?php echo htmlspecialchars($country['phone'], ENT_QUOTES, 'UTF-8'); ?>)
+                                                    <?php echo htmlspecialchars($country['name'], ENT_QUOTES, 'UTF-8'); ?>
+                                                    (<?php echo htmlspecialchars($country['phone'], ENT_QUOTES, 'UTF-8'); ?>)
                                                 </option>
                                             <?php endforeach; ?>
                                         </select>
                                     </div>
                                 </div>
+
                                 <div class="space-y-1.5">
                                     <label
-                                        class="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">Phone
-                                        Number</label>
+                                        class="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">
+                                        Phone Number
+                                    </label>
                                     <input
                                         class="w-full bg-surface-variant border-transparent rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent text-sm py-3 px-4"
                                         placeholder="10-digit phone number" type="tel" name="contactNumber" required
                                         value="<?php echo htmlspecialchars($formData['contactNumber'], ENT_QUOTES, 'UTF-8'); ?>" />
                                 </div>
+
                                 <div class="space-y-1.5">
                                     <label
-                                        class="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">Email
-                                        Address</label>
+                                        class="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">
+                                        Email Address
+                                    </label>
                                     <input
                                         class="w-full bg-surface-variant border-transparent rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent text-sm py-3 px-4"
                                         placeholder="admin@shop.com" type="email" name="email" required
                                         value="<?php echo htmlspecialchars($formData['email'], ENT_QUOTES, 'UTF-8'); ?>" />
                                 </div>
+
                                 <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
                                     <div class="space-y-1.5">
                                         <label
-                                            class="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">Choose
-                                            Plan</label>
+                                            class="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">
+                                            Choose Plan
+                                        </label>
                                         <select
                                             class="w-full bg-surface-variant border-transparent rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent text-sm py-3 px-4"
                                             name="subscriptionPlan" required>
-                                            <option value="" <?php echo $formData['subscriptionPlan'] === '' ? 'selected' : ''; ?>>Select a plan</option>
+                                            <option value="" <?php echo $formData['subscriptionPlan'] === '' ? 'selected' : ''; ?>>
+                                                Select a plan
+                                            </option>
                                             <?php foreach ($subscriptionPlans as $planOption): ?>
                                                 <option
                                                     value="<?php echo htmlspecialchars($planOption['plan_code'], ENT_QUOTES, 'UTF-8'); ?>"
@@ -662,10 +798,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['createTenantApplicati
                                             <?php endforeach; ?>
                                         </select>
                                     </div>
+
                                     <div class="space-y-1.5">
                                         <label
-                                            class="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">Billing
-                                            Cycle</label>
+                                            class="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">
+                                            Billing Cycle
+                                        </label>
                                         <select
                                             class="w-full bg-surface-variant border-transparent rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent text-sm py-3 px-4"
                                             name="billingCycle" required>
@@ -675,16 +813,63 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['createTenantApplicati
                                         </select>
                                     </div>
                                 </div>
+
+                                <div class="rounded-xl border border-outline bg-surface-container-low p-5 space-y-4">
+                                    <div>
+                                        <h3 class="text-sm font-black tracking-tight text-on-surface">Required Documents
+                                        </h3>
+                                        <p class="text-xs text-on-surface-variant mt-1">
+                                            Upload clear image copies. Accepted formats: JPG, PNG, WEBP. Max size: 5MB
+                                            each.
+                                        </p>
+                                    </div>
+
+                                    <div class="space-y-1.5">
+                                        <label
+                                            class="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">
+                                            Business Permit
+                                        </label>
+                                        <input
+                                            class="w-full bg-surface-variant border-transparent rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent text-sm py-3 px-4"
+                                            type="file" name="business_permit_image"
+                                            accept="image/jpeg,image/png,image/webp" required />
+                                    </div>
+
+                                    <div class="space-y-1.5">
+                                        <label
+                                            class="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">
+                                            Valid Owner ID
+                                        </label>
+                                        <input
+                                            class="w-full bg-surface-variant border-transparent rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent text-sm py-3 px-4"
+                                            type="file" name="valid_id_image" accept="image/jpeg,image/png,image/webp"
+                                            required />
+                                    </div>
+
+                                    <div class="space-y-1.5">
+                                        <label
+                                            class="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">
+                                            BIR Certificate / Tax Registration
+                                        </label>
+                                        <input
+                                            class="w-full bg-surface-variant border-transparent rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent text-sm py-3 px-4"
+                                            type="file" name="bir_certificate_image"
+                                            accept="image/jpeg,image/png,image/webp" required />
+                                    </div>
+                                </div>
                             </div>
+
                             <button
                                 class="w-full bg-primary text-white font-bold py-4 rounded-lg tracking-tight hover:bg-primary/90 transition-all mt-4"
-                                type="submit">Submit Application</button>
+                                type="submit">
+                                Submit Application
+                            </button>
                         </fieldset>
                     </form>
                 </div>
             </div>
         </section>
-        <!-- Platform Features -->
+
         <section class="py-24 bg-white" id="features">
             <div class="max-w-7xl mx-auto px-6">
                 <div class="text-center max-w-2xl mx-auto mb-20">
@@ -692,115 +877,139 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['createTenantApplicati
                     <p class="text-on-surface-variant">Every module is built with a focus on data integrity and operator
                         efficiency.</p>
                 </div>
+
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
                     <div class="p-8 border border-outline rounded-xl hover:border-primary/30 transition-all">
                         <div class="w-12 h-12 bg-primary-container flex items-center justify-center rounded-lg mb-6">
-                            <span class="material-symbols-outlined text-primary"
-                                data-icon="monitoring">monitoring</span>
+                            <span class="material-symbols-outlined text-primary">monitoring</span>
                         </div>
                         <h3 class="text-xl font-bold mb-3 tracking-tight">Real-time Analytics</h3>
-                        <p class="text-sm text-on-surface-variant leading-relaxed">Continuous data streaming provides
-                            instant visibility into shop throughput, technician efficiency, and margin performance.</p>
+                        <p class="text-sm text-on-surface-variant leading-relaxed">
+                            Continuous data streaming provides instant visibility into shop throughput, technician
+                            efficiency, and margin performance.
+                        </p>
                     </div>
+
                     <div class="p-8 border border-outline rounded-xl hover:border-primary/30 transition-all">
                         <div class="w-12 h-12 bg-primary-container flex items-center justify-center rounded-lg mb-6">
-                            <span class="material-symbols-outlined text-primary"
-                                data-icon="account_tree">account_tree</span>
+                            <span class="material-symbols-outlined text-primary">account_tree</span>
                         </div>
                         <h3 class="text-xl font-bold mb-3 tracking-tight">Unified Fleet Management</h3>
-                        <p class="text-sm text-on-surface-variant leading-relaxed">Architectural control over
-                            multi-location operations. Sync inventory, staff, and billing across your entire network
-                            effortlessly.</p>
+                        <p class="text-sm text-on-surface-variant leading-relaxed">
+                            Architectural control over multi-location operations. Sync inventory, staff, and billing
+                            across your entire network effortlessly.
+                        </p>
                     </div>
+
                     <div class="p-8 border border-outline rounded-xl hover:border-primary/30 transition-all">
                         <div class="w-12 h-12 bg-primary-container flex items-center justify-center rounded-lg mb-6">
-                            <span class="material-symbols-outlined text-primary"
-                                data-icon="architecture">architecture</span>
+                            <span class="material-symbols-outlined text-primary">architecture</span>
                         </div>
                         <h3 class="text-xl font-bold mb-3 tracking-tight">Clinical Interface Design</h3>
-                        <p class="text-sm text-on-surface-variant leading-relaxed">No clutter. No noise. A high-density
-                            professional UI that prioritizes critical information for high-stakes decision making.</p>
+                        <p class="text-sm text-on-surface-variant leading-relaxed">
+                            No clutter. No noise. A high-density professional UI that prioritizes critical information
+                            for high-stakes decision making.
+                        </p>
                     </div>
                 </div>
             </div>
         </section>
-        <!-- Transparent Pricing -->
+
         <section class="py-24 bg-surface" id="pricing">
             <div class="max-w-7xl mx-auto px-6">
                 <div class="text-center mb-16">
                     <h2 class="text-3xl font-black tracking-tighter mb-4">Scalable Architectures</h2>
                     <p class="text-on-surface-variant">Pricing tiers designed to grow with your operation.</p>
                 </div>
+
                 <div
                     class="grid grid-cols-1 md:grid-cols-<?php echo count($subscriptionPlans); ?> gap-0 border border-outline rounded-xl overflow-hidden shadow-sm">
-                    <?php foreach ($subscriptionPlans as $index => $plan): 
+                    <?php foreach ($subscriptionPlans as $index => $plan):
                         $isLast = $index === count($subscriptionPlans) - 1;
                         $isRecommended = count($subscriptionPlans) > 1 && $index === 1;
-                    ?>
-                    <div class="bg-white <?php echo !$isLast ? 'border-r border-outline' : ''; ?> p-10 flex flex-col cursor-pointer hover:shadow-md transition-shadow group hover:border-primary/30 <?php echo $isRecommended ? 'bg-primary-container' : ''; ?>"
-                        onclick="selectPlanAndScroll('<?php echo htmlspecialchars($plan['plan_code'], ENT_QUOTES, 'UTF-8'); ?>')">
-                        <?php if ($isRecommended): ?>
-                        <div class="absolute top-4 right-4 bg-primary text-white text-[8px] font-black uppercase px-2 py-1 rounded">
-                            Recommended</div>
-                        <?php endif; ?>
-                        <div class="mb-8">
-                            <span
-                                class="text-[10px] font-bold <?php echo $isRecommended ? 'text-primary' : 'text-on-surface-variant'; ?> tracking-widest uppercase"><?php echo htmlspecialchars($plan['plan_name'], ENT_QUOTES, 'UTF-8'); ?></span>
-                            <div class="mt-4 flex items-baseline gap-1">
-                                <?php if ($plan['monthly_price'] > 0): ?>
-                                    <span class="text-4xl font-black tracking-tighter">₱<?php echo number_format($plan['monthly_price'], 0); ?></span>
-                                    <span class="text-on-surface-variant text-sm">/mo</span>
-                                <?php else: ?>
-                                    <span class="text-4xl font-black tracking-tighter">Custom</span>
-                                <?php endif; ?>
-                            </div>
-                        </div>
-                        <ul class="space-y-4 mb-10 flex-grow">
-                            <?php foreach ($plan['plan_features'] as $feature): ?>
-                            <li class="flex items-center gap-3 text-sm"><span
-                                    class="material-symbols-outlined text-primary text-lg" data-icon="check_circle"
-                                    data-weight="fill" style="font-variation-settings: 'FILL' 1;">check_circle</span> <?php echo htmlspecialchars(trim((string) $feature), ENT_QUOTES, 'UTF-8'); ?></li>
-                            <?php endforeach; ?>
-                        </ul>
-                        <button type="button" onclick="event.stopPropagation(); selectPlanAndScroll('<?php echo htmlspecialchars($plan['plan_code'], ENT_QUOTES, 'UTF-8'); ?>')"
-                            class="w-full py-3 <?php echo $isRecommended ? 'bg-primary text-white shadow-md hover:opacity-90' : 'border-2 border-primary text-primary hover:bg-primary/5'; ?> font-bold rounded-lg transition-all text-center block">
-                            <?php if ($plan['monthly_price'] > 0): ?>
-                                <?php echo $isRecommended ? 'Go ' . htmlspecialchars($plan['plan_name'], ENT_QUOTES, 'UTF-8') : 'Start ' . htmlspecialchars($plan['plan_name'], ENT_QUOTES, 'UTF-8'); ?>
-                            <?php else: ?>
-                                Contact Sales
+                        ?>
+                        <div class="relative bg-white <?php echo !$isLast ? 'border-r border-outline' : ''; ?> p-10 flex flex-col cursor-pointer hover:shadow-md transition-shadow group hover:border-primary/30 <?php echo $isRecommended ? 'bg-primary-container' : ''; ?>"
+                            onclick="selectPlanAndScroll('<?php echo htmlspecialchars($plan['plan_code'], ENT_QUOTES, 'UTF-8'); ?>')">
+
+                            <?php if ($isRecommended): ?>
+                                <div
+                                    class="absolute top-4 right-4 bg-primary text-white text-[8px] font-black uppercase px-2 py-1 rounded">
+                                    Recommended
+                                </div>
                             <?php endif; ?>
-                        </button>
-                    </div>
+
+                            <div class="mb-8">
+                                <span
+                                    class="text-[10px] font-bold <?php echo $isRecommended ? 'text-primary' : 'text-on-surface-variant'; ?> tracking-widest uppercase">
+                                    <?php echo htmlspecialchars($plan['plan_name'], ENT_QUOTES, 'UTF-8'); ?>
+                                </span>
+
+                                <div class="mt-4 flex items-baseline gap-1">
+                                    <?php if ($plan['monthly_price'] > 0): ?>
+                                        <span class="text-4xl font-black tracking-tighter">
+                                            ₱<?php echo number_format($plan['monthly_price'], 0); ?>
+                                        </span>
+                                        <span class="text-on-surface-variant text-sm">/mo</span>
+                                    <?php else: ?>
+                                        <span class="text-4xl font-black tracking-tighter">Custom</span>
+                                    <?php endif; ?>
+                                </div>
+                            </div>
+
+                            <ul class="space-y-4 mb-10 flex-grow">
+                                <?php foreach ($plan['plan_features'] as $feature): ?>
+                                    <li class="flex items-center gap-3 text-sm">
+                                        <span class="material-symbols-outlined text-primary text-lg"
+                                            style="font-variation-settings: 'FILL' 1;">check_circle</span>
+                                        <?php echo htmlspecialchars(trim((string) $feature), ENT_QUOTES, 'UTF-8'); ?>
+                                    </li>
+                                <?php endforeach; ?>
+                            </ul>
+
+                            <button type="button"
+                                onclick="event.stopPropagation(); selectPlanAndScroll('<?php echo htmlspecialchars($plan['plan_code'], ENT_QUOTES, 'UTF-8'); ?>')"
+                                class="w-full py-3 <?php echo $isRecommended ? 'bg-primary text-white shadow-md hover:opacity-90' : 'border-2 border-primary text-primary hover:bg-primary/5'; ?> font-bold rounded-lg transition-all text-center block">
+                                <?php if ($plan['monthly_price'] > 0): ?>
+                                    <?php echo $isRecommended ? 'Go ' . htmlspecialchars($plan['plan_name'], ENT_QUOTES, 'UTF-8') : 'Start ' . htmlspecialchars($plan['plan_name'], ENT_QUOTES, 'UTF-8'); ?>
+                                <?php else: ?>
+                                    Contact Sales
+                                <?php endif; ?>
+                            </button>
+                        </div>
                     <?php endforeach; ?>
                 </div>
             </div>
         </section>
-        <!-- Company Information -->
+
         <section class="py-24 overflow-hidden" id="about">
             <div class="max-w-7xl mx-auto px-6 grid grid-cols-1 lg:grid-cols-2 gap-20 items-center">
                 <div class="relative">
-                    <div class="aspect-square bg-slate-200 rounded-xl overflow-hidden shadow-xl"
-                        data-alt="Modern minimalist architectural office interior"></div>
+                    <div class="aspect-square bg-slate-200 rounded-xl overflow-hidden shadow-xl"></div>
                     <div class="absolute -bottom-10 -right-10 w-64 h-64 bg-primary rounded-xl -z-10 opacity-10"></div>
                 </div>
+
                 <div class="space-y-6">
-                    <h2 class="text-3xl font-black tracking-tighter leading-tight">Modernizing the Foundation of
-                        Automotive Repair.</h2>
+                    <h2 class="text-3xl font-black tracking-tighter leading-tight">
+                        Modernizing the Foundation of Automotive Repair.
+                    </h2>
+
                     <p class="text-on-surface-variant leading-relaxed">
                         RapidRepairCo. was born from the realization that while cars have become sophisticated
                         computers on wheels, the tools used to manage their repair remained stuck in the 20th century.
                     </p>
+
                     <p class="text-on-surface-variant leading-relaxed">
                         Our mission is to provide shop owners with high-fidelity operational tools that match the
-                        engineering excellence of the vehicles they service. We believe in architectural rigor, data
-                        transparency, and clinical efficiency.
+                        engineering excellence of the vehicles they service.
                     </p>
+
                     <div class="grid grid-cols-2 gap-8 pt-6">
                         <div>
                             <div class="text-3xl font-black text-primary">99.9%</div>
                             <div class="text-xs font-bold uppercase tracking-wider text-on-surface-variant">Uptime SLA
                             </div>
                         </div>
+
                         <div>
                             <div class="text-3xl font-black text-primary">24ms</div>
                             <div class="text-xs font-bold uppercase tracking-wider text-on-surface-variant">Sync Latency
@@ -810,25 +1019,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['createTenantApplicati
                 </div>
             </div>
         </section>
-        <!-- Support & Contact -->
+
         <section class="py-24 bg-white border-t border-outline" id="support">
             <div class="max-w-7xl mx-auto px-6">
                 <div class="grid grid-cols-1 lg:grid-cols-3 gap-16">
                     <div class="lg:col-span-1">
                         <h2 class="text-3xl font-black tracking-tighter mb-6">Expert Support</h2>
-                        <p class="text-on-surface-variant mb-8">Our engineering team is standing by to help you
-                            integrate Cobalt into your existing workflow.</p>
+                        <p class="text-on-surface-variant mb-8">
+                            Our engineering team is standing by to help you integrate RapidRepairCo. into your existing
+                            workflow.
+                        </p>
+
                         <div class="space-y-4">
                             <div class="flex items-center gap-4 p-4 border border-outline rounded-lg">
-                                <span class="material-symbols-outlined text-primary" data-icon="mail">mail</span>
+                                <span class="material-symbols-outlined text-primary">mail</span>
                                 <div>
                                     <div class="text-xs font-bold uppercase tracking-wider text-on-surface-variant">
                                         Email Us</div>
                                     <div class="text-sm font-semibold">support@rapidrepairco.com</div>
                                 </div>
                             </div>
+
                             <div class="flex items-center gap-4 p-4 border border-outline rounded-lg">
-                                <span class="material-symbols-outlined text-primary" data-icon="forum">forum</span>
+                                <span class="material-symbols-outlined text-primary">forum</span>
                                 <div>
                                     <div class="text-xs font-bold uppercase tracking-wider text-on-surface-variant">Live
                                         Chat</div>
@@ -837,41 +1050,52 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['createTenantApplicati
                             </div>
                         </div>
                     </div>
+
                     <div class="lg:col-span-2 space-y-4">
                         <div class="p-6 bg-surface rounded-xl border border-outline">
                             <h3 class="font-bold mb-2">How long does migration take?</h3>
-                            <p class="text-sm text-on-surface-variant">Most shops complete their data migration from
-                                legacy systems within 48 hours with our automated onboarding tool.</p>
+                            <p class="text-sm text-on-surface-variant">
+                                Most shops complete their data migration from legacy systems within 48 hours with our
+                                automated onboarding tool.
+                            </p>
                         </div>
+
                         <div class="p-6 bg-surface rounded-xl border border-outline">
                             <h3 class="font-bold mb-2">Can I manage multiple franchises?</h3>
-                            <p class="text-sm text-on-surface-variant">Yes, our Unified Fleet Management module is built
-                                specifically for multi-location operations with hierarchical access controls.</p>
+                            <p class="text-sm text-on-surface-variant">
+                                Yes, our Unified Fleet Management module is built specifically for multi-location
+                                operations with hierarchical access controls.
+                            </p>
                         </div>
+
                         <div class="p-6 bg-surface rounded-xl border border-outline">
                             <h3 class="font-bold mb-2">Is my data secure?</h3>
-                            <p class="text-sm text-on-surface-variant">We use bank-level AES-256 encryption for all data
-                                at rest and TLS 1.3 for all data in transit.</p>
+                            <p class="text-sm text-on-surface-variant">
+                                We use bank-level AES-256 encryption for all data at rest and TLS 1.3 for all data in
+                                transit.
+                            </p>
                         </div>
+
                         <a class="inline-flex items-center gap-2 text-primary text-sm font-bold hover:underline"
                             href="clientlogin.php">
                             View full documentation and FAQ
-                            <span class="material-symbols-outlined text-sm"
-                                data-icon="arrow_forward">arrow_forward</span>
+                            <span class="material-symbols-outlined text-sm">arrow_forward</span>
                         </a>
                     </div>
                 </div>
             </div>
         </section>
     </main>
-    <!-- Footer Component -->
+
     <footer class="w-full bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800">
         <div class="max-w-7xl mx-auto px-6 py-12 flex flex-col md:flex-row justify-between items-center gap-8">
             <div class="flex flex-col gap-2">
                 <div class="text-lg font-black text-slate-900 dark:text-white">RapidRepairCo.</div>
-                <p class="font-['Inter'] text-xs text-slate-500 dark:text-slate-400">© 2026 RapidRepairCo. All rights
-                    reserved.</p>
+                <p class="font-['Inter'] text-xs text-slate-500 dark:text-slate-400">
+                    © 2026 RapidRepairCo. All rights reserved.
+                </p>
             </div>
+
             <div class="flex flex-wrap justify-center gap-6">
                 <a class="font-['Inter'] text-xs text-slate-500 hover:text-[#1152d4] hover:underline transition-all"
                     href="clientlogin.php">Partner Login</a>
@@ -882,13 +1106,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['createTenantApplicati
                 <a class="font-['Inter'] text-xs text-slate-500 hover:text-[#1152d4] hover:underline transition-all"
                     href="mailto:support@rapidrepairco.com">Contact Support</a>
             </div>
+
             <div class="flex gap-4">
                 <span
-                    class="material-symbols-outlined text-slate-400 hover:text-primary cursor-pointer transition-colors"
-                    data-icon="language">language</span>
+                    class="material-symbols-outlined text-slate-400 hover:text-primary cursor-pointer transition-colors">language</span>
                 <span
-                    class="material-symbols-outlined text-slate-400 hover:text-primary cursor-pointer transition-colors"
-                    data-icon="share">share</span>
+                    class="material-symbols-outlined text-slate-400 hover:text-primary cursor-pointer transition-colors">share</span>
             </div>
         </div>
     </footer>

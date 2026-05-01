@@ -6,6 +6,7 @@ header('Access-Control-Allow-Headers: Content-Type, Authorization');
 
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     http_response_code(200);
+    echo json_encode(['success' => true]);
     exit;
 }
 
@@ -20,13 +21,24 @@ if (file_exists(__DIR__ . '/../db.php')) {
 
 $input = json_decode(file_get_contents('php://input'), true);
 
-$reportServiceId = isset($input['service_id']) ? (int) $input['service_id'] : 0;
-$status = isset($input['status']) ? trim($input['status']) : '';
+$reportServiceId = 0;
+
+if (isset($input['report_service_id'])) {
+    $reportServiceId = (int) $input['report_service_id'];
+} elseif (isset($input['service_id'])) {
+    $reportServiceId = (int) $input['service_id'];
+}
+
+$status = isset($input['status']) ? trim((string) $input['status']) : '';
 
 $allowedStatuses = ['Pending', 'Approved', 'Declined'];
 
 if ($reportServiceId <= 0) {
-    echo json_encode(['success' => false, 'message' => 'Invalid service_id']);
+    echo json_encode([
+        'success' => false,
+        'message' => 'Invalid report_service_id',
+        'received' => $input
+    ]);
     exit;
 }
 
@@ -38,18 +50,6 @@ if (!in_array($status, $allowedStatuses, true)) {
 mysqli_begin_transaction($conn);
 
 try {
-    $updateStmt = mysqli_prepare(
-        $conn,
-        "UPDATE diagnostic_report_services
-         SET approval_status = ?, updated_at = NOW()
-         WHERE report_service_id = ?
-         LIMIT 1"
-    );
-
-    mysqli_stmt_bind_param($updateStmt, 'si', $status, $reportServiceId);
-    mysqli_stmt_execute($updateStmt);
-    mysqli_stmt_close($updateStmt);
-
     $diagnosticStmt = mysqli_prepare(
         $conn,
         "SELECT diagnostic_id 
@@ -65,10 +65,22 @@ try {
     mysqli_stmt_close($diagnosticStmt);
 
     if (!$diagnosticRow) {
-        throw new Exception('Diagnostic service not found');
+        throw new Exception('Diagnostic recommended service not found.');
     }
 
     $diagnosticId = (int) $diagnosticRow['diagnostic_id'];
+
+    $updateStmt = mysqli_prepare(
+        $conn,
+        "UPDATE diagnostic_report_services
+         SET approval_status = ?, updated_at = NOW()
+         WHERE report_service_id = ?
+         LIMIT 1"
+    );
+
+    mysqli_stmt_bind_param($updateStmt, 'si', $status, $reportServiceId);
+    mysqli_stmt_execute($updateStmt);
+    mysqli_stmt_close($updateStmt);
 
     $summaryStmt = mysqli_prepare(
         $conn,
@@ -95,7 +107,7 @@ try {
     $customerApproval = 'Pending';
     $diagnosisStatus = 'Submitted';
 
-    if ($totalServices > 0 && $approvedCount > 0) {
+    if ($approvedCount > 0) {
         $customerApproval = 'Approved';
         $diagnosisStatus = 'Approved';
     } elseif ($totalServices > 0 && $declinedCount === $totalServices) {
@@ -135,8 +147,10 @@ try {
 
     echo json_encode([
         'success' => true,
-        'message' => 'Service status updated',
+        'status' => 'success',
+        'message' => 'Service status updated.',
         'diagnostic_id' => $diagnosticId,
+        'report_service_id' => $reportServiceId,
         'customer_approval' => $customerApproval,
         'diagnosis_status' => $diagnosisStatus,
         'approved_total' => $approvedTotal
@@ -149,3 +163,4 @@ try {
         'message' => $e->getMessage()
     ]);
 }
+?>
