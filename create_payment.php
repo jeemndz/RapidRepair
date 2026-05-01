@@ -24,12 +24,12 @@ if (!$repair_job_id || !$tenantID || !$user_id) {
 $conn->begin_transaction();
 
 try {
-
-    // ✅ 1. GET JOB + APPOINTMENT + GRAND TOTAL
     $stmt = $conn->prepare("
         SELECT 
             repair_job_id,
             appointment_id,
+            labor_total,
+            parts_total,
             grand_total
         FROM repair_jobs
         WHERE repair_job_id = ?
@@ -47,13 +47,14 @@ try {
     }
 
     $appointment_id = (int)$job['appointment_id'];
-    $total = round((float)$job['grand_total'], 2);
+    $labor_total = round((float)$job['labor_total'], 2);
+    $parts_total = round((float)$job['parts_total'], 2);
+    $grand_total = round((float)$job['grand_total'], 2);
 
-    if ($total <= 0) {
+    if ($grand_total <= 0) {
         throw new Exception('Invalid grand total amount');
     }
 
-    // ✅ 2. CHECK IF PAYMENT ALREADY EXISTS
     $stmt = $conn->prepare("
         SELECT payment_id
         FROM payments
@@ -71,7 +72,6 @@ try {
         throw new Exception('Payment already exists for this job');
     }
 
-    // ✅ 3. GET SERVICES FOR MOBILE INVOICE DISPLAY
     $stmt = $conn->prepare("
         SELECT 
             rjs.service_id,
@@ -102,10 +102,22 @@ try {
 
     $stmt->close();
 
-    // ✅ 4. GENERATE REFERENCE
+    $invoiceData = [
+        'repair_job_id' => $repair_job_id,
+        'appointment_id' => $appointment_id,
+        'labor_total' => $labor_total,
+        'parts_total' => $parts_total,
+        'grand_total' => $grand_total,
+        'services' => $services,
+    ];
+
+    $servicesJson = json_encode(
+        $services,
+        JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES
+    );
+
     $referenceNumber = 'INV-' . date('YmdHis') . '-' . $repair_job_id;
 
-    // ✅ 5. INSERT PAYMENT USING repair_jobs.grand_total
     $stmt = $conn->prepare("
         INSERT INTO payments (
             tenantID,
@@ -124,15 +136,13 @@ try {
         VALUES (?, ?, ?, ?, 0.00, ?, 'Cash', 'Pending', ?, ?, NOW(), NOW())
     ");
 
-    $servicesJson = json_encode($services, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-
     $stmt->bind_param(
         'iiiddss',
         $tenantID,
         $user_id,
         $appointment_id,
-        $total,
-        $total,
+        $grand_total,
+        $grand_total,
         $referenceNumber,
         $servicesJson
     );
@@ -148,11 +158,12 @@ try {
 
     respond('success', 'Payment created', [
         'payment_id' => $payment_id,
+        'repair_job_id' => $repair_job_id,
         'appointment_id' => $appointment_id,
-        'amount' => $total,
-        'balance' => $total,
+        'amount' => $grand_total,
+        'balance' => $grand_total,
         'reference' => $referenceNumber,
-        'services' => $services
+        'invoice' => $invoiceData
     ]);
 
 } catch (Exception $e) {
