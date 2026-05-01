@@ -84,8 +84,7 @@ $serviceStmt = mysqli_prepare($conn, "
 ");
 
 mysqli_stmt_bind_param($serviceStmt, 'ii', $diagnosticID, $tenantID);
-mysqli_stmt_execute($serviceResult = mysqli_stmt_get_result($serviceStmt));
-
+$serviceResult = mysqli_stmt_execute($serviceStmt);
 $result = mysqli_stmt_get_result($serviceStmt);
 while ($row = mysqli_fetch_assoc($result)) {
     $services[] = $row;
