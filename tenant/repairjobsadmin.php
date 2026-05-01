@@ -3,6 +3,7 @@ session_start();
 require_once __DIR__ . '/../db.php';
 include __DIR__ . '/../session_security.php';
 include __DIR__ . '/access_control.php';
+include __DIR__ . '/../log_helper.php';
 
 if (!isset($_SESSION['tenantID'])) {
     header('Location: tenantlogin.php');
@@ -55,6 +56,14 @@ if (!$owner) {
 $_SESSION['login_slug'] = $loginSlug;
 $shopName = !empty($owner['shopName']) ? $owner['shopName'] : 'AutoFix Pro';
 $shopQuery = urlencode($loginSlug);
+
+log_event(
+    $conn,
+    'VIEW Repair Jobs',
+    'repair_job',
+    null,
+    'Opened repair jobs dashboard'
+);
 
 $currentScript = basename($_SERVER['PHP_SELF']);
 if ($_SERVER['REQUEST_METHOD'] === 'GET' && (!isset($_GET['shop']) || trim((string) $_GET['shop']) !== $loginSlug)) {
@@ -201,7 +210,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_job_status']))
 
     if ($updateJobStmt) {
         mysqli_stmt_bind_param($updateJobStmt, 'sssii', $newStatus, $newStatus, $newStatus, $repairJobId, $tenantID);
-        mysqli_stmt_execute($updateJobStmt);
+        if (mysqli_stmt_execute($updateJobStmt)) {
+            log_event($conn, 'UPDATE RepairJob', 'repair_job', $repairJobId, 'Updated job_status to ' . $newStatus);
+        }
         mysqli_stmt_close($updateJobStmt);
 
         if ($newStatus === 'Diagnostics') {
@@ -215,7 +226,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_job_status']))
             );
             if ($apptStmt) {
                 mysqli_stmt_bind_param($apptStmt, 'ii', $repairJobId, $tenantID);
-                mysqli_stmt_execute($apptStmt);
+                if (mysqli_stmt_execute($apptStmt)) {
+                    log_event($conn, 'UPDATE Appointment', 'appointment', $repairJobId, 'Updated status to Diagnosing from repair job status update');
+                }
                 mysqli_stmt_close($apptStmt);
             }
         }
@@ -260,7 +273,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_service_status
 
     if ($updateServiceStmt) {
         mysqli_stmt_bind_param($updateServiceStmt, 'ssii', $newServiceStatus, $newServiceStatus, $repairJobServiceId, $tenantID);
-        mysqli_stmt_execute($updateServiceStmt);
+        if (mysqli_stmt_execute($updateServiceStmt)) {
+            log_event($conn, 'UPDATE RepairJobService', 'repair_job_service', $repairJobServiceId, 'Updated service_status to ' . $newServiceStatus);
+        }
         mysqli_stmt_close($updateServiceStmt);
         $redirectParams['msg'] = 'service_updated';
     } else {
@@ -421,6 +436,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_diagnostic_rep
             );
             if (!mysqli_stmt_execute($updateReportStmt)) {
                 $saveOk = false;
+            } else {
+                log_event($conn, 'UPDATE DiagnosticReport', 'diagnostic_report', $diagnosticId, 'Updated findings to ' . $findings);
             }
             mysqli_stmt_close($updateReportStmt);
         }
@@ -434,6 +451,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_diagnostic_rep
                 mysqli_stmt_bind_param($deleteServicesStmt, 'ii', $diagnosticId, $tenantID);
                 if (!mysqli_stmt_execute($deleteServicesStmt)) {
                     $saveOk = false;
+                } else {
+                    log_event($conn, 'DELETE DiagnosticReportService', 'diagnostic_report_service', $diagnosticId, 'Deleted DiagnosticReportService records for diagnostic ID: ' . $diagnosticId);
                 }
                 mysqli_stmt_close($deleteServicesStmt);
             } else {
@@ -467,6 +486,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_diagnostic_rep
                 $saveOk = false;
             } else {
                 $diagnosticId = (int) mysqli_insert_id($conn);
+                log_event($conn, 'CREATE DiagnosticReport', 'diagnostic_report', $diagnosticId, 'Created DiagnosticReport with details: ' . $problemDescription);
             }
             mysqli_stmt_close($insertReportStmt);
         }
@@ -505,6 +525,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_diagnostic_rep
                 if (!mysqli_stmt_execute($insertReportServiceStmt)) {
                     $saveOk = false;
                     break;
+                } else {
+                    log_event($conn, 'CREATE DiagnosticReportService', 'diagnostic_report_service', $serviceId, 'Created DiagnosticReportService for diagnostic ID: ' . $diagnosticId);
                 }
             }
             mysqli_stmt_close($insertReportServiceStmt);
@@ -527,6 +549,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_diagnostic_rep
             mysqli_stmt_bind_param($updateJobStmt, 'sdii', $findings, $estimatedTotal, $repairJobId, $tenantID);
             if (!mysqli_stmt_execute($updateJobStmt)) {
                 $saveOk = false;
+            } else {
+                log_event($conn, 'UPDATE RepairJob', 'repair_job', $repairJobId, 'Updated grand_total to ' . number_format($estimatedTotal, 2));
             }
             mysqli_stmt_close($updateJobStmt);
         } else {
@@ -549,6 +573,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_diagnostic_rep
             mysqli_stmt_bind_param($updateAppointmentStmt, 'dii', $estimatedTotal, $appointmentId, $tenantID);
             if (!mysqli_stmt_execute($updateAppointmentStmt)) {
                 $saveOk = false;
+            } else {
+                log_event($conn, 'UPDATE Appointment', 'appointment', $appointmentId, 'Updated total_amount to ' . number_format($estimatedTotal, 2));
             }
             mysqli_stmt_close($updateAppointmentStmt);
         } else {
@@ -652,6 +678,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['complete_with_parts']
             mysqli_stmt_close($updateInventoryStmt);
             break;
         }
+        log_event($conn, 'UPDATE InventoryItem', 'inventory_item', (int) $partUsed['item_id'], 'Updated stock quantity by decrementing ' . (int) $partUsed['quantity']);
         mysqli_stmt_close($updateInventoryStmt);
 
         $movementStmt = mysqli_prepare(
@@ -663,7 +690,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['complete_with_parts']
         if ($movementStmt) {
             $notes = 'Used in repair job #' . $repairJobId;
             mysqli_stmt_bind_param($movementStmt, 'iiiis', $tenantID, $partUsed['item_id'], $partUsed['quantity'], $repairJobId, $notes);
-            mysqli_stmt_execute($movementStmt);
+            if (mysqli_stmt_execute($movementStmt)) {
+                log_event($conn, 'CREATE StockMovement', 'stock_movement', (int) $partUsed['item_id'], 'Created StockMovement with details: OUT quantity ' . (int) $partUsed['quantity']);
+            }
             mysqli_stmt_close($movementStmt);
         }
     }
@@ -704,6 +733,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['complete_with_parts']
             mysqli_stmt_bind_param($updateJobStmt, 'ddii', $totalPartsCost, $newGrandTotal, $repairJobId, $tenantID);
             if (!mysqli_stmt_execute($updateJobStmt)) {
                 $completeOk = false;
+            } else {
+                log_event($conn, 'UPDATE RepairJob', 'repair_job', $repairJobId, 'Updated parts_total to ' . number_format($totalPartsCost, 2));
             }
             mysqli_stmt_close($updateJobStmt);
         } else {
@@ -722,7 +753,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['complete_with_parts']
         );
         if ($updateApptStmt) {
             mysqli_stmt_bind_param($updateApptStmt, 'dii', $newGrandTotal, $repairJobId, $tenantID);
-            mysqli_stmt_execute($updateApptStmt);
+            if (mysqli_stmt_execute($updateApptStmt)) {
+                log_event($conn, 'UPDATE Appointment', 'appointment', $repairJobId, 'Updated total_amount to ' . number_format($newGrandTotal, 2));
+            }
             mysqli_stmt_close($updateApptStmt);
         }
     }
@@ -835,8 +868,10 @@ if ($confirmedSyncStmt) {
             );
             if (!mysqli_stmt_execute($insertJobStmt)) {
                 $syncOk = false;
+            } else {
+                $repairJobId = (int) mysqli_insert_id($conn);
+                log_event($conn, 'CREATE RepairJob', 'repair_job', $repairJobId, 'Created RepairJob from appointment ID: ' . $appointmentId);
             }
-            $repairJobId = (int) mysqli_insert_id($conn);
             mysqli_stmt_close($insertJobStmt);
         }
 
@@ -876,6 +911,8 @@ if ($confirmedSyncStmt) {
                     if (!mysqli_stmt_execute($insertJobServiceStmt)) {
                         $syncOk = false;
                         break;
+                    } else {
+                        log_event($conn, 'CREATE RepairJobService', 'repair_job_service', $serviceId, 'Created RepairJobService for repair job ID: ' . $repairJobId);
                     }
                 }
                 mysqli_stmt_close($insertJobServiceStmt);
@@ -894,6 +931,8 @@ if ($confirmedSyncStmt) {
                 mysqli_stmt_bind_param($updateAppointmentStmt, 'sii', $initialAppointmentStatus, $appointmentId, $tenantID);
                 if (!mysqli_stmt_execute($updateAppointmentStmt)) {
                     $syncOk = false;
+                } else {
+                    log_event($conn, 'UPDATE Appointment', 'appointment', $appointmentId, 'Updated status to ' . $initialAppointmentStatus);
                 }
                 mysqli_stmt_close($updateAppointmentStmt);
             } else {
@@ -942,6 +981,13 @@ if (isset($_GET['show_parts_modal'])) {
 
             if ($partsModalJobDetails) {
                 $showPartsModal = true;
+                log_event(
+                    $conn,
+                    'VIEW RepairJob Parts Modal',
+                    'repair_job',
+                    $partsModalJobId,
+                    'Opened completion modal for repair job ' . ($partsModalJobDetails['job_order_no'] ?? ('#' . $partsModalJobId))
+                );
             }
         }
     }
@@ -1007,6 +1053,13 @@ if ($diagnosticModalJobId > 0) {
 
     if ($diagnosticModalJob) {
         $showDiagnosticModal = true;
+        log_event(
+            $conn,
+            'VIEW Diagnostic Modal',
+            'diagnostic_report',
+            $diagnosticModalJobId,
+            'Opened diagnostic report modal for repair job ' . ($diagnosticModalJob['job_order_no'] ?? ('#' . $diagnosticModalJobId))
+        );
 
         $reportStmt = mysqli_prepare(
             $conn,
@@ -1550,16 +1603,20 @@ if ($diagnosticStmt) {
                             <span class="material-symbols-outlined text-[16px] ml-auto">expand_more</span>
                         </button>
                         <div class="absolute left-0 top-full mt-1 w-full bg-white border border-slate-200 rounded-lg shadow-lg hidden z-50 settings-dropdown" data-dropdown="settings">
-                            <?php if (canAccessModule('settingsadmin.php', $accessibleModules)): ?>
-                                <a class="flex items-center gap-3 px-3 py-2.5 rounded-t-lg text-slate-600 hover:bg-blue-50 transition-colors text-sm"
-                                   href="settingsadmin.php?shop=<?php echo h($shopQuery); ?>">
-                                    <span class="material-symbols-outlined text-[18px]">settings</span>Settings
-                                </a>
-                            <?php endif; ?>
                             <?php if (canAccessModule('accountbillingadmin.php', $accessibleModules)): ?>
-                                <a class="flex items-center gap-3 px-3 py-2.5 rounded-b-lg text-slate-600 hover:bg-blue-50 transition-colors text-sm border-t border-slate-100"
+                                <a class="flex items-center gap-3 px-3 py-2.5 rounded-t-lg text-slate-600 hover:bg-blue-50 transition-colors text-sm"
                                    href="accountbillingadmin.php?shop=<?php echo h($shopQuery); ?>">
                                     <span class="material-symbols-outlined text-[18px]">receipt_long</span>Account Billing
+                                </a>
+                            <?php endif; ?>
+                            <a class="flex items-center gap-3 px-3 py-2.5 text-slate-600 hover:bg-blue-50 transition-colors text-sm border-t border-slate-100"
+                               href="websitecustomadmin.php?shop=<?php echo h($shopQuery); ?>">
+                                <span class="material-symbols-outlined text-[18px]">palette</span>Website Customizer
+                            </a>
+                            <?php if (canAccessModule('settingsadmin.php', $accessibleModules)): ?>
+                                <a class="flex items-center gap-3 px-3 py-2.5 rounded-b-lg text-slate-600 hover:bg-blue-50 transition-colors text-sm border-t border-slate-100"
+                                   href="settingsadmin.php?shop=<?php echo h($shopQuery); ?>">
+                                    <span class="material-symbols-outlined text-[18px]">settings</span>Settings
                                 </a>
                             <?php endif; ?>
                         </div>

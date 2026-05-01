@@ -3,6 +3,7 @@ session_start();
 require_once __DIR__ . '/../db.php';
 include __DIR__ . '/../session_security.php';
 include __DIR__ . '/access_control.php';
+include __DIR__ . '/../log_helper.php';
 
 if (!isset($_SESSION['tenantID'])) {
     header('Location: tenantlogin.php');
@@ -190,6 +191,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create_customer'])) {
                 );
 
                 if (mysqli_stmt_execute($insertStmt)) {
+                    $newCustomerId = (int) mysqli_insert_id($conn);
+                    log_event($conn, 'ADD Customer', 'customer', $newCustomerId, 'Added Customer with details: ' . $formData['fullName'] . ' (' . $formData['email'] . ')');
                     mysqli_stmt_close($insertStmt);
                     header('Location: customeradmin.php?shop=' . $shopQuery . '&customer_saved=1');
                     exit;
@@ -672,18 +675,23 @@ if ($selectedCustomerId > 0) {
                             <span class="material-symbols-outlined text-[16px] ml-auto">expand_more</span>
                         </button>
                         <div class="absolute left-0 top-full mt-1 w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg shadow-lg hidden z-50 settings-dropdown" data-dropdown="settings">
-                            <?php if (canAccessModule('settingsadmin.php', $accessibleModules)): ?>
-                            <a class="flex items-center gap-3 px-3 py-2.5 rounded-t-lg text-slate-600 dark:text-slate-300 hover:bg-blue-50 dark:hover:bg-slate-800 transition-colors text-sm"
-                                href="settingsadmin.php?shop=<?php echo h($shopQuery); ?>">
-                                <span class="material-symbols-outlined text-[18px]">settings</span>
-                                Settings
-                            </a>
-                            <?php endif; ?>
                             <?php if (canAccessModule('accountbillingadmin.php', $accessibleModules)): ?>
-                            <a class="flex items-center gap-3 px-3 py-2.5 rounded-b-lg text-slate-600 dark:text-slate-300 hover:bg-blue-50 dark:hover:bg-slate-800 transition-colors text-sm border-t border-slate-100 dark:border-slate-700"
+                            <a class="flex items-center gap-3 px-3 py-2.5 rounded-t-lg text-slate-600 dark:text-slate-300 hover:bg-blue-50 dark:hover:bg-slate-800 transition-colors text-sm"
                                 href="accountbillingadmin.php?shop=<?php echo h($shopQuery); ?>">
                                 <span class="material-symbols-outlined text-[18px]">receipt_long</span>
                                 Account Billing
+                            </a>
+                            <?php endif; ?>
+                            <a class="flex items-center gap-3 px-3 py-2.5 text-slate-600 dark:text-slate-300 hover:bg-blue-50 dark:hover:bg-slate-800 transition-colors text-sm border-t border-slate-100 dark:border-slate-700"
+                                href="websitecustomadmin.php?shop=<?php echo h($shopQuery); ?>">
+                                <span class="material-symbols-outlined text-[18px]">palette</span>
+                                Website Customizer
+                            </a>
+                            <?php if (canAccessModule('settingsadmin.php', $accessibleModules)): ?>
+                            <a class="flex items-center gap-3 px-3 py-2.5 rounded-b-lg text-slate-600 dark:text-slate-300 hover:bg-blue-50 dark:hover:bg-slate-800 transition-colors text-sm border-t border-slate-100 dark:border-slate-700"
+                                href="settingsadmin.php?shop=<?php echo h($shopQuery); ?>">
+                                <span class="material-symbols-outlined text-[18px]">settings</span>
+                                Settings
                             </a>
                             <?php endif; ?>
                         </div>

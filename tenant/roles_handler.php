@@ -43,6 +43,7 @@ if (session_status() === PHP_SESSION_NONE) {
 }
 
 require_once '../db.php';
+require_once '../log_helper.php';
 
 $action = isset($_GET['action']) ? $_GET['action'] : (isset($_POST['action']) ? $_POST['action'] : null);
 $tenantID = isset($_SESSION['tenantID']) ? (int) $_SESSION['tenantID'] : 0;
@@ -221,6 +222,14 @@ function addRole(mysqli $conn, int $tenantID): void
         $newRoleId = $stmt->insert_id;
         $stmt->close();
 
+        log_event(
+            $conn,
+            'CREATE User Role',
+            'role',
+            (int) $newRoleId,
+            'Created user role for ' . $firstName . ' ' . $lastName . ' (username: ' . $username . ', status: ' . $status . ')'
+        );
+
         jsonResponse(200, [
             'success' => true,
             'message' => 'User role added successfully',
@@ -270,7 +279,7 @@ function updateRole(mysqli $conn, int $tenantID): void
         jsonResponse(400, ['success' => false, 'message' => 'At least one module access scope must be selected']);
     }
 
-    $verifyQuery = "SELECT role_id FROM roles WHERE role_id = ? AND tenantID = ? LIMIT 1";
+    $verifyQuery = "SELECT role_id, first_name, last_name, username, status FROM roles WHERE role_id = ? AND tenantID = ? LIMIT 1";
     $verifyStmt = $conn->prepare($verifyQuery);
     if (!$verifyStmt) {
         jsonResponse(500, ['success' => false, 'message' => 'Database error: ' . $conn->error]);
@@ -279,10 +288,12 @@ function updateRole(mysqli $conn, int $tenantID): void
     $verifyStmt->bind_param('ii', $roleId, $tenantID);
     $verifyStmt->execute();
 
-    if ($verifyStmt->get_result()->num_rows === 0) {
+    $verifyResult = $verifyStmt->get_result();
+    if ($verifyResult->num_rows === 0) {
         $verifyStmt->close();
         jsonResponse(403, ['success' => false, 'message' => 'Role not found or unauthorized']);
     }
+    $verifyResult->fetch_assoc();
     $verifyStmt->close();
 
     $checkQuery = "SELECT role_id FROM roles WHERE tenantID = ? AND role_id <> ? AND (username = ? OR email = ?) LIMIT 1";
@@ -329,6 +340,15 @@ function updateRole(mysqli $conn, int $tenantID): void
 
     if ($stmt->execute()) {
         $stmt->close();
+
+        log_event(
+            $conn,
+            'UPDATE User Role',
+            'role',
+            $roleId,
+            'Updated role for ' . $firstName . ' ' . $lastName . ' (username: ' . $username . ', status: ' . $status . ')'
+        );
+
         jsonResponse(200, [
             'success' => true,
             'message' => 'User role updated successfully'
@@ -352,7 +372,7 @@ function deleteRole(mysqli $conn, int $tenantID): void
         jsonResponse(400, ['success' => false, 'message' => 'Role ID is required']);
     }
 
-    $verifyQuery = "SELECT role_id FROM roles WHERE role_id = ? AND tenantID = ? LIMIT 1";
+    $verifyQuery = "SELECT role_id, first_name, last_name, username, status FROM roles WHERE role_id = ? AND tenantID = ? LIMIT 1";
     $verifyStmt = $conn->prepare($verifyQuery);
     if (!$verifyStmt) {
         jsonResponse(500, ['success' => false, 'message' => 'Database error: ' . $conn->error]);
@@ -361,10 +381,12 @@ function deleteRole(mysqli $conn, int $tenantID): void
     $verifyStmt->bind_param('ii', $roleId, $tenantID);
     $verifyStmt->execute();
 
-    if ($verifyStmt->get_result()->num_rows === 0) {
+    $verifyResult = $verifyStmt->get_result();
+    if ($verifyResult->num_rows === 0) {
         $verifyStmt->close();
         jsonResponse(403, ['success' => false, 'message' => 'Role not found or unauthorized']);
     }
+    $roleRow = $verifyResult->fetch_assoc();
     $verifyStmt->close();
 
     $query = "DELETE FROM roles WHERE role_id = ? AND tenantID = ?";
@@ -377,6 +399,15 @@ function deleteRole(mysqli $conn, int $tenantID): void
 
     if ($stmt->execute()) {
         $stmt->close();
+
+        log_event(
+            $conn,
+            'DELETE User Role',
+            'role',
+            $roleId,
+            'Deleted role for ' . ($roleRow['first_name'] ?? '') . ' ' . ($roleRow['last_name'] ?? '') . ' (username: ' . ($roleRow['username'] ?? 'N/A') . ')'
+        );
+
         jsonResponse(200, [
             'success' => true,
             'message' => 'User role deleted successfully'

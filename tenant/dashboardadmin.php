@@ -500,18 +500,23 @@ if ($repairTableStmt) {
                                 <span class="material-symbols-outlined text-[16px] ml-auto">expand_more</span>
                             </button>
                             <div class="absolute left-0 top-full mt-1 w-full bg-white border border-slate-200 rounded-lg shadow-lg hidden z-50 settings-dropdown" data-dropdown="settings">
-                                <?php if (canAccessModule('settingsadmin.php', $accessibleModules)): ?>
-                                <a class="flex items-center gap-3 px-3 py-2.5 rounded-t-lg text-slate-600 hover:bg-blue-50 transition-colors text-sm"
-                                    href="settingsadmin.php?shop=<?php echo $shopQuery; ?>">
-                                    <span class="material-symbols-outlined text-[18px]">settings</span>
-                                    Settings
-                                </a>
-                                <?php endif; ?>
                                 <?php if (canAccessModule('accountbillingadmin.php', $accessibleModules)): ?>
-                                <a class="flex items-center gap-3 px-3 py-2.5 rounded-b-lg text-slate-600 hover:bg-blue-50 transition-colors text-sm border-t border-slate-100"
+                                <a class="flex items-center gap-3 px-3 py-2.5 rounded-t-lg text-slate-600 hover:bg-blue-50 transition-colors text-sm"
                                     href="accountbillingadmin.php?shop=<?php echo $shopQuery; ?>">
                                     <span class="material-symbols-outlined text-[18px]">receipt_long</span>
                                     Account Billing
+                                </a>
+                                <?php endif; ?>
+                                <a class="flex items-center gap-3 px-3 py-2.5 text-slate-600 hover:bg-blue-50 transition-colors text-sm border-t border-slate-100"
+                                    href="websitecustomadmin.php?shop=<?php echo $shopQuery; ?>">
+                                    <span class="material-symbols-outlined text-[18px]">palette</span>
+                                    Website Customizer
+                                </a>
+                                <?php if (canAccessModule('settingsadmin.php', $accessibleModules)): ?>
+                                <a class="flex items-center gap-3 px-3 py-2.5 rounded-b-lg text-slate-600 hover:bg-blue-50 transition-colors text-sm border-t border-slate-100"
+                                    href="settingsadmin.php?shop=<?php echo $shopQuery; ?>">
+                                    <span class="material-symbols-outlined text-[18px]">settings</span>
+                                    Settings
                                 </a>
                                 <?php endif; ?>
                             </div>

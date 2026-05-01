@@ -3,6 +3,7 @@ session_start();
 require_once __DIR__ . "/../db.php";
 include __DIR__ . '/../session_security.php';
 include __DIR__ . '/access_control.php';
+include __DIR__ . '/../log_helper.php';
 
 if (!isset($_SESSION['tenantID'])) {
     header("Location: tenantlogin.php");
@@ -267,6 +268,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_vehicle_submit'])
             );
 
             if (mysqli_stmt_execute($insertStmt)) {
+                $newVehicleId = (int) mysqli_insert_id($conn);
+                log_event(
+                    $conn,
+                    'CREATE Vehicle',
+                    'vehicle',
+                    $newVehicleId,
+                    'Created Vehicle with details: ' . ($brand ?? 'N/A') . ' ' . ($model ?? 'N/A') . ' (Plate: ' . ($plateNumber ?? 'N/A') . ')'
+                );
                 mysqli_stmt_close($insertStmt);
                 $redirectParams = [
                     'shop' => $loginSlug,
@@ -395,6 +404,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_vehicle_submit
             );
 
             if (mysqli_stmt_execute($updateStmt)) {
+                log_event(
+                    $conn,
+                    'UPDATE Vehicle',
+                    'vehicle',
+                    $editVehicleId,
+                    'Updated status to ' . $status
+                );
                 mysqli_stmt_close($updateStmt);
                 $redirectParams = [
                     'shop' => $loginSlug,
@@ -1206,18 +1222,23 @@ if ($editVehicleId > 0) {
                             <span class="material-symbols-outlined text-[16px] ml-auto">expand_more</span>
                         </button>
                         <div class="absolute left-0 top-full mt-1 w-full bg-white border border-slate-200 rounded-lg shadow-lg hidden z-50 settings-dropdown" data-dropdown="settings">
-                            <?php if (canAccessModule('settingsadmin.php', $accessibleModules)): ?>
-                            <a class="flex items-center gap-3 px-3 py-2.5 rounded-t-lg text-slate-600 hover:bg-blue-50 transition-colors text-sm"
-                                href="settingsadmin.php">
-                                <span class="material-symbols-outlined text-[18px]">settings</span>
-                                Settings
-                            </a>
-                            <?php endif; ?>
                             <?php if (canAccessModule('accountbillingadmin.php', $accessibleModules)): ?>
-                            <a class="flex items-center gap-3 px-3 py-2.5 rounded-b-lg text-slate-600 hover:bg-blue-50 transition-colors text-sm border-t border-slate-100"
+                            <a class="flex items-center gap-3 px-3 py-2.5 rounded-t-lg text-slate-600 hover:bg-blue-50 transition-colors text-sm"
                                 href="accountbillingadmin.php">
                                 <span class="material-symbols-outlined text-[18px]">receipt_long</span>
                                 Account Billing
+                            </a>
+                            <?php endif; ?>
+                            <a class="flex items-center gap-3 px-3 py-2.5 text-slate-600 hover:bg-blue-50 transition-colors text-sm border-t border-slate-100"
+                                href="websitecustomadmin.php">
+                                <span class="material-symbols-outlined text-[18px]">palette</span>
+                                Website Customizer
+                            </a>
+                            <?php if (canAccessModule('settingsadmin.php', $accessibleModules)): ?>
+                            <a class="flex items-center gap-3 px-3 py-2.5 rounded-b-lg text-slate-600 hover:bg-blue-50 transition-colors text-sm border-t border-slate-100"
+                                href="settingsadmin.php">
+                                <span class="material-symbols-outlined text-[18px]">settings</span>
+                                Settings
                             </a>
                             <?php endif; ?>
                         </div>

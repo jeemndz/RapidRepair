@@ -3,6 +3,7 @@ session_start();
 require_once __DIR__ . "/../db.php";
 include __DIR__ . '/../session_security.php';
 include __DIR__ . '/access_control.php';
+include __DIR__ . '/../log_helper.php';
 
 // Get tenant ID from session
 $tenantID = isset($_SESSION['tenantID']) ? (int)$_SESSION['tenantID'] : 0;
@@ -81,6 +82,14 @@ switch($dateRange) {
 
 $startDateStr = $startDate->format('Y-m-d');
 $endDateStr = $endDate->format('Y-m-d');
+
+log_event(
+    $conn,
+    'VIEW Reports',
+    'report',
+    null,
+    'Viewed performance reports for ' . $dateRange . ' (' . $startDateStr . ' to ' . $endDateStr . ')'
+);
 
 // Calculate metrics for date range
 $metricsQuery = "SELECT 
@@ -356,9 +365,19 @@ foreach ($trendData as $data) {
                         </button>
                         <div class="absolute left-0 top-full mt-1 w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg shadow-lg hidden z-50 settings-dropdown" data-dropdown="settings">
                             <?php if (canAccessModule('accountbillingadmin.php', $accessibleModules)): ?>
-                            <a href="accountbillingadmin.php" class="flex items-center gap-2 px-4 py-2.5 text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors border-b border-slate-100 dark:border-slate-800 last:border-b-0">
+                            <a href="accountbillingadmin.php" class="flex items-center gap-2 px-4 py-2.5 text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors border-b border-slate-100 dark:border-slate-800 last:border-b-0 rounded-t-lg">
                                 <span class="material-symbols-outlined text-[18px]">receipt_long</span>
                                 <span>Account Billing</span>
+                            </a>
+                            <?php endif; ?>
+                            <a href="websitecustomadmin.php" class="flex items-center gap-2 px-4 py-2.5 text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors border-b border-slate-100 dark:border-slate-800 last:border-b-0">
+                                <span class="material-symbols-outlined text-[18px]">palette</span>
+                                <span>Website Customizer</span>
+                            </a>
+                            <?php if (canAccessModule('settingsadmin.php', $accessibleModules)): ?>
+                            <a href="settingsadmin.php" class="flex items-center gap-2 px-4 py-2.5 text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors border-b border-slate-100 dark:border-slate-800 last:border-b-0 rounded-b-lg">
+                                <span class="material-symbols-outlined text-[18px]">settings</span>
+                                <span>Settings</span>
                             </a>
                             <?php endif; ?>
                         </div>

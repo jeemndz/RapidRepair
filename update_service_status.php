@@ -19,7 +19,15 @@ if (file_exists(__DIR__ . '/../db.php')) {
     exit;
 }
 
+if (!isset($conn) || !($conn instanceof mysqli)) {
+    echo json_encode(['success' => false, 'message' => 'Database connection not available']);
+    exit;
+}
+
 $input = json_decode(file_get_contents('php://input'), true);
+if (!is_array($input)) {
+    $input = $_POST;
+}
 
 $reportServiceId = 0;
 
@@ -43,7 +51,10 @@ if ($reportServiceId <= 0) {
 }
 
 if (!in_array($status, $allowedStatuses, true)) {
-    echo json_encode(['success' => false, 'message' => 'Invalid approval status']);
+    echo json_encode([
+        'success' => false,
+        'message' => 'Invalid approval status'
+    ]);
     exit;
 }
 
@@ -52,16 +63,20 @@ mysqli_begin_transaction($conn);
 try {
     $diagnosticStmt = mysqli_prepare(
         $conn,
-        "SELECT diagnostic_id 
-         FROM diagnostic_report_services 
+        "SELECT diagnostic_id, tenantID
+         FROM diagnostic_report_services
          WHERE report_service_id = ?
          LIMIT 1"
     );
 
+    if (!$diagnosticStmt) {
+        throw new Exception('Unable to prepare diagnostic service lookup.');
+    }
+
     mysqli_stmt_bind_param($diagnosticStmt, 'i', $reportServiceId);
     mysqli_stmt_execute($diagnosticStmt);
     $diagnosticResult = mysqli_stmt_get_result($diagnosticStmt);
-    $diagnosticRow = mysqli_fetch_assoc($diagnosticResult);
+    $diagnosticRow = $diagnosticResult ? mysqli_fetch_assoc($diagnosticResult) : null;
     mysqli_stmt_close($diagnosticStmt);
 
     if (!$diagnosticRow) {
@@ -78,28 +93,42 @@ try {
          LIMIT 1"
     );
 
+    if (!$updateStmt) {
+        throw new Exception('Unable to prepare service status update.');
+    }
+
     mysqli_stmt_bind_param($updateStmt, 'si', $status, $reportServiceId);
-    mysqli_stmt_execute($updateStmt);
+
+    if (!mysqli_stmt_execute($updateStmt)) {
+        throw new Exception('Failed to update service status.');
+    }
+
     mysqli_stmt_close($updateStmt);
 
     $summaryStmt = mysqli_prepare(
         $conn,
-        "SELECT 
+        "SELECT
             COUNT(*) AS total_services,
+            SUM(CASE WHEN approval_status = 'Pending' THEN 1 ELSE 0 END) AS pending_count,
             SUM(CASE WHEN approval_status = 'Approved' THEN 1 ELSE 0 END) AS approved_count,
             SUM(CASE WHEN approval_status = 'Declined' THEN 1 ELSE 0 END) AS declined_count,
-            SUM(CASE WHEN approval_status = 'Approved' THEN service_price ELSE 0 END) AS approved_total
+            COALESCE(SUM(CASE WHEN approval_status = 'Approved' THEN service_price ELSE 0 END), 0) AS approved_total
          FROM diagnostic_report_services
          WHERE diagnostic_id = ?"
     );
 
+    if (!$summaryStmt) {
+        throw new Exception('Unable to prepare diagnostic summary.');
+    }
+
     mysqli_stmt_bind_param($summaryStmt, 'i', $diagnosticId);
     mysqli_stmt_execute($summaryStmt);
     $summaryResult = mysqli_stmt_get_result($summaryStmt);
-    $summary = mysqli_fetch_assoc($summaryResult);
+    $summary = $summaryResult ? mysqli_fetch_assoc($summaryResult) : [];
     mysqli_stmt_close($summaryStmt);
 
     $totalServices = (int) ($summary['total_services'] ?? 0);
+    $pendingCount = (int) ($summary['pending_count'] ?? 0);
     $approvedCount = (int) ($summary['approved_count'] ?? 0);
     $declinedCount = (int) ($summary['declined_count'] ?? 0);
     $approvedTotal = (float) ($summary['approved_total'] ?? 0);
@@ -107,7 +136,10 @@ try {
     $customerApproval = 'Pending';
     $diagnosisStatus = 'Submitted';
 
-    if ($approvedCount > 0) {
+    if ($totalServices > 0 && $pendingCount > 0) {
+        $customerApproval = 'Pending';
+        $diagnosisStatus = 'Submitted';
+    } elseif ($approvedCount > 0) {
         $customerApproval = 'Approved';
         $diagnosisStatus = 'Approved';
     } elseif ($totalServices > 0 && $declinedCount === $totalServices) {
@@ -118,16 +150,20 @@ try {
     $reportUpdateStmt = mysqli_prepare(
         $conn,
         "UPDATE diagnostic_reports
-         SET 
+         SET
             customer_approval = ?,
             diagnosis_status = ?,
             estimated_total = ?,
-            approved_at = CASE WHEN ? = 'Approved' THEN NOW() ELSE approved_at END,
-            declined_at = CASE WHEN ? = 'Declined' THEN NOW() ELSE declined_at END,
+            approved_at = CASE WHEN ? = 'Approved' AND approved_at IS NULL THEN NOW() ELSE approved_at END,
+            declined_at = CASE WHEN ? = 'Declined' AND declined_at IS NULL THEN NOW() ELSE declined_at END,
             updated_at = NOW()
          WHERE diagnostic_id = ?
          LIMIT 1"
     );
+
+    if (!$reportUpdateStmt) {
+        throw new Exception('Unable to prepare diagnostic report update.');
+    }
 
     mysqli_stmt_bind_param(
         $reportUpdateStmt,
@@ -140,7 +176,10 @@ try {
         $diagnosticId
     );
 
-    mysqli_stmt_execute($reportUpdateStmt);
+    if (!mysqli_stmt_execute($reportUpdateStmt)) {
+        throw new Exception('Failed to update diagnostic report.');
+    }
+
     mysqli_stmt_close($reportUpdateStmt);
 
     mysqli_commit($conn);
@@ -151,10 +190,18 @@ try {
         'message' => 'Service status updated.',
         'diagnostic_id' => $diagnosticId,
         'report_service_id' => $reportServiceId,
+        'approval_status' => $status,
         'customer_approval' => $customerApproval,
         'diagnosis_status' => $diagnosisStatus,
-        'approved_total' => $approvedTotal
+        'approved_total' => $approvedTotal,
+        'summary' => [
+            'total_services' => $totalServices,
+            'pending_count' => $pendingCount,
+            'approved_count' => $approvedCount,
+            'declined_count' => $declinedCount
+        ]
     ]);
+    exit;
 } catch (Exception $e) {
     mysqli_rollback($conn);
 
@@ -162,5 +209,6 @@ try {
         'success' => false,
         'message' => $e->getMessage()
     ]);
+    exit;
 }
 ?>

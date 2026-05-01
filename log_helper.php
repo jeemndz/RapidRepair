@@ -174,6 +174,22 @@ function log_event(mysqli $conn, string $action, ?string $entity_type = null, ?i
     }
 
     // -----------------------------
+    // Resolve tenant ID for tenant-scoped audit views
+    // -----------------------------
+    $tenant_id = null;
+    if (isset($_SESSION['tenantID'])) {
+        $tenantCandidate = (int) $_SESSION['tenantID'];
+        if ($tenantCandidate > 0) {
+            $tenant_id = $tenantCandidate;
+        }
+    } elseif (isset($_SESSION['tenant_id'])) {
+        $tenantCandidate = (int) $_SESSION['tenant_id'];
+        if ($tenantCandidate > 0) {
+            $tenant_id = $tenantCandidate;
+        }
+    }
+
+    // -----------------------------
     // Meta info
     // -----------------------------
     $ip = $_SERVER['REMOTE_ADDR'] ?? null;
@@ -201,8 +217,8 @@ function log_event(mysqli $conn, string $action, ?string $entity_type = null, ?i
     // -----------------------------
     $stmt = $conn->prepare("
         INSERT INTO system_logs
-        (user_id, user_name, user_role, action, entity_type, entity_id, details, ip_address, user_agent)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (tenantID, user_id, user_name, user_role, action, entity_type, entity_id, details, ip_address, user_agent)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ");
     if (!$stmt) {
         return; // fail silently (or throw if you prefer)
@@ -215,7 +231,8 @@ function log_event(mysqli $conn, string $action, ?string $entity_type = null, ?i
     // IMPORTANT:
     // mysqli bind_param works with NULL values, but variable must be set as null.
     $stmt->bind_param(
-        "issssisss",
+        "iissssisss",
+        $tenant_id,
         $user_id_val,
         $user_name,
         $user_role,

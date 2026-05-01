@@ -5,6 +5,7 @@ header('Access-Control-Allow-Methods: GET, OPTIONS');
 header('Access-Control-Allow-Headers: Content-Type, Authorization');
 
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
+    http_response_code(200);
     echo json_encode(['success' => true]);
     exit;
 }
@@ -14,18 +15,12 @@ if (file_exists(__DIR__ . '/../db.php')) {
 } elseif (file_exists(__DIR__ . '/db.php')) {
     require_once __DIR__ . '/db.php';
 } else {
-    echo json_encode([
-        'success' => false,
-        'message' => 'db.php not found.'
-    ]);
+    echo json_encode(['success' => false, 'message' => 'db.php not found']);
     exit;
 }
 
 if (!isset($conn) || !($conn instanceof mysqli)) {
-    echo json_encode([
-        'success' => false,
-        'message' => 'Database connection not available.'
-    ]);
+    echo json_encode(['success' => false, 'message' => 'Database connection not available']);
     exit;
 }
 
@@ -34,74 +29,53 @@ $diagnosticId = isset($_GET['diagnostic_id']) ? (int) $_GET['diagnostic_id'] : 0
 if ($diagnosticId <= 0) {
     echo json_encode([
         'success' => false,
-        'message' => 'Missing or invalid diagnostic_id.',
-        'services' => [],
-        'booked_services' => []
+        'message' => 'Invalid diagnostic_id',
+        'received' => $_GET
     ]);
     exit;
 }
 
-/*
-|--------------------------------------------------------------------------
-| Get diagnostic report
-|--------------------------------------------------------------------------
-*/
-$reportSql = "
+$diagnosticStmt = mysqli_prepare($conn, "
     SELECT
-        diagnostic_id,
-        appointment_id,
-        repair_job_id,
-        tenantID,
-        mechanic_name,
-        problem_description,
-        findings,
-        recommended_action,
-        estimated_total,
-        customer_approval,
-        diagnosis_status,
-        customer_notes,
-        created_at,
-        updated_at
-    FROM diagnostic_reports
-    WHERE diagnostic_id = ?
+        dr.*,
+        rj.job_order_no,
+        rj.user_id,
+        rj.vehicle_id,
+        rj.job_status
+    FROM diagnostic_reports dr
+    LEFT JOIN repair_jobs rj
+        ON rj.repair_job_id = dr.repair_job_id
+        AND rj.tenantID = dr.tenantID
+    WHERE dr.diagnostic_id = ?
     LIMIT 1
-";
+");
 
-$reportStmt = $conn->prepare($reportSql);
+if (!$diagnosticStmt) {
+    echo json_encode(['success' => false, 'message' => 'Unable to prepare diagnostic query']);
+    exit;
+}
 
-if (!$reportStmt) {
+mysqli_stmt_bind_param($diagnosticStmt, 'i', $diagnosticId);
+mysqli_stmt_execute($diagnosticStmt);
+$diagnosticResult = mysqli_stmt_get_result($diagnosticStmt);
+$diagnostic = $diagnosticResult ? mysqli_fetch_assoc($diagnosticResult) : null;
+mysqli_stmt_close($diagnosticStmt);
+
+if (!$diagnostic) {
     echo json_encode([
         'success' => false,
-        'message' => 'Unable to prepare diagnostic report query.'
+        'message' => 'Diagnostic report not found',
+        'diagnostic_id' => $diagnosticId
     ]);
     exit;
 }
 
-$reportStmt->bind_param('i', $diagnosticId);
-$reportStmt->execute();
-$reportResult = $reportStmt->get_result();
-$report = $reportResult ? $reportResult->fetch_assoc() : null;
-$reportStmt->close();
+$tenantID = (int) ($diagnostic['tenantID'] ?? 0);
+$appointmentId = (int) ($diagnostic['appointment_id'] ?? 0);
 
-if (!$report) {
-    echo json_encode([
-        'success' => false,
-        'message' => 'Diagnostic report not found.',
-        'services' => [],
-        'booked_services' => []
-    ]);
-    exit;
-}
+$recommendedServices = [];
 
-$tenantID = (int) $report['tenantID'];
-$appointmentId = (int) $report['appointment_id'];
-
-/*
-|--------------------------------------------------------------------------
-| Get recommended diagnostic services
-|--------------------------------------------------------------------------
-*/
-$servicesSql = "
+$servicesStmt = mysqli_prepare($conn, "
     SELECT
         drs.report_service_id,
         drs.diagnostic_id,
@@ -116,6 +90,7 @@ $servicesSql = "
         drs.updated_at,
         s.description,
         s.category,
+        s.service_type,
         ps.service_name AS parent_service_name
     FROM diagnostic_report_services drs
     LEFT JOIN services s
@@ -127,54 +102,27 @@ $servicesSql = "
     WHERE drs.diagnostic_id = ?
       AND drs.tenantID = ?
     ORDER BY drs.created_at ASC, drs.report_service_id ASC
-";
-
-$servicesStmt = $conn->prepare($servicesSql);
+");
 
 if (!$servicesStmt) {
-    echo json_encode([
-        'success' => false,
-        'message' => 'Unable to prepare recommended services query.'
-    ]);
+    echo json_encode(['success' => false, 'message' => 'Unable to prepare recommended services query']);
     exit;
 }
 
-$servicesStmt->bind_param('ii', $diagnosticId, $tenantID);
-$servicesStmt->execute();
-$servicesResult = $servicesStmt->get_result();
+mysqli_stmt_bind_param($servicesStmt, 'ii', $diagnosticId, $tenantID);
+mysqli_stmt_execute($servicesStmt);
+$servicesResult = mysqli_stmt_get_result($servicesStmt);
 
-$recommendedServices = [];
-
-while ($servicesResult && $row = $servicesResult->fetch_assoc()) {
-    $recommendedServices[] = [
-        'report_service_id' => (int) $row['report_service_id'],
-        'diagnostic_id' => (int) $row['diagnostic_id'],
-        'tenantID' => (int) $row['tenantID'],
-        'service_id' => (int) $row['service_id'],
-        'parent_service_id' => $row['parent_service_id'] !== null ? (int) $row['parent_service_id'] : null,
-        'parent_service_name' => $row['parent_service_name'] ?? '',
-        'service_name' => $row['service_name'] ?? 'Recommended Service',
-        'description' => $row['description'] ?? '',
-        'category' => $row['category'] ?? '',
-        'service_price' => (float) $row['service_price'],
-        'duration_minutes' => (int) $row['duration_minutes'],
-        'approval_status' => $row['approval_status'] ?? 'Pending',
-        'created_at' => $row['created_at'],
-        'updated_at' => $row['updated_at'],
-    ];
+while ($row = $servicesResult ? mysqli_fetch_assoc($servicesResult) : null) {
+    $recommendedServices[] = $row;
 }
 
-$servicesStmt->close();
+mysqli_stmt_close($servicesStmt);
 
-/*
-|--------------------------------------------------------------------------
-| Get original booked services
-|--------------------------------------------------------------------------
-*/
 $bookedServices = [];
 
-if ($appointmentId > 0) {
-    $bookedSql = "
+if ($appointmentId > 0 && $tenantID > 0) {
+    $bookedStmt = mysqli_prepare($conn, "
         SELECT
             aps.appointment_service_id,
             aps.appointment_id,
@@ -183,54 +131,54 @@ if ($appointmentId > 0) {
             aps.service_price,
             aps.duration_minutes,
             aps.notes,
+            aps.created_at,
             s.service_name,
             s.description,
+            s.category,
             s.service_type,
             s.parent_service_id,
-            s.category
+            ps.service_name AS parent_service_name
         FROM appointment_services aps
         LEFT JOIN services s
             ON s.service_id = aps.service_id
             AND s.tenantID = aps.tenantID
+        LEFT JOIN services ps
+            ON ps.service_id = s.parent_service_id
+            AND ps.tenantID = s.tenantID
         WHERE aps.appointment_id = ?
           AND aps.tenantID = ?
-        ORDER BY aps.appointment_service_id ASC
-    ";
-
-    $bookedStmt = $conn->prepare($bookedSql);
+        ORDER BY aps.created_at ASC, aps.appointment_service_id ASC
+    ");
 
     if ($bookedStmt) {
-        $bookedStmt->bind_param('ii', $appointmentId, $tenantID);
-        $bookedStmt->execute();
-        $bookedResult = $bookedStmt->get_result();
+        mysqli_stmt_bind_param($bookedStmt, 'ii', $appointmentId, $tenantID);
+        mysqli_stmt_execute($bookedStmt);
+        $bookedResult = mysqli_stmt_get_result($bookedStmt);
 
-        while ($bookedResult && $row = $bookedResult->fetch_assoc()) {
-            $bookedServices[] = [
-                'appointment_service_id' => (int) $row['appointment_service_id'],
-                'appointment_id' => (int) $row['appointment_id'],
-                'tenantID' => (int) $row['tenantID'],
-                'service_id' => (int) $row['service_id'],
-                'service_name' => $row['service_name'] ?? 'Booked Service',
-                'description' => $row['description'] ?? '',
-                'service_type' => $row['service_type'] ?? '',
-                'parent_service_id' => $row['parent_service_id'] !== null ? (int) $row['parent_service_id'] : null,
-                'category' => $row['category'] ?? '',
-                'service_price' => (float) $row['service_price'],
-                'duration_minutes' => (int) $row['duration_minutes'],
-                'notes' => $row['notes'] ?? '',
-            ];
+        while ($row = $bookedResult ? mysqli_fetch_assoc($bookedResult) : null) {
+            $bookedServices[] = $row;
         }
 
-        $bookedStmt->close();
+        mysqli_stmt_close($bookedStmt);
     }
 }
 
-$conn->close();
-
 echo json_encode([
     'success' => true,
-    'message' => 'Diagnostic services loaded successfully.',
-    'diagnostic_report' => $report,
+    'status' => 'success',
+    'diagnostic_id' => $diagnosticId,
+    'diagnostic' => $diagnostic,
+    'diagnostic_report' => $diagnostic,
     'services' => $recommendedServices,
+    'recommended_services' => $recommendedServices,
     'booked_services' => $bookedServices,
+    'appointment_services' => $bookedServices,
+    'debug' => [
+        'appointment_id' => $appointmentId,
+        'tenantID' => $tenantID,
+        'recommended_count' => count($recommendedServices),
+        'booked_count' => count($bookedServices)
+    ]
 ]);
+exit;
+?>

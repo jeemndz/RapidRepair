@@ -3,6 +3,7 @@ session_start();
 include __DIR__ . '/../db.php';
 include __DIR__ . '/../session_security.php';
 include __DIR__ . '/access_control.php';
+include __DIR__ . '/../log_helper.php';
 
 // Check if tenant is logged in
 if (!isset($_SESSION['tenantID'])) {
@@ -67,6 +68,22 @@ $currentScript = basename($_SERVER['PHP_SELF']);
 if ($_SERVER['REQUEST_METHOD'] === 'GET' && (!isset($_GET['shop']) || trim((string) $_GET['shop']) !== $loginSlug)) {
     header('Location: ' . $currentScript . '?shop=' . $shopQuery);
     exit;
+}
+
+if (isset($_GET['audit_action'])) {
+    $auditAction = trim((string) $_GET['audit_action']);
+    $auditAppointmentId = isset($_GET['appointment_id']) ? max(0, (int) $_GET['appointment_id']) : 0;
+
+    if ($auditAction === 'open_create_modal') {
+        log_event($conn, 'VIEW Create Appointment Modal', 'appointment', null, 'Opened create appointment modal');
+    } elseif ($auditAction === 'open_review_modal' && $auditAppointmentId > 0) {
+        log_event($conn, 'VIEW Review Appointment Modal', 'appointment', $auditAppointmentId, 'Opened review modal for appointment #' . $auditAppointmentId);
+    }
+
+    if (isset($_GET['audit_only']) && $_GET['audit_only'] === '1') {
+        http_response_code(204);
+        exit;
+    }
 }
 
 if (empty($_SESSION['appointment_csrf'])) {
@@ -213,6 +230,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_review'])) {
                     if (!mysqli_stmt_execute($updateApptStmt)) {
                         $saveOk = false;
                         $actionError = 'Appointment status update failed: ' . mysqli_stmt_error($updateApptStmt);
+                    } else {
+                        log_event($conn, 'UPDATE Appointment', 'appointment', (int) $reviewForm['appointment_id'], 'Updated status to ' . $appointmentStatus);
                     }
                     mysqli_stmt_close($updateApptStmt);
                 }
@@ -244,6 +263,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_review'])) {
                         if (!mysqli_stmt_execute($updateRepairStmt)) {
                             $saveOk = false;
                             $actionError = 'Repair job update failed: ' . mysqli_stmt_error($updateRepairStmt);
+                        } else {
+                            log_event($conn, 'UPDATE RepairJob', 'repair_job', $repairJobId, 'Updated job status to ' . $reviewForm['job_status']);
                         }
                         mysqli_stmt_close($updateRepairStmt);
                     }
@@ -281,6 +302,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_review'])) {
                             $actionError = 'Repair job creation failed: ' . mysqli_stmt_error($insertRepairStmt);
                         } else {
                             $repairJobId = (int) mysqli_insert_id($conn);
+                            log_event($conn, 'CREATE RepairJob', 'repair_job', $repairJobId, 'Created RepairJob for appointment ID: ' . (int) $reviewForm['appointment_id']);
                         }
                         mysqli_stmt_close($insertRepairStmt);
                     }
@@ -306,7 +328,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_review'])) {
                             );
                             if ($deleteServicesStmt) {
                                 mysqli_stmt_bind_param($deleteServicesStmt, 'ii', $repairJobId, $tenantID);
-                                mysqli_stmt_execute($deleteServicesStmt);
+                                if (mysqli_stmt_execute($deleteServicesStmt)) {
+                                    log_event($conn, 'DELETE RepairJobService', 'repair_job_service', $repairJobId, 'Deleted RepairJobService records for repair job ID: ' . $repairJobId);
+                                }
                                 mysqli_stmt_close($deleteServicesStmt);
                             }
                         }
@@ -341,6 +365,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_review'])) {
                                         $saveOk = false;
                                         $actionError = 'Failed to link services: ' . mysqli_stmt_error($insertJobServiceStmt);
                                         break;
+                                    } else {
+                                        log_event($conn, 'CREATE RepairJobService', 'repair_job_service', (int) $serviceId, 'Created RepairJobService for repair job ID: ' . $repairJobId);
                                     }
                                 }
                             }
@@ -507,8 +533,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create_appointment_su
             if (!mysqli_stmt_execute($insertAppointmentStmt)) {
                 $createOk = false;
                 $createError = 'Unable to save appointment details.';
+            } else {
+                $newAppointmentId = (int) mysqli_insert_id($conn);
+                log_event($conn, 'CREATE Appointment', 'appointment', $newAppointmentId, 'Created Appointment for user ID: ' . (int) $createForm['user_id']);
             }
-            $newAppointmentId = (int) mysqli_insert_id($conn);
             mysqli_stmt_close($insertAppointmentStmt);
         }
 
@@ -542,6 +570,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create_appointment_su
                         $createOk = false;
                         $createError = 'Appointment service details could not be saved.';
                         break;
+                    } else {
+                        log_event($conn, 'CREATE AppointmentService', 'appointment_service', (int) $serviceId, 'Created AppointmentService for appointment ID: ' . $newAppointmentId);
                     }
                 }
                 mysqli_stmt_close($insertServiceStmt);
@@ -573,9 +603,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_status'])) {
             "UPDATE appointments SET status = ?, updated_at = NOW() WHERE appointment_id = ? AND tenantID = ? LIMIT 1"
         );
         mysqli_stmt_bind_param($updateStmt, 'sii', $newStatus, $appointmentID, $tenantID);
-        mysqli_stmt_execute($updateStmt);
+        $statusUpdated = mysqli_stmt_execute($updateStmt);
 
-        if (mysqli_stmt_affected_rows($updateStmt) >= 0) {
+        if ($statusUpdated && mysqli_stmt_affected_rows($updateStmt) >= 0) {
+            log_event($conn, 'UPDATE Appointment', 'appointment', $appointmentID, 'Updated status to ' . $newStatus);
             $actionMessage = 'Appointment status updated successfully.';
         } else {
             $actionError = 'Unable to update appointment status right now.';
@@ -1210,18 +1241,23 @@ if ($historyStmt) {
                             <span class="material-symbols-outlined text-[16px] ml-auto">expand_more</span>
                         </button>
                         <div class="absolute left-0 top-full mt-1 w-full bg-white border border-slate-200 rounded-lg shadow-lg hidden z-50 settings-dropdown" data-dropdown="settings">
-                            <?php if (canAccessModule('settingsadmin.php', $accessibleModules)): ?>
-                            <a class="flex items-center gap-3 px-3 py-2.5 rounded-t-lg text-slate-600 hover:bg-blue-50 transition-colors text-sm"
-                                href="settingsadmin.php?shop=<?php echo $shopQuery; ?>">
-                                <span class="material-symbols-outlined text-[18px]">settings</span>
-                                Settings
-                            </a>
-                            <?php endif; ?>
                             <?php if (canAccessModule('accountbillingadmin.php', $accessibleModules)): ?>
-                            <a class="flex items-center gap-3 px-3 py-2.5 rounded-b-lg text-slate-600 hover:bg-blue-50 transition-colors text-sm border-t border-slate-100"
+                            <a class="flex items-center gap-3 px-3 py-2.5 rounded-t-lg text-slate-600 hover:bg-blue-50 transition-colors text-sm"
                                 href="accountbillingadmin.php?shop=<?php echo $shopQuery; ?>">
                                 <span class="material-symbols-outlined text-[18px]">receipt_long</span>
                                 Account Billing
+                            </a>
+                            <?php endif; ?>
+                            <a class="flex items-center gap-3 px-3 py-2.5 text-slate-600 hover:bg-blue-50 transition-colors text-sm border-t border-slate-100"
+                                href="websitecustomadmin.php?shop=<?php echo $shopQuery; ?>">
+                                <span class="material-symbols-outlined text-[18px]">palette</span>
+                                Website Customizer
+                            </a>
+                            <?php if (canAccessModule('settingsadmin.php', $accessibleModules)): ?>
+                            <a class="flex items-center gap-3 px-3 py-2.5 rounded-b-lg text-slate-600 hover:bg-blue-50 transition-colors text-sm border-t border-slate-100"
+                                href="settingsadmin.php?shop=<?php echo $shopQuery; ?>">
+                                <span class="material-symbols-outlined text-[18px]">settings</span>
+                                Settings
                             </a>
                             <?php endif; ?>
                         </div>
@@ -1641,7 +1677,7 @@ if ($historyStmt) {
                 <div class="p-5 border-b border-slate-100">
                     <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
                         <h3 class="font-bold text-black text-lg">Appointments List</h3>
-                        <a href="appointmentadmin.php?shop=<?php echo h($shopQuery); ?>&create_appointment=1" class="inline-flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700 transition-colors">
+                        <a href="appointmentadmin.php?shop=<?php echo h($shopQuery); ?>&create_appointment=1" onclick="new Image().src='appointmentadmin.php?shop=<?php echo h($shopQuery); ?>&audit_action=open_create_modal&audit_only=1';" class="inline-flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700 transition-colors">
                             <span class="material-symbols-outlined text-base">add</span>
                             Create Appointment
                         </a>
@@ -1740,6 +1776,7 @@ if ($historyStmt) {
                                                     'history_search' => $historySearch,
                                                     'review' => (int) $row['appointment_id'],
                                                 ], static fn ($value) => $value !== ''))); ?>" class="inline-flex items-center gap-1 px-3 py-1.5 bg-slate-800 text-white rounded text-xs font-semibold hover:bg-slate-900">
+                                                onclick="new Image().src='appointmentadmin.php?shop=<?php echo h($shopQuery); ?>&audit_action=open_review_modal&audit_only=1&appointment_id=<?php echo (int) $row['appointment_id']; ?>';" class="inline-flex items-center gap-1 px-3 py-1.5 bg-slate-800 text-white rounded text-xs font-semibold hover:bg-slate-900">
                                                     <span class="material-symbols-outlined text-sm">rate_review</span>
                                                     Review
                                                 </a>

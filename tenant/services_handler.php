@@ -42,6 +42,7 @@ if (session_status() === PHP_SESSION_NONE) {
 }
 
 require_once '../db.php';
+require_once '../log_helper.php';
 
 $action = $_GET['action'] ?? $_POST['action'] ?? null;
 $tenantID = $_SESSION['tenantID'] ?? null;
@@ -485,10 +486,26 @@ function addService($conn, $tenantID) {
             }
 
             $sub_services_added++;
+
+            log_event(
+                $conn,
+                'CREATE Sub Service',
+                'service',
+                (int) $insertSub['insert_id'],
+                'Created sub-service "' . $sub_name . '" under main service ID ' . $service_id
+            );
         }
     }
 
     $conn->commit();
+
+    log_event(
+        $conn,
+        'CREATE Service',
+        'service',
+        $service_id,
+        'Created ' . strtolower($service_type) . ' service "' . $service_name . '" (status: ' . $status . ')'
+    );
 
     jsonResponse(200, [
         'success' => true,
@@ -536,7 +553,7 @@ function updateService($conn, $tenantID) {
     }
 
     $verify_query = "
-        SELECT service_id 
+        SELECT service_id, service_name, service_type, status
         FROM services 
         WHERE service_id = ? 
         AND tenantID = ?
@@ -551,13 +568,15 @@ function updateService($conn, $tenantID) {
     $verify_stmt->bind_param('ii', $service_id, $tenantID);
     $verify_stmt->execute();
 
-    if ($verify_stmt->get_result()->num_rows === 0) {
+    $verify_result = $verify_stmt->get_result();
+    if ($verify_result->num_rows === 0) {
         $verify_stmt->close();
         jsonResponse(403, [
             'success' => false,
             'message' => 'Service not found or unauthorized'
         ]);
     }
+    $verify_result->fetch_assoc();
 
     $verify_stmt->close();
 
@@ -612,6 +631,14 @@ function updateService($conn, $tenantID) {
     if ($stmt->execute()) {
         $stmt->close();
 
+        log_event(
+            $conn,
+            'UPDATE Service',
+            'service',
+            $service_id,
+            'Updated service "' . $service_name . '" (type: ' . $service_type . ', status: ' . $status . ')'
+        );
+
         jsonResponse(200, [
             'success' => true,
             'message' => 'Service updated successfully'
@@ -642,7 +669,7 @@ function deleteService($conn, $tenantID) {
     }
 
     $verify_query = "
-        SELECT service_id, service_type 
+        SELECT service_id, service_type, service_name, status
         FROM services 
         WHERE service_id = ? 
         AND tenantID = ?
@@ -713,6 +740,14 @@ function deleteService($conn, $tenantID) {
 
     if ($stmt->execute()) {
         $stmt->close();
+
+        log_event(
+            $conn,
+            'DELETE Service',
+            'service',
+            $service_id,
+            'Deleted ' . strtolower((string) ($service['service_type'] ?? 'service')) . ' service "' . ((string) ($service['service_name'] ?? 'N/A')) . '"'
+        );
 
         jsonResponse(200, [
             'success' => true,

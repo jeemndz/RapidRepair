@@ -3,6 +3,7 @@ session_start();
 include __DIR__ . '/../db.php';
 include __DIR__ . '/../session_security.php';
 include __DIR__ . '/access_control.php';
+include __DIR__ . '/../log_helper.php';
 
 if (!isset($_SESSION['tenantID'])) {
     header('Location: tenantlogin.php');
@@ -71,6 +72,24 @@ $currentScript = basename($_SERVER['PHP_SELF']);
 if (!isset($_GET['shop']) || trim((string) $_GET['shop']) !== $loginSlug) {
     header('Location: ' . $currentScript . '?shop=' . $shopQuery);
     exit;
+}
+
+if (isset($_GET['audit_action'])) {
+    $auditAction = trim((string) $_GET['audit_action']);
+    $auditPaymentId = isset($_GET['payment_id']) ? max(0, (int) $_GET['payment_id']) : 0;
+
+    if ($auditAction === 'open_add_payment') {
+        log_event($conn, 'VIEW Add Payment Modal', 'payment', null, 'Opened add payment modal');
+    } elseif ($auditAction === 'open_status_modal' && $auditPaymentId > 0) {
+        log_event($conn, 'VIEW Payment Status Modal', 'payment', $auditPaymentId, 'Opened payment status modal for payment #' . $auditPaymentId);
+    } elseif ($auditAction === 'print_receipt' && $auditPaymentId > 0) {
+        log_event($conn, 'PRINT Payment Receipt', 'payment', $auditPaymentId, 'Generated sales invoice for payment #' . $auditPaymentId);
+    }
+
+    if (isset($_GET['audit_only']) && $_GET['audit_only'] === '1') {
+        http_response_code(204);
+        exit;
+    }
 }
 
 function h($value)
@@ -258,6 +277,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_payment_submit'])
 
             if (mysqli_stmt_execute($insertStmt)) {
                 $newPaymentId = (int) mysqli_insert_id($conn);
+                log_event($conn, 'CREATE Payment', 'payment', $newPaymentId, 'Created Payment with details: amount ' . number_format($postPaymentAmount, 2) . ', method ' . $postMethod);
                 mysqli_stmt_close($insertStmt);
 
                 if ($newPaymentId > 0) {
@@ -268,7 +288,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_payment_submit'])
                     );
                     if ($referenceUpdateStmt) {
                         mysqli_stmt_bind_param($referenceUpdateStmt, 'sii', $generatedReference, $newPaymentId, $tenantID);
-                        mysqli_stmt_execute($referenceUpdateStmt);
+                        if (mysqli_stmt_execute($referenceUpdateStmt)) {
+                            log_event($conn, 'UPDATE Payment', 'payment', $newPaymentId, 'Updated referenceNumber to ' . $generatedReference);
+                        }
                         mysqli_stmt_close($referenceUpdateStmt);
                     }
                 }
@@ -302,6 +324,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_payment_status
         if ($updateStmt) {
             mysqli_stmt_bind_param($updateStmt, 'sii', $postStatus, $postPaymentId, $tenantID);
             if (mysqli_stmt_execute($updateStmt)) {
+                log_event($conn, 'UPDATE Payment', 'payment', $postPaymentId, 'Updated paymentStatus to ' . $postStatus);
                 mysqli_stmt_close($updateStmt);
                 header('Location: paymentsadmin.php?shop=' . urlencode($loginSlug) . '&status_updated=1');
                 exit;
@@ -866,18 +889,23 @@ function buildPageUrl($pageNumber, $shopQuery, $search, $statusFilter, $methodFi
                             <span class="material-symbols-outlined text-[16px] ml-auto">expand_more</span>
                         </button>
                         <div class="absolute left-0 top-full mt-1 w-full bg-white border border-slate-200 rounded-lg shadow-lg hidden z-50 settings-dropdown" data-dropdown="settings">
-                            <?php if (canAccessModule('settingsadmin.php', $accessibleModules)): ?>
-                            <a class="flex items-center gap-3 px-3 py-2.5 rounded-t-lg text-slate-600 hover:bg-blue-50 transition-colors text-sm"
-                                href="settingsadmin.php?shop=<?php echo $shopQuery; ?>">
-                                <span class="material-symbols-outlined text-[18px]">settings</span>
-                                Settings
-                            </a>
-                            <?php endif; ?>
                             <?php if (canAccessModule('accountbillingadmin.php', $accessibleModules)): ?>
-                            <a class="flex items-center gap-3 px-3 py-2.5 rounded-b-lg text-slate-600 hover:bg-blue-50 transition-colors text-sm border-t border-slate-100"
+                            <a class="flex items-center gap-3 px-3 py-2.5 rounded-t-lg text-slate-600 hover:bg-blue-50 transition-colors text-sm"
                                 href="accountbillingadmin.php?shop=<?php echo $shopQuery; ?>">
                                 <span class="material-symbols-outlined text-[18px]">receipt_long</span>
                                 Account Billing
+                            </a>
+                            <?php endif; ?>
+                            <a class="flex items-center gap-3 px-3 py-2.5 text-slate-600 hover:bg-blue-50 transition-colors text-sm border-t border-slate-100"
+                                href="websitecustomadmin.php?shop=<?php echo $shopQuery; ?>">
+                                <span class="material-symbols-outlined text-[18px]">palette</span>
+                                Website Customizer
+                            </a>
+                            <?php if (canAccessModule('settingsadmin.php', $accessibleModules)): ?>
+                            <a class="flex items-center gap-3 px-3 py-2.5 rounded-b-lg text-slate-600 hover:bg-blue-50 transition-colors text-sm border-t border-slate-100"
+                                href="settingsadmin.php?shop=<?php echo $shopQuery; ?>">
+                                <span class="material-symbols-outlined text-[18px]">settings</span>
+                                Settings
                             </a>
                             <?php endif; ?>
                         </div>
@@ -1269,7 +1297,7 @@ function buildPageUrl($pageNumber, $shopQuery, $search, $statusFilter, $methodFi
                                         </td>
                                         <td class="px-6 py-4 text-right">
                                             <div class="inline-flex items-center gap-2">
-                                                <a href="paymentsadmin.php?shop=<?php echo h($shopQuery); ?>&print_receipt=<?php echo (int) $payment['payment_id']; ?>"
+                                                <a href="paymentsadmin.php?shop=<?php echo h($shopQuery); ?>&print_receipt=<?php echo (int) $payment['payment_id']; ?>&audit_action=print_receipt&payment_id=<?php echo (int) $payment['payment_id']; ?>"
                                                     class="px-3 py-1.5 text-xs font-bold text-blue-700 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100">Sales Invoice</a>
                                                 <button
                                                     type="button"
@@ -1449,6 +1477,7 @@ function buildPageUrl($pageNumber, $shopQuery, $search, $statusFilter, $methodFi
 
     if (openAddPaymentModal && addPaymentModal) {
         openAddPaymentModal.addEventListener('click', () => {
+            new Image().src = 'paymentsadmin.php?shop=<?php echo h($shopQuery); ?>&audit_action=open_add_payment&audit_only=1';
             addPaymentModal.classList.remove('hidden');
             addPaymentModal.classList.add('flex');
         });
@@ -1484,6 +1513,7 @@ function buildPageUrl($pageNumber, $shopQuery, $search, $statusFilter, $methodFi
             if (!statusModal || !statusPaymentId || !statusValueField) {
                 return;
             }
+            new Image().src = 'paymentsadmin.php?shop=<?php echo h($shopQuery); ?>&audit_action=open_status_modal&audit_only=1&payment_id=' + encodeURIComponent(button.dataset.paymentId || '0');
             statusPaymentId.value = button.dataset.paymentId || '0';
             statusValueField.value = button.dataset.currentStatus || 'Pending';
             statusModal.classList.remove('hidden');

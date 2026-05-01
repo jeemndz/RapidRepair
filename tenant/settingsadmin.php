@@ -3,6 +3,7 @@ session_start();
 include __DIR__ . '/../db.php';
 include __DIR__ . '/../session_security.php';
 include __DIR__ . '/access_control.php';
+include __DIR__ . '/../log_helper.php';
 
 if (!isset($_SESSION['tenantID'])) {
     header('Location: tenantlogin.php');
@@ -30,6 +31,19 @@ if (($_SESSION['userType'] ?? '') === 'owner') {
     $loggedInUserName = trim(($_SESSION['firstName'] ?? '') . ' ' . ($_SESSION['lastName'] ?? ''));
     $loggedInUserName = $loggedInUserName ?: 'User';
     $loggedInUserRole = $_SESSION['userRole'] ?? 'Staff Member';
+}
+
+// Get shop name from database
+$shopName = 'AutoFix Pro';
+$ownerStmt = mysqli_prepare($conn, 'SELECT shopName FROM owners WHERE tenantID = ? LIMIT 1');
+if ($ownerStmt) {
+    mysqli_stmt_bind_param($ownerStmt, 'i', $tenantID);
+    mysqli_stmt_execute($ownerStmt);
+    $ownerResult = mysqli_stmt_get_result($ownerStmt);
+    if ($ownerResult && $row = mysqli_fetch_assoc($ownerResult)) {
+        $shopName = $row['shopName'] ?: 'AutoFix Pro';
+    }
+    mysqli_stmt_close($ownerStmt);
 }
 ?>
 <!DOCTYPE html>
@@ -133,7 +147,7 @@ if (($_SESSION['userType'] ?? '') === 'owner') {
                     <span class="material-symbols-outlined">directions_car</span>
                 </div>
                 <div>
-                    <h1 class="text-lg font-bold leading-none">AutoFix Pro</h1>
+                    <h1 class="text-lg font-bold leading-none"><?php echo h($shopName); ?></h1>
                     <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Repair Management</p>
                 </div>
             </div>

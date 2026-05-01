@@ -3,6 +3,7 @@ session_start();
 require_once __DIR__ . '/../db.php';
 include __DIR__ . '/../session_security.php';
 include __DIR__ . '/access_control.php';
+include __DIR__ . '/../log_helper.php';
 
 if (!isset($_SESSION['tenantID'])) {
     header('Location: tenantlogin.php');
@@ -265,6 +266,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             $message = 'Unable to update inventory item.';
                             $messageType = 'error';
                         } else {
+                            log_event($conn, 'UPDATE InventoryItem', 'inventory_item', (int) $formData['item_id'], 'Updated stock quantity to ' . (int) $formData['stock_quantity']);
                             $newStock = (int) $formData['stock_quantity'];
                             if ($newStock !== $previousStock) {
                                 $delta = $newStock - $previousStock;
@@ -281,7 +283,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                     $referenceId = null;
                                     $movementParams = [$tenantID, $formData['item_id'], $movementType, $movementQty, $referenceType, $referenceId, $note];
                                     if (bindParams($movementStmt, 'iisisis', $movementParams)) {
-                                        mysqli_stmt_execute($movementStmt);
+                                        if (mysqli_stmt_execute($movementStmt)) {
+                                            log_event($conn, 'CREATE StockMovement', 'stock_movement', (int) $formData['item_id'], 'Created StockMovement with details: ' . $movementType . ' quantity ' . $movementQty);
+                                        }
                                     }
                                     mysqli_stmt_close($movementStmt);
                                 }
@@ -339,6 +343,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             $messageType = 'error';
                         } else {
                             $newItemId = (int) mysqli_insert_id($conn);
+                            log_event($conn, 'CREATE InventoryItem', 'inventory_item', $newItemId, 'Created InventoryItem with details: ' . $formData['part_name']);
                             $initialStock = (int) $formData['stock_quantity'];
 
                             if ($initialStock > 0) {
@@ -353,7 +358,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                     $note = 'Initial stock when item was created.';
                                     $movementParams = [$tenantID, $newItemId, 'IN', $initialStock, $referenceType, $referenceId, $note];
                                     if (bindParams($movementStmt, 'iisisis', $movementParams)) {
-                                        mysqli_stmt_execute($movementStmt);
+                                        if (mysqli_stmt_execute($movementStmt)) {
+                                            log_event($conn, 'CREATE StockMovement', 'stock_movement', $newItemId, 'Created StockMovement with details: IN quantity ' . $initialStock);
+                                        }
                                     }
                                     mysqli_stmt_close($movementStmt);
                                 }
@@ -470,13 +477,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 $messageType = 'error';
                                 mysqli_stmt_close($movementStmt);
                             } else {
+                                $movementAction = $movementData['movement_type'] === 'IN'
+                                    ? 'ADD StockMovement'
+                                    : ($movementData['movement_type'] === 'OUT' ? 'OUT StockMovement' : 'ADJUSTMENT StockMovement');
+                                $movementDetails = $movementData['movement_type'] === 'IN'
+                                    ? 'Added ' . (int) $movementData['quantity'] . ' units to stock for item #' . (int) $movementData['item_id'] . '.'
+                                    : ($movementData['movement_type'] === 'OUT'
+                                        ? 'Removed ' . (int) $movementData['quantity'] . ' units from stock for item #' . (int) $movementData['item_id'] . '.'
+                                        : 'Adjusted stock by ' . (int) $movementData['quantity'] . ' units for item #' . (int) $movementData['item_id'] . '.');
+                                log_event($conn, $movementAction, 'stock_movement', (int) $movementData['item_id'], $movementDetails);
                                 mysqli_stmt_close($movementStmt);
 
                                 $updateStmt = mysqli_prepare($conn, 'UPDATE inventory_items SET stock_quantity = ? WHERE item_id = ? AND tenantID = ?');
                                 if ($updateStmt) {
                                     $updateParams = [$newStock, $movementData['item_id'], $tenantID];
                                     if (bindParams($updateStmt, 'iii', $updateParams)) {
-                                        mysqli_stmt_execute($updateStmt);
+                                        if (mysqli_stmt_execute($updateStmt)) {
+                                            log_event($conn, 'UPDATE InventoryItem', 'inventory_item', (int) $movementData['item_id'], 'Updated stock quantity to ' . $newStock);
+                                        }
                                     }
                                     mysqli_stmt_close($updateStmt);
                                 }
@@ -513,6 +531,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } else {
                 $toggleParams = [$nextStatus, $itemId, $tenantID];
                 if (bindParams($toggleStmt, 'sii', $toggleParams) && mysqli_stmt_execute($toggleStmt)) {
+                    log_event($conn, 'UPDATE InventoryItem', 'inventory_item', $itemId, 'Updated status to ' . $nextStatus);
                     $message = 'Item status updated.';
                     $messageType = 'success';
                 } else {

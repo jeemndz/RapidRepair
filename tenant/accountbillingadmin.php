@@ -3,6 +3,7 @@ session_start();
 include __DIR__ . '/../db.php';
 include __DIR__ . '/../session_security.php';
 include __DIR__ . '/access_control.php';
+include __DIR__ . '/../log_helper.php';
 
 if (!isset($_SESSION['tenantID'])) {
     header('Location: tenantlogin.php');
@@ -176,7 +177,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_payment_method
 
     if ($deleteStmt) {
         mysqli_stmt_bind_param($deleteStmt, 'ii', $pmId, $tenantID);
-        mysqli_stmt_execute($deleteStmt);
+        if (mysqli_stmt_execute($deleteStmt)) {
+            log_event($conn, 'DELETE PaymentMethod', 'payment_method', $pmId, 'Deleted PaymentMethod with ID: ' . $pmId);
+        }
         mysqli_stmt_close($deleteStmt);
     }
 
@@ -196,7 +199,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['set_primary'])) {
 
     $resetStmt = mysqli_prepare($conn, "UPDATE payment_methods SET is_primary = FALSE WHERE tenantID = ?");
     mysqli_stmt_bind_param($resetStmt, 'i', $tenantID);
-    mysqli_stmt_execute($resetStmt);
+    if (mysqli_stmt_execute($resetStmt)) {
+        log_event($conn, 'UPDATE PaymentMethod', 'payment_method', $tenantID, 'Updated is_primary to FALSE for tenant payment methods');
+    }
     mysqli_stmt_close($resetStmt);
 
     $setPrimaryStmt = mysqli_prepare(
@@ -205,7 +210,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['set_primary'])) {
     );
 
     mysqli_stmt_bind_param($setPrimaryStmt, 'ii', $pmId, $tenantID);
-    mysqli_stmt_execute($setPrimaryStmt);
+    if (mysqli_stmt_execute($setPrimaryStmt)) {
+        log_event($conn, 'UPDATE PaymentMethod', 'payment_method', $pmId, 'Updated is_primary to TRUE');
+    }
     mysqli_stmt_close($setPrimaryStmt);
 
     mysqli_commit($conn);
@@ -356,19 +363,23 @@ if ($invoiceStmt) {
                         </button>
 
                         <div class="absolute left-0 top-full mt-1 w-full bg-white border border-slate-200 rounded-lg shadow-lg hidden z-50 settings-dropdown">
-                            <?php if (canAccessModule('settingsadmin.php', $accessibleModules)): ?>
-                                <a class="flex items-center gap-3 px-3 py-2.5 rounded-t-lg text-slate-600 hover:bg-blue-50 transition-colors text-sm"
-                                    href="settingsadmin.php?shop=<?php echo h($shopQuery); ?>">
-                                    <span class="material-symbols-outlined text-[18px]">settings</span>
-                                    Settings
-                                </a>
-                            <?php endif; ?>
-
                             <?php if (canAccessModule('accountbillingadmin.php', $accessibleModules)): ?>
-                                <a class="flex items-center gap-3 px-3 py-2.5 rounded-b-lg text-blue-700 bg-blue-50 transition-colors text-sm border-t border-slate-100"
+                                <a class="flex items-center gap-3 px-3 py-2.5 rounded-t-lg text-blue-700 bg-blue-50 transition-colors text-sm"
                                     href="accountbillingadmin.php?shop=<?php echo h($shopQuery); ?>">
                                     <span class="material-symbols-outlined text-[18px]">receipt_long</span>
                                     Account Billing
+                                </a>
+                            <?php endif; ?>
+                            <a class="flex items-center gap-3 px-3 py-2.5 text-slate-600 hover:bg-blue-50 transition-colors text-sm border-t border-slate-100"
+                                href="websitecustomadmin.php?shop=<?php echo h($shopQuery); ?>">
+                                <span class="material-symbols-outlined text-[18px]">palette</span>
+                                Website Customizer
+                            </a>
+                            <?php if (canAccessModule('settingsadmin.php', $accessibleModules)): ?>
+                                <a class="flex items-center gap-3 px-3 py-2.5 rounded-b-lg text-slate-600 hover:bg-blue-50 transition-colors text-sm border-t border-slate-100"
+                                    href="settingsadmin.php?shop=<?php echo h($shopQuery); ?>">
+                                    <span class="material-symbols-outlined text-[18px]">settings</span>
+                                    Settings
                                 </a>
                             <?php endif; ?>
                         </div>

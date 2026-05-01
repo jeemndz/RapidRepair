@@ -42,7 +42,26 @@ if (!$owner) {
     exit;
 }
 
+// Function to get website customization
+function getWebsiteCustomization($conn, $tenantID) {
+    $stmt = mysqli_prepare($conn, "
+        SELECT * FROM website_customizations 
+        WHERE tenantID = ? 
+        LIMIT 1
+    ");
+    mysqli_stmt_bind_param($stmt, "i", $tenantID);
+    mysqli_stmt_execute($stmt);
+    $result = mysqli_stmt_get_result($stmt);
+    $customization = mysqli_fetch_assoc($result);
+    mysqli_stmt_close($stmt);
+    
+    return $customization ? $customization : array();
+}
+
 $shopName = isset($owner['shopName']) && $owner['shopName'] !== '' ? $owner['shopName'] : 'AutoFix Pro';
+
+// Load website customizations
+$customization = getWebsiteCustomization($conn, $tenantID);
 
 $apkFileName = 'My-Portfolion-Mobile-App.apk';
 $apkSourcePath = __DIR__ . '/application-8f4b4ec1-dcd9-4910-9902-bbd476535bb3.apk';
@@ -85,7 +104,7 @@ if (isset($_GET['download']) && $_GET['download'] === 'app') {
             theme: {
                 extend: {
                     "colors": {
-                        "primary": "#1152d4",
+                        "primary": "<?php echo isset($customization['primaryColor']) ? htmlspecialchars($customization['primaryColor']) : '#1152d4'; ?>",
                         "secondary-fixed-dim": "#cbd5e1",
                         "on-surface": "#0f172a",
                         "on-background": "#0f172a",
@@ -188,23 +207,21 @@ if (isset($_GET['download']) && $_GET['download'] === 'app') {
             <div class="absolute inset-0 opacity-40">
                 <img alt="Modern Auto Repair Shop" class="w-full h-full object-cover"
                     data-alt="dramatic interior of a clean professional auto repair shop with blue neon lighting and high-tech diagnostic equipment on tool benches"
-                    src="https://lh3.googleusercontent.com/aida-public/AB6AXuAEtRZx2VtJU_zvHyWwsPzD6V-hQgNfAn2ej099PlXa6HKYmZqm9u0Cl5K4y-AzSzT4KPlh897GoHs2N4t_PifJp3y-dT-rj5YsB98I9Dnp799aPfP0rZ-vQZhqRNpq_Ll2qyR361GWZxFHoYgrFfUTBzh8STIl_1B0aQTSEGfgyxNhO7ix91KeXhv26XzL0sHPtMcsrGNRwCP_RGCYJ8Ny0heOO9T8o7EUb9hcDp1dSNVs5Fja1CgIgUO3RtwhBFeHSdHhfk06o3Lo" />
+                    src="<?php echo isset($customization['heroBackground']) && $customization['heroBackground'] ? htmlspecialchars($customization['heroBackground']) : 'https://lh3.googleusercontent.com/aida-public/AB6AXuAEtRZx2VtJU_zvHyWwsPzD6V-hQgNfAn2ej099PlXa6HKYmZqm9u0Cl5K4y-AzSzT4KPlh897GoHs2N4t_PifJp3y-dT-rj5YsB98I9Dnp799aPfP0rZ-vQZhqRNpq_Ll2qyR361GWZxFHoYgrFfUTBzh8STIl_1B0aQTSEGfgyxNhO7ix91KeXhv26XzL0sHPtMcsrGNRwCP_RGCYJ8Ny0heOO9T8o7EUb9hcDp1dSNVs5Fja1CgIgUO3RtwhBFeHSdHhfk06o3Lo'; ?>" />
             </div>
             <div class="absolute inset-0 bg-gradient-to-r from-[#1A2A2A] via-[#1A2A2A]/80 to-transparent"></div>
             <div class="relative z-10 max-w-7xl mx-auto px-6 md:px-12">
                 <div class="max-w-2xl">
                     <h1 class="text-white text-5xl md:text-6xl font-black tracking-tight mb-6">
-                        Precision Engineering. <br />
-                        <span class="text-primary">Absolute Reliability.</span>
+                        <?php echo isset($customization['heroHeading']) && $customization['heroHeading'] ? htmlspecialchars($customization['heroHeading']) : 'Precision Engineering. <br /><span class="text-primary">Absolute Reliability.</span>'; ?>
                     </h1>
                     <p class="text-slate-300 text-lg mb-8 font-medium leading-relaxed">
-                        Experience clinical-grade automotive care. Our master technicians leverage advanced diagnostics
-                        to ensure your vehicle performs at its architectural peak.
+                        <?php echo isset($customization['heroSubtext']) && $customization['heroSubtext'] ? htmlspecialchars($customization['heroSubtext']) : 'Experience clinical-grade automotive care. Our master technicians leverage advanced diagnostics to ensure your vehicle performs at its architectural peak.'; ?>
                     </p>
                     <div class="flex flex-col sm:flex-row gap-4">
                         <a href="#about"
                             class="inline-flex items-center justify-center bg-primary text-white px-8 py-4 lg rounded-lg font-bold text-base shadow-lg shadow-primary/20 transition-all hover:translate-y-[-2px]">
-                            Explore Our Standards
+                            <?php echo isset($customization['ctaButtonText']) && $customization['ctaButtonText'] ? htmlspecialchars($customization['ctaButtonText']) : 'Explore Our Standards'; ?>
                         </a>
                         <a href="#services"
                             class="inline-flex items-center justify-center border border-white/20 bg-white/5 backdrop-blur-md text-white px-8 py-4 lg rounded-lg font-bold text-base hover:bg-white/10 transition-all">
