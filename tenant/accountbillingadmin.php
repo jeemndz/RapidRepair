@@ -14,11 +14,10 @@ $tenantID = (int) $_SESSION['tenantID'];
 enforceModuleAccess($tenantID, basename(__FILE__));
 
 $accessibleModules = getAccessibleModules($tenantID);
-$isStaffUser = isset($_SESSION['userType']) && $_SESSION['userType'] === 'staff';
 
 function canAccessModule($moduleFile, $accessibleModules)
 {
-    return in_array($moduleFile, $accessibleModules);
+    return in_array($moduleFile, $accessibleModules, true);
 }
 
 function h($value)
@@ -34,7 +33,7 @@ function format_currency($amount)
 $loggedInUserName = '';
 $loggedInUserRole = '';
 
-if ($_SESSION['userType'] === 'owner') {
+if (($_SESSION['userType'] ?? '') === 'owner') {
     $loggedInUserName = $_SESSION['shopName'] ?? 'Shop Owner';
     $loggedInUserRole = 'Administrator';
 } else {
@@ -58,7 +57,13 @@ if ($loginSlug === '') {
     exit;
 }
 
-$ownerStmt = mysqli_prepare($conn, "SELECT shopName, email, contactNumber FROM owners WHERE tenantID = ? AND login_slug = ? LIMIT 1");
+$ownerStmt = mysqli_prepare($conn, "
+    SELECT shopName, email, contactNumber 
+    FROM owners 
+    WHERE tenantID = ? AND login_slug = ? 
+    LIMIT 1
+");
+
 mysqli_stmt_bind_param($ownerStmt, 'is', $tenantID, $loginSlug);
 mysqli_stmt_execute($ownerStmt);
 $ownerResult = mysqli_stmt_get_result($ownerStmt);
@@ -79,37 +84,64 @@ $shopSlug = $loginSlug;
 $shopQuery = urlencode($loginSlug);
 
 $currentScript = basename($_SERVER['PHP_SELF']);
+
 if ($_SERVER['REQUEST_METHOD'] === 'GET' && (!isset($_GET['shop']) || trim((string) $_GET['shop']) !== $loginSlug)) {
     header('Location: ' . $currentScript . '?shop=' . $shopQuery);
     exit;
 }
 
+/*
+|--------------------------------------------------------------------------
+| Get latest subscription from subscriptions table
+|--------------------------------------------------------------------------
+| Do NOT read plan_id from owners because owners has no plan_id column.
+*/
 $ownerSubscription = null;
 
 $ownerSubStmt = mysqli_prepare(
     $conn,
-    "SELECT subscription_plan, billing_cycle, subscription_start, subscription_end, plan_price, next_billing_date, status
-     FROM owners 
-     WHERE tenantID = ? LIMIT 1"
+    "SELECT 
+        s.subscription_id,
+        s.tenantID,
+        s.plan_id,
+        s.billing_cycle,
+        s.start_date,
+        s.end_date,
+        s.next_billing_date,
+        s.amount,
+        s.status,
+        COALESCE(sp.plan_name, CONCAT('Plan #', s.plan_id)) AS subscription_plan
+     FROM subscriptions s
+     LEFT JOIN subscription_plans sp ON sp.plan_id = s.plan_id
+     WHERE s.tenantID = ?
+     ORDER BY s.subscription_id DESC
+     LIMIT 1"
 );
 
 if ($ownerSubStmt) {
-    mysqli_stmt_bind_param($ownerSubStmt, 'i', $tenantID);
+    $tenantIDString = (string) $tenantID;
+    mysqli_stmt_bind_param($ownerSubStmt, 's', $tenantIDString);
     mysqli_stmt_execute($ownerSubStmt);
     $ownerSubResult = mysqli_stmt_get_result($ownerSubStmt);
-    $ownerSubscription = mysqli_fetch_assoc($ownerSubResult);
+    $ownerSubscription = $ownerSubResult ? mysqli_fetch_assoc($ownerSubResult) : null;
     mysqli_stmt_close($ownerSubStmt);
 }
 
-$billingAmount = ($ownerSubscription && $ownerSubscription['plan_price'])
-    ? (int) round(((float) $ownerSubscription['plan_price']) * 100)
+$billingAmount = ($ownerSubscription && isset($ownerSubscription['amount']))
+    ? (int) round(((float) $ownerSubscription['amount']) * 100)
     : 0;
 
 $billingPlanName = $ownerSubscription
-    ? $ownerSubscription['subscription_plan'] . ' Subscription'
+    ? ($ownerSubscription['subscription_plan'] . ' Subscription')
     : 'RapidRepairCo. Subscription';
 
+/*
+|--------------------------------------------------------------------------
+| Payment methods
+|--------------------------------------------------------------------------
+*/
 $paymentMethods = [];
+
 $paymentStmt = mysqli_prepare(
     $conn,
     "SELECT * FROM payment_methods 
@@ -129,6 +161,11 @@ if ($paymentStmt) {
     mysqli_stmt_close($paymentStmt);
 }
 
+/*
+|--------------------------------------------------------------------------
+| Delete payment method
+|--------------------------------------------------------------------------
+*/
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_payment_method'])) {
     $pmId = (int) $_POST['payment_method_id'];
 
@@ -147,6 +184,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_payment_method
     exit;
 }
 
+/*
+|--------------------------------------------------------------------------
+| Set primary payment method
+|--------------------------------------------------------------------------
+*/
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['set_primary'])) {
     $pmId = (int) $_POST['payment_method_id'];
 
@@ -161,6 +203,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['set_primary'])) {
         $conn,
         "UPDATE payment_methods SET is_primary = TRUE WHERE payment_method_id = ? AND tenantID = ? LIMIT 1"
     );
+
     mysqli_stmt_bind_param($setPrimaryStmt, 'ii', $pmId, $tenantID);
     mysqli_stmt_execute($setPrimaryStmt);
     mysqli_stmt_close($setPrimaryStmt);
@@ -171,15 +214,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['set_primary'])) {
     exit;
 }
 
+/*
+|--------------------------------------------------------------------------
+| Payment history
+|--------------------------------------------------------------------------
+*/
 $invoices = [];
+
 $invoiceStmt = mysqli_prepare(
     $conn,
-    "SELECT payment_id as invoice_id, amount, payment_method, payment_status as status, 
-            transaction_reference as invoice_number, paid_at as invoice_date,
-            billing_period_start, billing_period_end
+    "SELECT 
+        payment_id AS invoice_id,
+        amount,
+        payment_provider,
+        payment_method,
+        payment_status AS status,
+        transaction_reference AS invoice_number,
+        paid_at AS invoice_date,
+        billing_period_start,
+        billing_period_end
      FROM subscription_payments 
      WHERE tenantID = ? 
-     ORDER BY paid_at DESC 
+     ORDER BY paid_at DESC, payment_id DESC 
      LIMIT 10"
 );
 
@@ -207,8 +263,7 @@ if ($invoiceStmt) {
     <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
 
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap" rel="stylesheet" />
-    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap"
-        rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet" />
 
     <style>
         body {
@@ -294,15 +349,13 @@ if ($invoiceStmt) {
 
                 <div class="pt-4 mt-4 border-t border-slate-100">
                     <div class="relative group">
-                        <button
-                            class="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-blue-50 text-blue-700 transition-colors w-full text-left settings-dropdown-btn">
+                        <button class="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-blue-50 text-blue-700 transition-colors w-full text-left settings-dropdown-btn">
                             <span class="material-symbols-outlined text-[22px]">settings</span>
                             <span>Settings</span>
                             <span class="material-symbols-outlined text-[16px] ml-auto">expand_more</span>
                         </button>
 
-                        <div
-                            class="absolute left-0 top-full mt-1 w-full bg-white border border-slate-200 rounded-lg shadow-lg hidden z-50 settings-dropdown">
+                        <div class="absolute left-0 top-full mt-1 w-full bg-white border border-slate-200 rounded-lg shadow-lg hidden z-50 settings-dropdown">
                             <?php if (canAccessModule('settingsadmin.php', $accessibleModules)): ?>
                                 <a class="flex items-center gap-3 px-3 py-2.5 rounded-t-lg text-slate-600 hover:bg-blue-50 transition-colors text-sm"
                                     href="settingsadmin.php?shop=<?php echo h($shopQuery); ?>">
@@ -326,8 +379,7 @@ if ($invoiceStmt) {
 
         <div class="mt-auto w-full p-4 border-t border-slate-200">
             <div class="flex items-center gap-3">
-                <div
-                    class="w-10 h-10 rounded-full bg-slate-200 flex items-center justify-center overflow-hidden shrink-0">
+                <div class="w-10 h-10 rounded-full bg-slate-200 flex items-center justify-center overflow-hidden shrink-0">
                     <span class="material-symbols-outlined text-slate-500">person</span>
                 </div>
 
@@ -349,8 +401,7 @@ if ($invoiceStmt) {
     </aside>
 
     <main class="ml-64 min-h-screen bg-slate-50">
-        <header
-            class="sticky top-0 z-40 w-full border-b border-slate-200 bg-white/90 backdrop-blur-md flex items-center justify-between px-8 h-16">
+        <header class="sticky top-0 z-40 w-full border-b border-slate-200 bg-white/90 backdrop-blur-md flex items-center justify-between px-8 h-16">
             <h2 class="text-lg font-black text-slate-900 tracking-tight">Account Billing</h2>
 
             <div class="flex items-center gap-4">
@@ -364,21 +415,17 @@ if ($invoiceStmt) {
         </header>
 
         <div class="px-8 pb-12 pt-8">
-
             <div class="mb-8">
                 <h2 class="text-3xl font-black tracking-tight">Subscription & Billing</h2>
                 <p class="text-slate-600 font-medium mt-1">Manage your professional shop plan and payment settings.</p>
             </div>
 
             <div class="grid grid-cols-12 gap-6">
-
-                <div
-                    class="col-span-12 lg:col-span-5 bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden flex flex-col">
+                <div class="col-span-12 lg:col-span-5 bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden flex flex-col">
                     <div class="p-6 bg-blue-700 text-white">
                         <div class="flex justify-between items-start">
                             <div>
-                                <span
-                                    class="bg-white/20 text-[10px] font-bold px-2 py-1 rounded-full uppercase tracking-widest">
+                                <span class="bg-white/20 text-[10px] font-bold px-2 py-1 rounded-full uppercase tracking-widest">
                                     <?php echo $ownerSubscription ? h(ucfirst($ownerSubscription['status'])) : 'No Plan'; ?>
                                 </span>
 
@@ -390,10 +437,10 @@ if ($invoiceStmt) {
                             <span class="material-symbols-outlined text-3xl opacity-50">verified</span>
                         </div>
 
-                        <?php if ($ownerSubscription && $ownerSubscription['plan_price']): ?>
+                        <?php if ($ownerSubscription && $ownerSubscription['amount']): ?>
                             <div class="mt-8">
                                 <span class="text-4xl font-black tracking-tighter">
-                                    <?php echo format_currency($ownerSubscription['plan_price']); ?>
+                                    <?php echo format_currency($ownerSubscription['amount']); ?>
                                 </span>
                                 <span class="text-white/70 text-sm font-medium">
                                     / <?php echo h($ownerSubscription['billing_cycle']); ?>
@@ -403,60 +450,42 @@ if ($invoiceStmt) {
                     </div>
 
                     <div class="p-6 flex-1 space-y-4">
-                        <?php if ($ownerSubscription && $ownerSubscription['subscription_start']): ?>
+                        <?php if ($ownerSubscription): ?>
 
                             <div class="flex justify-between items-center text-sm border-b border-slate-100 pb-3">
                                 <span class="text-slate-600">Plan Started</span>
                                 <span class="font-bold text-slate-900">
-                                    <?php echo date('M d, Y', strtotime($ownerSubscription['subscription_start'])); ?>
+                                    <?php echo !empty($ownerSubscription['start_date']) ? date('M d, Y', strtotime($ownerSubscription['start_date'])) : 'N/A'; ?>
                                 </span>
                             </div>
 
                             <div class="flex justify-between items-center text-sm border-b border-slate-100 pb-3">
                                 <span class="text-slate-600">Next Billing Date</span>
                                 <span class="font-bold text-slate-900">
-                                    <?php echo $ownerSubscription['next_billing_date'] ? date('M d, Y', strtotime($ownerSubscription['next_billing_date'])) : 'N/A'; ?>
+                                    <?php echo !empty($ownerSubscription['next_billing_date']) ? date('M d, Y', strtotime($ownerSubscription['next_billing_date'])) : 'N/A'; ?>
                                 </span>
                             </div>
 
-                            <?php if ($ownerSubscription['subscription_end']): ?>
-                                <div class="flex justify-between items-center text-sm">
-                                    <span class="text-slate-600">Plan Expires</span>
-                                    <span class="font-bold text-slate-900">
-                                        <?php echo date('M d, Y', strtotime($ownerSubscription['subscription_end'])); ?>
-                                    </span>
-                                </div>
-                            <?php endif; ?>
-
-                            <div class="mt-6 pt-4 flex gap-3">
-                                <button
-                                    class="flex-1 border border-blue-700 text-blue-700 font-bold text-sm py-2 rounded-lg hover:bg-blue-50 transition-colors">
-                                    Change Plan
-                                </button>
-
-                                <button
-                                    class="flex-1 bg-slate-900 text-white font-bold text-sm py-2 rounded-lg hover:bg-slate-800 transition-colors">
-                                    Cancel Plan
-                                </button>
+                            <div class="flex justify-between items-center text-sm">
+                                <span class="text-slate-600">Plan Expires</span>
+                                <span class="font-bold text-slate-900">
+                                    <?php echo !empty($ownerSubscription['end_date']) ? date('M d, Y', strtotime($ownerSubscription['end_date'])) : 'N/A'; ?>
+                                </span>
                             </div>
 
                             <?php if ($billingAmount > 0): ?>
-                                <form method="POST" action="../clientapplication/paymongo/create_checkout.php" class="mt-4">
-
+                                <form method="POST" action="../clientapplication/paymongo/create_checkout.php" class="mt-6 pt-4">
                                     <input type="hidden" name="payment_source" value="accountbillingadmin">
-
                                     <input type="hidden" name="tenant_id" value="<?php echo h($tenantID); ?>">
+                                    <input type="hidden" name="plan_id" value="<?php echo h($ownerSubscription['plan_id'] ?? 0); ?>">
+                                    <input type="hidden" name="billingCycle" value="<?php echo h($ownerSubscription['billing_cycle'] ?? 'monthly'); ?>">
                                     <input type="hidden" name="amount" value="<?php echo h($billingAmount); ?>">
                                     <input type="hidden" name="plan_name" value="<?php echo h($billingPlanName); ?>">
-
                                     <input type="hidden" name="name" value="<?php echo h($shopName); ?>">
-                                    <input type="hidden" name="email"
-                                        value="<?php echo h($owner['email'] ?? 'test@example.com'); ?>">
-                                    <input type="hidden" name="phone"
-                                        value="<?php echo h($owner['contactNumber'] ?? '09171234567'); ?>">
+                                    <input type="hidden" name="email" value="<?php echo h($owner['email'] ?? 'test@example.com'); ?>">
+                                    <input type="hidden" name="phone" value="<?php echo h($owner['contactNumber'] ?? '09171234567'); ?>">
 
-                                    <button type="submit"
-                                        class="w-full bg-blue-700 text-white font-bold text-sm py-3 rounded-lg hover:bg-blue-800 transition-colors flex items-center justify-center gap-2">
+                                    <button type="submit" class="w-full bg-blue-700 text-white font-bold text-sm py-3 rounded-lg hover:bg-blue-800 transition-colors flex items-center justify-center gap-2">
                                         <span class="material-symbols-outlined text-lg">payments</span>
                                         Pay Subscription with PayMongo
                                     </button>
@@ -464,16 +493,13 @@ if ($invoiceStmt) {
                             <?php endif; ?>
 
                         <?php else: ?>
-
                             <div class="text-sm text-slate-600 py-4">
                                 <p class="mb-4">No active subscription plan. Choose a plan to get started.</p>
 
-                                <button
-                                    class="w-full bg-blue-700 text-white font-bold text-sm py-2 rounded-lg hover:bg-blue-800 transition-colors">
+                                <button class="w-full bg-blue-700 text-white font-bold text-sm py-2 rounded-lg hover:bg-blue-800 transition-colors">
                                     Browse Plans
                                 </button>
                             </div>
-
                         <?php endif; ?>
                     </div>
                 </div>
@@ -493,8 +519,8 @@ if ($invoiceStmt) {
                             <div>
                                 <h4 class="font-bold text-slate-900">Secure PayMongo Checkout</h4>
                                 <p class="text-sm text-slate-600 mt-1">
-                                    Card, GCash, PayMaya, and GrabPay payments are processed by PayMongo. RapidRepairCo.
-                                    does not store raw card or wallet details.
+                                    Card, GCash, PayMaya, GrabPay, and QRPH payments are processed by PayMongo.
+                                    RapidRepairCo. does not store raw card or wallet details.
                                 </p>
                             </div>
                         </div>
@@ -503,11 +529,9 @@ if ($invoiceStmt) {
                     <div class="mt-6 space-y-4">
                         <?php if (!empty($paymentMethods)): ?>
                             <?php foreach ($paymentMethods as $pm): ?>
-                                <div
-                                    class="flex items-center justify-between p-4 border rounded-lg hover:bg-slate-50 transition-colors group <?php echo $pm['is_primary'] ? 'border-blue-100 bg-blue-50/30' : 'border-slate-100'; ?>">
+                                <div class="flex items-center justify-between p-4 border rounded-lg hover:bg-slate-50 transition-colors group <?php echo $pm['is_primary'] ? 'border-blue-100 bg-blue-50/30' : 'border-slate-100'; ?>">
                                     <div class="flex items-center gap-4">
-                                        <div
-                                            class="w-12 h-8 bg-slate-200 rounded flex items-center justify-center text-[11px] font-bold text-slate-600">
+                                        <div class="w-12 h-8 bg-slate-200 rounded flex items-center justify-center text-[11px] font-bold text-slate-600">
                                             <?php
                                             if ($pm['method_type'] === 'card') {
                                                 echo strtoupper(h(substr($pm['card_brand'], 0, 4)));
@@ -522,8 +546,7 @@ if ($invoiceStmt) {
                                         <div>
                                             <?php if ($pm['method_type'] === 'card'): ?>
                                                 <p class="text-sm font-bold text-slate-900">
-                                                    <?php echo h($pm['card_brand']); ?> ending in
-                                                    <?php echo h($pm['card_last_four']); ?>
+                                                    <?php echo h($pm['card_brand']); ?> ending in <?php echo h($pm['card_last_four']); ?>
                                                 </p>
                                             <?php elseif ($pm['method_type'] === 'wallet'): ?>
                                                 <p class="text-sm font-bold text-slate-900">
@@ -544,23 +567,19 @@ if ($invoiceStmt) {
                                     <div class="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                                         <?php if (!$pm['is_primary']): ?>
                                             <form method="post" class="inline">
-                                                <input type="hidden" name="payment_method_id"
-                                                    value="<?php echo (int) $pm['payment_method_id']; ?>">
+                                                <input type="hidden" name="payment_method_id" value="<?php echo (int) $pm['payment_method_id']; ?>">
                                                 <input type="hidden" name="set_primary" value="1">
-                                                <button type="submit"
-                                                    class="text-xs font-bold text-blue-700 px-2 py-1 rounded hover:bg-blue-100">
+                                                <button type="submit" class="text-xs font-bold text-blue-700 px-2 py-1 rounded hover:bg-blue-100">
                                                     Make Primary
                                                 </button>
                                             </form>
                                         <?php endif; ?>
 
                                         <form method="post" class="inline" onsubmit="return confirm('Are you sure?');">
-                                            <input type="hidden" name="payment_method_id"
-                                                value="<?php echo (int) $pm['payment_method_id']; ?>">
+                                            <input type="hidden" name="payment_method_id" value="<?php echo (int) $pm['payment_method_id']; ?>">
                                             <input type="hidden" name="delete_payment_method" value="1">
 
-                                            <button type="submit"
-                                                class="p-2 text-slate-600 hover:text-red-600 transition-colors">
+                                            <button type="submit" class="p-2 text-slate-600 hover:text-red-600 transition-colors">
                                                 <span class="material-symbols-outlined text-lg">delete</span>
                                             </button>
                                         </form>
@@ -573,14 +592,6 @@ if ($invoiceStmt) {
                                 <p class="text-xs">Use PayMongo checkout to complete subscription payments securely.</p>
                             </div>
                         <?php endif; ?>
-                    </div>
-
-                    <div class="mt-8 p-4 bg-slate-50 rounded-lg flex gap-4 items-center">
-                        <span class="material-symbols-outlined text-slate-400">security</span>
-                        <p class="text-xs text-slate-600 leading-relaxed">
-                            Your real payment information is handled by PayMongo. RapidRepairCo. only stores payment
-                            records and transaction references.
-                        </p>
                     </div>
                 </div>
 
@@ -596,9 +607,9 @@ if ($invoiceStmt) {
                                     <th class="px-6 py-4">Invoice ID</th>
                                     <th class="px-6 py-4">Date</th>
                                     <th class="px-6 py-4">Amount</th>
+                                    <th class="px-6 py-4">Provider</th>
                                     <th class="px-6 py-4">Method</th>
                                     <th class="px-6 py-4">Status</th>
-                                    <th class="px-6 py-4 text-right">Actions</th>
                                 </tr>
                             </thead>
 
@@ -607,7 +618,7 @@ if ($invoiceStmt) {
                                     <?php foreach ($invoices as $invoice): ?>
                                         <tr class="hover:bg-slate-50/50 transition-colors">
                                             <td class="px-6 py-4 font-mono font-medium text-xs text-blue-700">
-                                                <?php echo h($invoice['invoice_number'] ?? 'PAY-' . str_pad($invoice['invoice_id'], 6, '0', STR_PAD_LEFT)); ?>
+                                                <?php echo h($invoice['invoice_number'] ?: 'PAY-' . str_pad($invoice['invoice_id'], 6, '0', STR_PAD_LEFT)); ?>
                                             </td>
 
                                             <td class="px-6 py-4 text-slate-900">
@@ -616,6 +627,10 @@ if ($invoiceStmt) {
 
                                             <td class="px-6 py-4 font-bold text-slate-900">
                                                 <?php echo format_currency($invoice['amount']); ?>
+                                            </td>
+
+                                            <td class="px-6 py-4 text-xs text-slate-600">
+                                                <?php echo h($invoice['payment_provider'] ?? 'PayMongo'); ?>
                                             </td>
 
                                             <td class="px-6 py-4 text-xs text-slate-600">
@@ -637,12 +652,6 @@ if ($invoiceStmt) {
                                                     <?php echo ucfirst(h($invoice['status'])); ?>
                                                 </span>
                                             </td>
-
-                                            <td class="px-6 py-4 text-right">
-                                                <button class="text-blue-700 hover:text-blue-900 font-bold text-xs">
-                                                    View Invoice
-                                                </button>
-                                            </td>
                                         </tr>
                                     <?php endforeach; ?>
                                 <?php else: ?>
@@ -663,7 +672,7 @@ if ($invoiceStmt) {
 
     <script>
         document.querySelectorAll('.settings-dropdown-btn').forEach(button => {
-            button.addEventListener('click', function (e) {
+            button.addEventListener('click', function(e) {
                 e.preventDefault();
                 const dropdown = document.querySelector('.settings-dropdown');
                 if (dropdown) {
@@ -672,7 +681,7 @@ if ($invoiceStmt) {
             });
         });
 
-        document.addEventListener('click', function (e) {
+        document.addEventListener('click', function(e) {
             const dropdownBtn = document.querySelector('.settings-dropdown-btn');
             const dropdown = document.querySelector('.settings-dropdown');
 

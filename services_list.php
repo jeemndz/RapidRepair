@@ -10,8 +10,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     exit;
 }
 
-
-// Try to include db.php from the same folder or parent (robust for API use)
+// DB include
 if (file_exists(__DIR__ . '/../db.php')) {
     require_once __DIR__ . '/../db.php';
 } elseif (file_exists(__DIR__ . '/db.php')) {
@@ -28,8 +27,7 @@ if (!isset($conn) || !($conn instanceof mysqli)) {
     exit;
 }
 
-
-// Health check for root GET
+// Health check
 if ($_SERVER['REQUEST_METHOD'] === 'GET' && empty($_GET)) {
     echo json_encode(['status' => 'ok', 'message' => 'Service API is running.']);
     exit;
@@ -40,38 +38,76 @@ $includeAllOnEmpty = isset($_GET['includeAllOnEmpty']) && $_GET['includeAllOnEmp
 
 $services = [];
 
-if ($tenantID > 0) {
-    $sql = "SELECT service_id, tenantID, service_name, description, price, duration_minutes, category, status, created_at, updated_at FROM services WHERE tenantID = ? AND status = 'Active' ORDER BY service_name ASC";
-    $stmt = $conn->prepare($sql);
-    if (!$stmt) {
-        http_response_code(500);
-        echo json_encode(['status' => 'error', 'message' => 'Unable to prepare tenant query.']);
-        exit;
+function fetchServices($conn, $tenantID = null) {
+    $services = [];
+
+    if ($tenantID !== null) {
+        $sql = "SELECT 
+                    service_id,
+                    tenantID,
+                    parent_service_id,
+                    service_type,
+                    service_name,
+                    description,
+                    price,
+                    duration_minutes,
+                    category,
+                    status,
+                    created_at,
+                    updated_at
+                FROM services 
+                WHERE tenantID = ? AND status = 'Active'
+                ORDER BY service_type DESC, service_name ASC";
+
+        $stmt = $conn->prepare($sql);
+        if (!$stmt) return [];
+
+        $stmt->bind_param('i', $tenantID);
+    } else {
+        $sql = "SELECT 
+                    service_id,
+                    tenantID,
+                    parent_service_id,
+                    service_type,
+                    service_name,
+                    description,
+                    price,
+                    duration_minutes,
+                    category,
+                    status,
+                    created_at,
+                    updated_at
+                FROM services 
+                WHERE status = 'Active'
+                ORDER BY service_type DESC, service_name ASC";
+
+        $stmt = $conn->prepare($sql);
+        if (!$stmt) return [];
     }
-    $stmt->bind_param('i', $tenantID);
+
     $stmt->execute();
     $result = $stmt->get_result();
+
     while ($row = $result->fetch_assoc()) {
+        // Normalize values
+        $row['service_type'] = $row['service_type'] ?? 'Main';
+        $row['parent_service_id'] = $row['parent_service_id'] ?? null;
+
         $services[] = $row;
     }
+
     $stmt->close();
+    return $services;
 }
 
+// Fetch by tenant
+if ($tenantID > 0) {
+    $services = fetchServices($conn, $tenantID);
+}
+
+// Fallback
 if (($tenantID <= 0 || empty($services)) && $includeAllOnEmpty) {
-    $sql = "SELECT service_id, tenantID, service_name, description, price, duration_minutes, category, status, created_at, updated_at FROM services WHERE status = 'Active' ORDER BY service_name ASC";
-    $stmt = $conn->prepare($sql);
-    if (!$stmt) {
-        http_response_code(500);
-        echo json_encode(['status' => 'error', 'message' => 'Unable to prepare fallback query.']);
-        exit;
-    }
-    $stmt->execute();
-    $result = $stmt->get_result();
-    $services = [];
-    while ($row = $result->fetch_assoc()) {
-        $services[] = $row;
-    }
-    $stmt->close();
+    $services = fetchServices($conn, null);
 }
 
 $conn->close();
