@@ -36,64 +36,67 @@ function sendResponse($statusCode, $data)
 
     http_response_code($statusCode);
 
-    $json = json_encode($data, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
-    if ($json === false) {
-        http_response_code(500);
-        echo json_encode([
-            'status' => 'error',
-            'message' => 'JSON encoding failed: ' . json_last_error_msg()
-        ]);
-    } else {
-        echo $json;
-    }
+    echo json_encode($data, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
     exit;
 }
 
 function normalizeId($value, $fallback = 0)
 {
-    $num = (int) $value;
-    return ($num > 0) ? $num : $fallback;
+    $num = (int)$value;
+    return $num > 0 ? $num : $fallback;
 }
 
 function normalizeMoney($value, $fallback = 0)
 {
-    $num = (float) $value;
-    return ($num >= 0) ? round($num, 2) : $fallback;
+    $num = (float)$value;
+    return $num >= 0 ? round($num, 2) : $fallback;
 }
 
 function normalizeMethod($value)
 {
     $valid = ['Cash', 'GCash', 'Card', 'Bank Transfer'];
-    $value = trim((string) $value);
+    $value = trim((string)$value);
     return in_array($value, $valid, true) ? $value : 'GCash';
 }
 
 function sanitizeString($str)
 {
-    return trim(strip_tags((string) ($str ?? '')));
+    return trim(strip_tags((string)($str ?? '')));
 }
 
 function normalizePayment($row)
 {
     return [
-        'payment_id' => (int) ($row['payment_id'] ?? 0),
-        'tenantID' => (int) ($row['tenantID'] ?? 0),
-        'user_id' => (int) ($row['user_id'] ?? 0),
-        'appointment_id' => (int) ($row['appointment_id'] ?? 0),
-        'paymentAmount' => (float) ($row['paymentAmount'] ?? 0),
-        'amountPaid' => (float) ($row['amountPaid'] ?? 0),
-        'balance' => (float) ($row['balance'] ?? 0),
-        'paymentMethod' => (string) ($row['paymentMethod'] ?? 'Cash'),
+        'payment_id' => (int)($row['payment_id'] ?? 0),
+        'tenantID' => (int)($row['tenantID'] ?? 0),
+        'user_id' => (int)($row['user_id'] ?? 0),
+        'appointment_id' => (int)($row['appointment_id'] ?? 0),
+
+        'paymentAmount' => (float)($row['paymentAmount'] ?? 0),
+        'amountPaid' => (float)($row['amountPaid'] ?? 0),
+        'balance' => (float)($row['balance'] ?? 0),
+
+        'grand_total' => (float)($row['grand_total'] ?? 0),
+        'labor_total' => (float)($row['labor_total'] ?? 0),
+        'parts_total' => (float)($row['parts_total'] ?? 0),
+
+        'paymentMethod' => (string)($row['paymentMethod'] ?? 'Cash'),
         'paymentDate' => $row['paymentDate'] ?? null,
-        'paymentStatus' => (string) ($row['paymentStatus'] ?? 'Pending'),
+        'paymentStatus' => (string)($row['paymentStatus'] ?? 'Pending'),
         'referenceNumber' => $row['referenceNumber'] ?? null,
         'gcashReferenceNumber' => $row['gcashReferenceNumber'] ?? null,
+
         'remarks' => $row['remarks'] ?? null,
-        'created_at' => (string) ($row['created_at'] ?? ''),
-        'updated_at' => (string) ($row['updated_at'] ?? ''),
+
+        'created_at' => (string)($row['created_at'] ?? ''),
+        'updated_at' => (string)($row['updated_at'] ?? ''),
+
         'appointment_date' => $row['appointment_date'] ?? '',
         'appointment_time' => $row['appointment_time'] ?? '',
         'appointment_status' => (string)($row['appointment_status'] ?? ''),
+
+        'repair_job_id' => (int)($row['repair_job_id'] ?? 0),
+        'job_order_no' => $row['job_order_no'] ?? null,
         'job_status' => (string)($row['job_status'] ?? 'Pending'),
     ];
 }
@@ -126,6 +129,7 @@ if (!is_array($jsonInput)) {
 }
 
 $action = '';
+
 if (!empty($jsonInput['action'])) {
     $action = sanitizeString($jsonInput['action']);
 } elseif (!empty($_POST['action'])) {
@@ -133,6 +137,7 @@ if (!empty($jsonInput['action'])) {
 } elseif (!empty($_GET['action'])) {
     $action = sanitizeString($_GET['action']);
 }
+
 $action = strtolower($action);
 
 if ($action === '') {
@@ -180,6 +185,7 @@ function handleList($conn, $jsonInput = [])
     $data = !empty($jsonInput) ? $jsonInput : array_merge($_GET, $_POST);
 
     $tenantID = normalizeId($data['tenantID'] ?? 0);
+
     if ($tenantID <= 0) {
         sendResponse(400, [
             'status' => 'error',
@@ -187,72 +193,49 @@ function handleList($conn, $jsonInput = [])
         ]);
     }
 
-    // Auto-populate repair_jobs for appointments without them
-    $appointmentQuery = "
-        SELECT DISTINCT p.appointment_id, a.tenantID, a.user_id, a.vehicle_id
-        FROM payments p
-        LEFT JOIN appointments a ON p.appointment_id = a.appointment_id
-        WHERE p.tenantID = ?
-        AND NOT EXISTS (
-            SELECT 1 FROM repair_jobs rj WHERE rj.appointment_id = p.appointment_id
-        )
-    ";
-    
-    $stmt = $conn->prepare($appointmentQuery);
-    if ($stmt) {
-        $stmt->bind_param('i', $tenantID);
-        $stmt->execute();
-        $result = $stmt->get_result();
-        
-        while ($row = $result->fetch_assoc()) {
-            $appointmentId = $row['appointment_id'];
-            $appointTenantID = $row['tenantID'] ?? $tenantID;
-            $userId = $row['user_id'] ?? 0;
-            $vehicleId = $row['vehicle_id'] ?? 0;
-            
-            $createStmt = $conn->prepare("
-                INSERT INTO repair_jobs (appointment_id, tenantID, user_id, vehicle_id, job_status, priority, created_at, updated_at)
-                VALUES (?, ?, ?, ?, 'Queued', 'Normal', NOW(), NOW())
-                ON DUPLICATE KEY UPDATE updated_at = NOW()
-            ");
-            
-            if ($createStmt) {
-                $createStmt->bind_param('iiii', $appointmentId, $appointTenantID, $userId, $vehicleId);
-                $createStmt->execute();
-                $createStmt->close();
-            }
-        }
-        $stmt->close();
-    }
-
     $user_id = normalizeId($data['user_id'] ?? 0);
-    $limit = min(max((int) ($data['limit'] ?? 50), 1), 100);
-    $offset = max((int) ($data['offset'] ?? 0), 0);
+    $limit = min(max((int)($data['limit'] ?? 50), 1), 100);
+    $offset = max((int)($data['offset'] ?? 0), 0);
     $paymentStatus = sanitizeString($data['paymentStatus'] ?? '');
 
-    $query = "SELECT 
-    p.payment_id,
-    p.tenantID,
-    p.user_id,
-    p.appointment_id,
-    p.paymentAmount,
-    p.amountPaid,
-    p.balance,
-    p.paymentMethod,
-    p.paymentDate,
-    p.paymentStatus,
-    p.referenceNumber,
-    p.gcashReferenceNumber,
-    p.remarks,
-    p.created_at,
-    p.updated_at,
-    a.appointment_date,
-    a.appointment_time,
-    a.status AS appointment_status,
-    COALESCE((SELECT job_status FROM repair_jobs WHERE appointment_id = p.appointment_id ORDER BY created_at DESC LIMIT 1), 'Pending') as job_status
-FROM payments p
-LEFT JOIN appointments a ON p.appointment_id = a.appointment_id
-WHERE p.tenantID = ?";
+    $query = "
+        SELECT 
+            p.payment_id,
+            p.tenantID,
+            p.user_id,
+            p.appointment_id,
+            p.paymentAmount,
+            p.amountPaid,
+            p.balance,
+            p.paymentMethod,
+            p.paymentDate,
+            p.paymentStatus,
+            p.referenceNumber,
+            p.gcashReferenceNumber,
+            p.remarks,
+            p.created_at,
+            p.updated_at,
+
+            a.appointment_date,
+            a.appointment_time,
+            a.status AS appointment_status,
+
+            rj.repair_job_id,
+            rj.job_order_no,
+            rj.job_status,
+            rj.labor_total,
+            rj.parts_total,
+            rj.grand_total
+
+        FROM payments p
+        LEFT JOIN appointments a 
+            ON a.appointment_id = p.appointment_id
+        LEFT JOIN repair_jobs rj
+            ON rj.appointment_id = p.appointment_id
+            AND rj.tenantID = p.tenantID
+            AND rj.user_id = p.user_id
+        WHERE p.tenantID = ?
+    ";
 
     $types = 'i';
     $params = [$tenantID];
@@ -269,12 +252,19 @@ WHERE p.tenantID = ?";
         $params[] = $paymentStatus;
     }
 
-    $query .= " ORDER BY p.paymentDate DESC, p.created_at DESC LIMIT ? OFFSET ?";
+    $query .= "
+        ORDER BY 
+            COALESCE(p.paymentDate, p.created_at) DESC,
+            p.payment_id DESC
+        LIMIT ? OFFSET ?
+    ";
+
     $types .= 'ii';
     $params[] = $limit;
     $params[] = $offset;
 
     $stmt = $conn->prepare($query);
+
     if (!$stmt) {
         sendResponse(500, [
             'status' => 'error',
@@ -320,7 +310,6 @@ function handlePay($conn, $jsonInput = [])
     $amountPaid = normalizeMoney($data['amountPaid'] ?? 0);
     $paymentMethod = normalizeMethod($data['paymentMethod'] ?? 'GCash');
     $gcashReferenceNumber = sanitizeString($data['gcashReferenceNumber'] ?? '');
-    $remarks = sanitizeString($data['remarks'] ?? '');
 
     if ($payment_id <= 0) {
         sendResponse(400, ['status' => 'error', 'message' => 'Invalid payment_id']);
@@ -339,11 +328,20 @@ function handlePay($conn, $jsonInput = [])
     }
 
     $stmt = $conn->prepare("
-        SELECT payment_id, tenantID, user_id, paymentAmount, amountPaid, paymentStatus
+        SELECT 
+            payment_id,
+            tenantID,
+            user_id,
+            paymentAmount,
+            amountPaid,
+            paymentStatus
         FROM payments
-        WHERE payment_id = ? AND tenantID = ? AND user_id = ?
+        WHERE payment_id = ?
+        AND tenantID = ?
+        AND user_id = ?
         LIMIT 1
     ");
+
     if (!$stmt) {
         sendResponse(500, [
             'status' => 'error',
@@ -365,15 +363,18 @@ function handlePay($conn, $jsonInput = [])
         ]);
     }
 
-    if (($payment['paymentStatus'] ?? '') === 'Paid') {
+    if (strtolower((string)$payment['paymentStatus']) === 'paid') {
         sendResponse(400, [
             'status' => 'error',
             'message' => 'This payment is already fully paid'
         ]);
     }
 
-    $paymentAmount = round((float) $payment['paymentAmount'], 2);
-    $newAmountPaid = round((float) $amountPaid, 2);
+    $paymentAmount = round((float)$payment['paymentAmount'], 2);
+    $previousAmountPaid = round((float)$payment['amountPaid'], 2);
+    $paymentThisTime = round((float)$amountPaid, 2);
+
+    $newAmountPaid = round($previousAmountPaid + $paymentThisTime, 2);
 
     if ($newAmountPaid > $paymentAmount) {
         $newAmountPaid = $paymentAmount;
@@ -387,23 +388,24 @@ function handlePay($conn, $jsonInput = [])
         $status = 'Partial';
     } else {
         $status = 'Paid';
-        $balance = 0;
+        $balance = 0.00;
     }
 
-    $query = "
+    $stmt = $conn->prepare("
         UPDATE payments
-        SET amountPaid = ?,
+        SET 
+            amountPaid = ?,
             balance = ?,
             paymentStatus = ?,
             paymentMethod = ?,
             gcashReferenceNumber = ?,
-            remarks = ?,
             paymentDate = NOW(),
             updated_at = NOW()
-        WHERE payment_id = ? AND tenantID = ? AND user_id = ?
-    ";
+        WHERE payment_id = ?
+        AND tenantID = ?
+        AND user_id = ?
+    ");
 
-    $stmt = $conn->prepare($query);
     if (!$stmt) {
         sendResponse(500, [
             'status' => 'error',
@@ -413,13 +415,12 @@ function handlePay($conn, $jsonInput = [])
     }
 
     $stmt->bind_param(
-        'ddssssiii',
+        'ddsssiii',
         $newAmountPaid,
         $balance,
         $status,
         $paymentMethod,
         $gcashReferenceNumber,
-        $remarks,
         $payment_id,
         $tenantID,
         $user_id
@@ -440,6 +441,7 @@ function handlePay($conn, $jsonInput = [])
         'message' => 'Payment recorded successfully',
         'data' => [
             'payment_id' => $payment_id,
+            'paymentAmount' => $paymentAmount,
             'amountPaid' => $newAmountPaid,
             'balance' => $balance,
             'paymentStatus' => $status,
