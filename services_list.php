@@ -10,7 +10,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     exit;
 }
 
-// DB include
 if (file_exists(__DIR__ . '/../db.php')) {
     require_once __DIR__ . '/../db.php';
 } elseif (file_exists(__DIR__ . '/db.php')) {
@@ -27,87 +26,126 @@ if (!isset($conn) || !($conn instanceof mysqli)) {
     exit;
 }
 
-// Health check
 if ($_SERVER['REQUEST_METHOD'] === 'GET' && empty($_GET)) {
-    echo json_encode(['status' => 'ok', 'message' => 'Service API is running.']);
+    echo json_encode([
+        'status' => 'ok',
+        'message' => 'Service API is running.',
+        'usage' => 'Add ?tenantID=1 to fetch services.'
+    ]);
     exit;
 }
 
 $tenantID = isset($_GET['tenantID']) && is_numeric($_GET['tenantID']) ? (int) $_GET['tenantID'] : 0;
-$includeAllOnEmpty = isset($_GET['includeAllOnEmpty']) && $_GET['includeAllOnEmpty'] == '1';
+$includeAllOnEmpty = isset($_GET['includeAllOnEmpty']) && $_GET['includeAllOnEmpty'] === '1';
 
-$services = [];
-
-function fetchServices($conn, $tenantID = null) {
+function getServices(mysqli $conn, ?int $tenantID = null): array
+{
     $services = [];
 
-    if ($tenantID !== null) {
-        $sql = "SELECT 
-                    service_id,
-                    tenantID,
-                    parent_service_id,
-                    service_type,
-                    service_name,
-                    description,
-                    price,
-                    duration_minutes,
-                    category,
-                    status,
-                    created_at,
-                    updated_at
-                FROM services 
-                WHERE tenantID = ? AND status = 'Active'
-                ORDER BY service_type DESC, service_name ASC";
+    if ($tenantID !== null && $tenantID > 0) {
+        $sql = "
+            SELECT
+                service_id,
+                tenantID,
+                parent_service_id,
+                service_type,
+                service_name,
+                description,
+                price,
+                duration_minutes,
+                category,
+                status,
+                created_at,
+                updated_at
+            FROM services
+            WHERE tenantID = ?
+              AND status = 'Active'
+            ORDER BY
+                CASE service_type
+                    WHEN 'Main' THEN 1
+                    WHEN 'Sub' THEN 2
+                    ELSE 3
+                END,
+                parent_service_id ASC,
+                service_name ASC
+        ";
 
         $stmt = $conn->prepare($sql);
-        if (!$stmt) return [];
+
+        if (!$stmt) {
+            return [];
+        }
 
         $stmt->bind_param('i', $tenantID);
     } else {
-        $sql = "SELECT 
-                    service_id,
-                    tenantID,
-                    parent_service_id,
-                    service_type,
-                    service_name,
-                    description,
-                    price,
-                    duration_minutes,
-                    category,
-                    status,
-                    created_at,
-                    updated_at
-                FROM services 
-                WHERE status = 'Active'
-                ORDER BY service_type DESC, service_name ASC";
+        $sql = "
+            SELECT
+                service_id,
+                tenantID,
+                parent_service_id,
+                service_type,
+                service_name,
+                description,
+                price,
+                duration_minutes,
+                category,
+                status,
+                created_at,
+                updated_at
+            FROM services
+            WHERE status = 'Active'
+            ORDER BY
+                tenantID ASC,
+                CASE service_type
+                    WHEN 'Main' THEN 1
+                    WHEN 'Sub' THEN 2
+                    ELSE 3
+                END,
+                parent_service_id ASC,
+                service_name ASC
+        ";
 
         $stmt = $conn->prepare($sql);
-        if (!$stmt) return [];
+
+        if (!$stmt) {
+            return [];
+        }
     }
 
     $stmt->execute();
     $result = $stmt->get_result();
 
     while ($row = $result->fetch_assoc()) {
-        // Normalize values
-        $row['service_type'] = $row['service_type'] ?? 'Main';
-        $row['parent_service_id'] = $row['parent_service_id'] ?? null;
+        $row['service_id'] = (int) $row['service_id'];
+        $row['tenantID'] = (int) $row['tenantID'];
+        $row['parent_service_id'] = $row['parent_service_id'] !== null ? (int) $row['parent_service_id'] : null;
+        $row['service_type'] = $row['service_type'] ?: 'Main';
+        $row['service_name'] = $row['service_name'] ?: 'Unnamed Service';
+        $row['description'] = $row['description'] ?: '';
+        $row['price'] = (float) $row['price'];
+        $row['duration_minutes'] = $row['duration_minutes'] !== null ? (int) $row['duration_minutes'] : 0;
+        $row['category'] = $row['category'] ?: 'Other';
+        $row['status'] = $row['status'] ?: 'Active';
 
         $services[] = $row;
     }
 
     $stmt->close();
+
     return $services;
 }
 
-// Fetch by tenant
+$services = [];
+
 if ($tenantID > 0) {
-    $services = fetchServices($conn, $tenantID);
+    $services = getServices($conn, $tenantID);
 }
 
-// Fallback
+$fallbackUsed = false;
+
 if (($tenantID <= 0 || empty($services)) && $includeAllOnEmpty) {
-    $services = fetchServices($conn, null);
+    $services = getServices($conn, null);
+    $fallbackUsed = true;
 }
 
 $conn->close();
@@ -115,6 +153,7 @@ $conn->close();
 echo json_encode([
     'status' => 'success',
     'tenantID' => $tenantID,
-    'fallbackUsed' => ($includeAllOnEmpty && !empty($services)),
-    'services' => $services,
+    'fallbackUsed' => $fallbackUsed,
+    'count' => count($services),
+    'services' => $services
 ]);
