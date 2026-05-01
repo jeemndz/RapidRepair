@@ -25,30 +25,19 @@ $conn->begin_transaction();
 
 try {
 
-    // ✅ 1. CHECK IF PAYMENT ALREADY EXISTS
+    // ✅ 1. GET JOB + APPOINTMENT + GRAND TOTAL
     $stmt = $conn->prepare("
-        SELECT payment_id 
-        FROM payments 
-        WHERE appointment_id = (
-            SELECT appointment_id FROM repair_jobs WHERE repair_job_id = ?
-        ) LIMIT 1
+        SELECT 
+            repair_job_id,
+            appointment_id,
+            grand_total
+        FROM repair_jobs
+        WHERE repair_job_id = ?
+        AND tenantID = ?
+        AND user_id = ?
+        LIMIT 1
     ");
-    $stmt->bind_param('i', $repair_job_id);
-    $stmt->execute();
-    $exists = $stmt->get_result()->fetch_assoc();
-    $stmt->close();
-
-    if ($exists) {
-        throw new Exception('Payment already exists for this job');
-    }
-
-    // ✅ 2. GET JOB + APPOINTMENT
-    $stmt = $conn->prepare("
-        SELECT rj.appointment_id
-        FROM repair_jobs rj
-        WHERE rj.repair_job_id = ? AND rj.tenantID = ?
-    ");
-    $stmt->bind_param('ii', $repair_job_id, $tenantID);
+    $stmt->bind_param('iii', $repair_job_id, $tenantID, $user_id);
     $stmt->execute();
     $job = $stmt->get_result()->fetch_assoc();
     $stmt->close();
@@ -57,38 +46,66 @@ try {
         throw new Exception('Repair job not found');
     }
 
-    $appointment_id = $job['appointment_id'];
+    $appointment_id = (int)$job['appointment_id'];
+    $total = round((float)$job['grand_total'], 2);
 
-    // ✅ 3. GET SERVICES TOTAL
+    if ($total <= 0) {
+        throw new Exception('Invalid grand total amount');
+    }
+
+    // ✅ 2. CHECK IF PAYMENT ALREADY EXISTS
+    $stmt = $conn->prepare("
+        SELECT payment_id
+        FROM payments
+        WHERE appointment_id = ?
+        AND tenantID = ?
+        AND user_id = ?
+        LIMIT 1
+    ");
+    $stmt->bind_param('iii', $appointment_id, $tenantID, $user_id);
+    $stmt->execute();
+    $exists = $stmt->get_result()->fetch_assoc();
+    $stmt->close();
+
+    if ($exists) {
+        throw new Exception('Payment already exists for this job');
+    }
+
+    // ✅ 3. GET SERVICES FOR MOBILE INVOICE DISPLAY
     $stmt = $conn->prepare("
         SELECT 
-            service_id,
-            service_price,
-            estimated_duration_minutes
-        FROM repair_job_services
-        WHERE repair_job_id = ?
+            rjs.service_id,
+            COALESCE(s.service_name, CONCAT('Service #', rjs.service_id)) AS service_name,
+            rjs.service_price,
+            rjs.estimated_duration_minutes
+        FROM repair_job_services rjs
+        LEFT JOIN services s 
+            ON s.service_id = rjs.service_id
+            AND s.tenantID = rjs.tenantID
+        WHERE rjs.repair_job_id = ?
+        AND rjs.tenantID = ?
     ");
-    $stmt->bind_param('i', $repair_job_id);
+    $stmt->bind_param('ii', $repair_job_id, $tenantID);
     $stmt->execute();
     $result = $stmt->get_result();
 
     $services = [];
-    $total = 0;
 
     while ($row = $result->fetch_assoc()) {
-        $services[] = $row;
-        $total += (float)$row['service_price'];
+        $services[] = [
+            'service_id' => (int)$row['service_id'],
+            'service_name' => $row['service_name'],
+            'service_price' => (float)$row['service_price'],
+            'estimated_duration_minutes' => (int)$row['estimated_duration_minutes'],
+        ];
     }
+
     $stmt->close();
 
-    if ($total <= 0) {
-        throw new Exception('Invalid total amount');
-    }
-
     // ✅ 4. GENERATE REFERENCE
-    $referenceNumber = 'INV-' . time();
+    $referenceNumber = 'INV-' . date('YmdHis') . '-' . $repair_job_id;
 
-    // ✅ 5. INSERT PAYMENT
+    // ✅ 5. INSERT PAYMENT USING repair_jobs.grand_total
     $stmt = $conn->prepare("
         INSERT INTO payments (
             tenantID,
@@ -100,47 +117,46 @@ try {
             paymentMethod,
             paymentStatus,
             referenceNumber,
+            remarks,
             created_at,
             updated_at
         )
-        VALUES (?, ?, ?, ?, 0, ?, 'Pending', ?, NOW(), NOW())
+        VALUES (?, ?, ?, ?, 0.00, ?, 'Cash', 'Pending', ?, ?, NOW(), NOW())
     ");
 
+    $servicesJson = json_encode($services, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
     $stmt->bind_param(
-        'iiidds',
+        'iiiddss',
         $tenantID,
         $user_id,
         $appointment_id,
         $total,
         $total,
-        $referenceNumber
+        $referenceNumber,
+        $servicesJson
     );
 
-    $stmt->execute();
+    if (!$stmt->execute()) {
+        throw new Exception('Failed to create payment: ' . $stmt->error);
+    }
+
     $payment_id = $conn->insert_id;
-    $stmt->close();
-
-    // ✅ 6. SAVE SERVICES INTO JSON (for mobile display)
-    $stmt = $conn->prepare("
-        UPDATE payments 
-        SET remarks = ?
-        WHERE payment_id = ?
-    ");
-
-    $servicesJson = json_encode($services);
-    $stmt->bind_param('si', $servicesJson, $payment_id);
-    $stmt->execute();
     $stmt->close();
 
     $conn->commit();
 
     respond('success', 'Payment created', [
         'payment_id' => $payment_id,
+        'appointment_id' => $appointment_id,
         'amount' => $total,
-        'reference' => $referenceNumber
+        'balance' => $total,
+        'reference' => $referenceNumber,
+        'services' => $services
     ]);
 
 } catch (Exception $e) {
     $conn->rollback();
     respond('error', $e->getMessage());
 }
+?>

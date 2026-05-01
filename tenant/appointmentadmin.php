@@ -1775,8 +1775,7 @@ if ($historyStmt) {
                                                     'history_range' => $historyRange,
                                                     'history_search' => $historySearch,
                                                     'review' => (int) $row['appointment_id'],
-                                                ], static fn ($value) => $value !== ''))); ?>" class="inline-flex items-center gap-1 px-3 py-1.5 bg-slate-800 text-white rounded text-xs font-semibold hover:bg-slate-900">
-                                                onclick="new Image().src='appointmentadmin.php?shop=<?php echo h($shopQuery); ?>&audit_action=open_review_modal&audit_only=1&appointment_id=<?php echo (int) $row['appointment_id']; ?>';" class="inline-flex items-center gap-1 px-3 py-1.5 bg-slate-800 text-white rounded text-xs font-semibold hover:bg-slate-900">
+                                                ], static fn ($value) => $value !== ''))); ?>" onclick="new Image().src='appointmentadmin.php?shop=<?php echo h($shopQuery); ?>&audit_action=open_review_modal&audit_only=1&appointment_id=<?php echo (int) $row['appointment_id']; ?>';" class="inline-flex items-center gap-1 px-3 py-1.5 bg-slate-800 text-white rounded text-xs font-semibold hover:bg-slate-900">
                                                     <span class="material-symbols-outlined text-sm">rate_review</span>
                                                     Review
                                                 </a>

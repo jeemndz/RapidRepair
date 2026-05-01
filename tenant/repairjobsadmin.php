@@ -222,7 +222,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_job_status']))
                  INNER JOIN repair_jobs rj ON rj.appointment_id = a.appointment_id AND rj.tenantID = a.tenantID
                  SET a.status = "Diagnosing", a.updated_at = NOW()
                  WHERE rj.repair_job_id = ? AND rj.tenantID = ?
-                 LIMIT 1'
+                  '
             );
             if ($apptStmt) {
                 mysqli_stmt_bind_param($apptStmt, 'ii', $repairJobId, $tenantID);
