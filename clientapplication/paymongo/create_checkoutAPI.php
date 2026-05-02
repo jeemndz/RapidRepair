@@ -17,8 +17,7 @@
  *   "customer_phone": "09171234567"
  * }
  */
-
-include __DIR__ . "/../db.php";
+include __DIR__ . "/../../db.php";
 
 header("Content-Type: application/json");
 header("Access-Control-Allow-Origin: *");
