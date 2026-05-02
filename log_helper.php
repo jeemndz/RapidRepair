@@ -101,6 +101,7 @@ function log_event(mysqli $conn, string $action, ?string $entity_type = null, ?i
     $user_id_session   = null;
     $user_name_session = null;
     $user_role_session = null;
+    $session_user_type  = isset($_SESSION['userType']) ? strtolower(trim((string) $_SESSION['userType'])) : '';
 
     // Check if this is a superadmin session
     if (isset($_SESSION['superadmin_id'])) {
@@ -124,10 +125,24 @@ function log_event(mysqli $conn, string $action, ?string $entity_type = null, ?i
             $user_name_session = 'Superadmin';
         }
     } else {
-        // Regular user session
-        $user_id_session   = isset($_SESSION['user_id']) ? (int)$_SESSION['user_id'] : null;
-        $user_name_session = $_SESSION['name'] ?? ($_SESSION['username'] ?? null);
-        $user_role_session = $_SESSION['role'] ?? null;
+        // Tenant owner/staff sessions use different keys than the public user login.
+        if ($session_user_type === 'owner') {
+            $user_id_session = isset($_SESSION['userId']) ? (int) $_SESSION['userId'] : (isset($_SESSION['user_id']) ? (int) $_SESSION['user_id'] : null);
+            $user_name_session = $_SESSION['shopName'] ?? ($_SESSION['name'] ?? ($_SESSION['username'] ?? null));
+            $user_role_session = 'owner';
+        } elseif ($session_user_type === 'staff') {
+            $user_id_session = isset($_SESSION['userId']) ? (int) $_SESSION['userId'] : (isset($_SESSION['user_id']) ? (int) $_SESSION['user_id'] : null);
+            $firstName = isset($_SESSION['firstName']) ? trim((string) $_SESSION['firstName']) : '';
+            $lastName = isset($_SESSION['lastName']) ? trim((string) $_SESSION['lastName']) : '';
+            $fullName = trim($firstName . ' ' . $lastName);
+            $user_name_session = $fullName !== '' ? $fullName : ($_SESSION['username'] ?? ($_SESSION['name'] ?? null));
+            $user_role_session = $_SESSION['userRole'] ?? ($_SESSION['role'] ?? 'staff');
+        } else {
+            // Regular user session
+            $user_id_session   = isset($_SESSION['user_id']) ? (int)$_SESSION['user_id'] : null;
+            $user_name_session = $_SESSION['name'] ?? ($_SESSION['username'] ?? null);
+            $user_role_session = $_SESSION['role'] ?? null;
+        }
     }
 
     $user_id   = $user_id_session;
@@ -155,6 +170,23 @@ function log_event(mysqli $conn, string $action, ?string $entity_type = null, ?i
                 }
             }
             $q->close();
+        }
+    }
+
+    // Tenant owner fallback: owner sessions often do not have a matching row in users.
+    if (($user_name === null || trim((string) $user_name) === '') && $session_user_type === 'owner' && isset($_SESSION['tenantID'])) {
+        $ownerStmt = $conn->prepare("SELECT shopName FROM owners WHERE tenantID = ? LIMIT 1");
+        if ($ownerStmt) {
+            $tenantCandidate = (int) $_SESSION['tenantID'];
+            $ownerStmt->bind_param('i', $tenantCandidate);
+            if ($ownerStmt->execute()) {
+                $ownerResult = $ownerStmt->get_result();
+                if ($ownerResult && $ownerResult->num_rows > 0) {
+                    $ownerRow = $ownerResult->fetch_assoc();
+                    $user_name = $ownerRow['shopName'] ?? $user_name;
+                }
+            }
+            $ownerStmt->close();
         }
     }
 

@@ -666,7 +666,7 @@ if ($repairTableStmt) {
                     <div class="bg-white dark:bg-slate-900 p-6 rounded-xl border border-slate-200 dark:border-slate-800 flex flex-col">
                         <div class="flex items-center justify-between mb-6">
                             <h3 class="text-lg font-bold">Recent Activity</h3>
-                            <a href="reportsadmin.php?shop=<?php echo $shopQuery; ?>" class="text-xs text-primary font-semibold hover:underline">View All</a>
+                            <a href="tenantslogs.php?shop=<?php echo $shopQuery; ?>" class="text-xs text-primary font-semibold hover:underline">View All</a>
                         </div>
                         <div class="space-y-6 flex-1">
                             <?php if (!empty($recentActivities)): ?>

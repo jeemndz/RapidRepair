@@ -899,6 +899,7 @@ $appointmentsSql = "
         a.status,
         a.notes,
         a.total_amount,
+        a.created_at,
         COALESCE(u.fullName, CONCAT('User #', a.user_id)) AS customer_name,
         v.year_model,
         v.brand,
@@ -920,6 +921,7 @@ $appointmentsSql = "
         a.status,
         a.notes,
         a.total_amount,
+        a.created_at,
         u.fullName,
         v.year_model,
         v.brand,
@@ -1741,6 +1743,7 @@ if ($historyStmt) {
                                 <th class="px-5 py-3">Vehicle</th>
                                 <th class="px-5 py-3">Services</th>
                                 <th class="px-5 py-3">Date / Time</th>
+                                <th class="px-5 py-3">Created At</th>
                                 <th class="px-5 py-3">Status</th>
                                 <th class="px-5 py-3">Amount</th>
                                 <th class="px-5 py-3 text-right">Actions</th>
@@ -1749,7 +1752,7 @@ if ($historyStmt) {
                         <tbody class="divide-y divide-gray-200">
                             <?php if (count($appointments) === 0): ?>
                                 <tr>
-                                    <td colspan="7" class="px-5 py-10 text-center text-slate-500">No appointments found for this filter.</td>
+                                    <td colspan="8" class="px-5 py-10 text-center text-slate-500">No appointments found for this filter.</td>
                                 </tr>
                             <?php else: ?>
                                 <?php foreach ($appointments as $row): ?>
@@ -1786,6 +1789,14 @@ if ($historyStmt) {
                                         <td class="px-5 py-4">
                                             <div class="font-semibold text-black"><?php echo h(date('M d, Y', strtotime((string) $row['appointment_date']))); ?></div>
                                             <div class="text-xs text-slate-500"><?php echo h(date('h:i A', strtotime((string) $row['appointment_time']))); ?></div>
+                                        </td>
+                                        <td class="px-5 py-4">
+                                            <?php if (!empty($row['created_at'])): ?>
+                                                <div class="font-semibold text-black"><?php echo h(date('M d, Y', strtotime((string) $row['created_at']))); ?></div>
+                                                <div class="text-xs text-slate-500"><?php echo h(date('h:i A', strtotime((string) $row['created_at']))); ?></div>
+                                            <?php else: ?>
+                                                <span class="text-xs text-slate-400">N/A</span>
+                                            <?php endif; ?>
                                         </td>
                                         <td class="px-5 py-4">
                                             <span class="px-2.5 py-1.5 rounded-full text-xs font-bold <?php echo h($badge); ?>"><?php echo h($status); ?></span>

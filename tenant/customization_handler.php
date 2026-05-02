@@ -1,9 +1,47 @@
 <?php
 session_start();
-include __DIR__ . '/db.php';
-include __DIR__ . '/../log_helper.php';
 
-// Verify tenant is logged in
+/*
+|--------------------------------------------------------------------------
+| Website Customization Handler
+|--------------------------------------------------------------------------
+| Actions:
+|   GET  customization_handler.php?action=get_customization
+|   POST customization_handler.php?action=save_customization
+|   POST customization_handler.php?action=upload_image
+|
+| IMPORTANT:
+| - This file DOES NOT edit shopName.
+| - Shop name should stay from owners.shopName.
+| - Images are uploaded to /uploads/website_customizations/tenant_{tenantID}/
+| - Database stores only the image path/URL.
+*/
+
+// Flexible includes so this works whether the file is inside /tenant or project root
+$dbPath1 = __DIR__ . '/../db.php';
+$dbPath2 = __DIR__ . '/db.php';
+
+if (file_exists($dbPath1)) {
+    include $dbPath1;
+} elseif (file_exists($dbPath2)) {
+    include $dbPath2;
+} else {
+    http_response_code(500);
+    echo json_encode(['status' => 'error', 'message' => 'db.php not found']);
+    exit;
+}
+
+$logPath1 = __DIR__ . '/../log_helper.php';
+$logPath2 = __DIR__ . '/log_helper.php';
+
+if (file_exists($logPath1)) {
+    include_once $logPath1;
+} elseif (file_exists($logPath2)) {
+    include_once $logPath2;
+}
+
+header('Content-Type: application/json; charset=utf-8');
+
 if (!isset($_SESSION['tenantID'])) {
     http_response_code(401);
     echo json_encode(['status' => 'error', 'message' => 'Unauthorized']);
@@ -12,204 +50,372 @@ if (!isset($_SESSION['tenantID'])) {
 
 $tenantID = (int) $_SESSION['tenantID'];
 $method = $_SERVER['REQUEST_METHOD'];
+$action = $_GET['action'] ?? $_POST['action'] ?? '';
 
-// Route requests
-if ($method === 'POST' && isset($_GET['action'])) {
-    $action = $_GET['action'];
-    
-    if ($action === 'save_customization') {
-        saveCustomization($conn, $tenantID);
-    } elseif ($action === 'upload_image') {
-        uploadImage($conn, $tenantID);
-    }
-} elseif ($method === 'GET' && isset($_GET['action'])) {
-    $action = $_GET['action'];
-    
-    if ($action === 'get_customization') {
-        getCustomization($conn, $tenantID);
-    }
+if ($method === 'GET' && $action === 'get_customization') {
+    getCustomization($conn, $tenantID);
 }
 
-/**
- * Save website customization settings
- */
-function saveCustomization($conn, $tenantID) {
-    $data = json_decode(file_get_contents('php://input'), true);
-    
-    if (!$data) {
-        http_response_code(400);
-        echo json_encode(['status' => 'error', 'message' => 'Invalid data']);
-        exit;
+if ($method === 'POST' && $action === 'save_customization') {
+    saveCustomization($conn, $tenantID);
+}
+
+if ($method === 'POST' && $action === 'upload_image') {
+    uploadImage($tenantID);
+}
+
+jsonResponse('error', 'Invalid request.', null, 400);
+
+
+/*
+|--------------------------------------------------------------------------
+| Helpers
+|--------------------------------------------------------------------------
+*/
+
+function jsonResponse($status, $message, $data = null, $code = 200)
+{
+    http_response_code($code);
+
+    $response = [
+        'status' => $status,
+        'message' => $message
+    ];
+
+    if ($data !== null) {
+        $response['data'] = $data;
     }
-    
-    // Prepare data
-    $shopName = $data['shopName'] ?? null;
-    $primaryColor = $data['primaryColor'] ?? null;
-    $shopLogo = $data['shopLogo'] ?? null;
-    $heroHeading = $data['heroHeading'] ?? null;
-    $heroSubtext = $data['heroSubtext'] ?? null;
-    $heroBackground = $data['heroBackground'] ?? null;
-    $servicesData = isset($data['services']) ? json_encode($data['services']) : null;
-    $ctaButtonText = $data['ctaButtonText'] ?? null;
-    
-    // Check if customization exists for this tenant
-    $checkStmt = mysqli_prepare($conn, "SELECT customizationID FROM website_customizations WHERE tenantID = ? LIMIT 1");
-    mysqli_stmt_bind_param($checkStmt, "i", $tenantID);
-    mysqli_stmt_execute($checkStmt);
-    $result = mysqli_stmt_get_result($checkStmt);
-    $exists = mysqli_fetch_assoc($result);
-    mysqli_stmt_close($checkStmt);
-    
-    if ($exists) {
-        // Update existing
-        $updateStmt = mysqli_prepare($conn, "
-            UPDATE website_customizations 
-            SET shopName = ?, primaryColor = ?, shopLogo = ?, heroHeading = ?, 
-                heroSubtext = ?, heroBackground = ?, servicesData = ?, ctaButtonText = ?
-            WHERE tenantID = ?
-        ");
-        mysqli_stmt_bind_param(
-            $updateStmt,
-            "ssssssssi",
-            $shopName, $primaryColor, $shopLogo, $heroHeading,
-            $heroSubtext, $heroBackground, $servicesData, $ctaButtonText,
-            $tenantID
-        );
-        $success = mysqli_stmt_execute($updateStmt);
-        mysqli_stmt_close($updateStmt);
-        if ($success) {
-            log_event($conn, 'UPDATE WebsiteCustomization', 'website_customization', (int) $exists['customizationID'], 'Updated WebsiteCustomization for tenant ID: ' . $tenantID);
-        }
-        
-        $action_taken = 'updated';
-    } else {
-        // Insert new
-        $insertStmt = mysqli_prepare($conn, "
-            INSERT INTO website_customizations 
-            (tenantID, shopName, primaryColor, shopLogo, heroHeading, heroSubtext, 
-             heroBackground, servicesData, ctaButtonText) 
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ");
-        mysqli_stmt_bind_param(
-            $insertStmt,
-            "isssssss",
-            $tenantID, $shopName, $primaryColor, $shopLogo, $heroHeading,
-            $heroSubtext, $heroBackground, $servicesData, $ctaButtonText
-        );
-        $success = mysqli_stmt_execute($insertStmt);
-        $newCustomizationId = $success ? (int) mysqli_insert_id($conn) : 0;
-        mysqli_stmt_close($insertStmt);
-        if ($success) {
-            log_event($conn, 'CREATE WebsiteCustomization', 'website_customization', $newCustomizationId, 'Created WebsiteCustomization for tenant ID: ' . $tenantID);
-        }
-        
-        $action_taken = 'created';
-    }
-    
-    if ($success) {
-        http_response_code(200);
-        echo json_encode([
-            'status' => 'success',
-            'message' => 'Customization ' . $action_taken . ' successfully',
-            'data' => $data
-        ]);
-    } else {
-        http_response_code(500);
-        echo json_encode([
-            'status' => 'error',
-            'message' => 'Failed to save customization: ' . mysqli_error($conn)
-        ]);
-    }
+
+    echo json_encode($response);
     exit;
 }
 
-/**
- * Get website customization settings for a tenant
- */
-function getCustomization($conn, $tenantID) {
+function cleanText($value, $maxLength = 255)
+{
+    $value = trim((string) $value);
+
+    if (function_exists('mb_strlen') && mb_strlen($value) > $maxLength) {
+        return mb_substr($value, 0, $maxLength);
+    }
+
+    if (strlen($value) > $maxLength) {
+        return substr($value, 0, $maxLength);
+    }
+
+    return $value;
+}
+
+function validHexColor($color)
+{
+    return preg_match('/^#[0-9A-Fa-f]{6}$/', $color);
+}
+
+function getJsonInput()
+{
+    $raw = file_get_contents('php://input');
+    $data = json_decode($raw, true);
+
+    if (is_array($data)) {
+        return $data;
+    }
+
+    return $_POST;
+}
+
+function normalizeJsonField($value)
+{
+    if ($value === null || $value === '') {
+        return null;
+    }
+
+    if (is_array($value)) {
+        return json_encode($value);
+    }
+
+    $decoded = json_decode((string) $value, true);
+    if (json_last_error() === JSON_ERROR_NONE) {
+        return json_encode($decoded);
+    }
+
+    return null;
+}
+
+function makePublicUrl($relativePath)
+{
+    $relativePath = '/' . ltrim($relativePath, '/');
+
+    $https = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
+        || (isset($_SERVER['HTTP_X_FORWARDED_PROTO']) && $_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https');
+
+    $scheme = $https ? 'https' : 'http';
+    $host = $_SERVER['HTTP_HOST'] ?? '';
+
+    if ($host === '') {
+        return $relativePath;
+    }
+
+    return $scheme . '://' . $host . $relativePath;
+}
+
+
+/*
+|--------------------------------------------------------------------------
+| Save Customization
+|--------------------------------------------------------------------------
+| Does NOT update owners.shopName.
+|--------------------------------------------------------------------------
+*/
+
+function saveCustomization($conn, $tenantID)
+{
+    $data = getJsonInput();
+
+    if (!$data || !is_array($data)) {
+        jsonResponse('error', 'Invalid data.', null, 400);
+    }
+
+    $primaryColor = cleanText($data['primaryColor'] ?? '#1152d4', 7);
+    $logoPath = cleanText($data['logoPath'] ?? ($data['shopLogo'] ?? ''), 500);
+    $heroHeading = cleanText($data['heroHeading'] ?? '', 255);
+    $heroSubtext = trim((string) ($data['heroSubtext'] ?? ''));
+    $heroBackground = cleanText($data['heroBackground'] ?? '', 500);
+    $ctaButtonText = cleanText($data['ctaButtonText'] ?? 'Book Appointment', 100);
+
+    $services = normalizeJsonField($data['services'] ?? null);
+    $carouselImages = normalizeJsonField($data['carouselImages'] ?? null);
+
+    if (!validHexColor($primaryColor)) {
+        jsonResponse('error', 'Invalid primary color. Use format like #1152d4.', null, 400);
+    }
+
+    if ($heroHeading === '') {
+        $heroHeading = 'Precision Engineering. Absolute Reliability.';
+    }
+
+    if ($heroSubtext === '') {
+        $heroSubtext = 'Expert automotive repair and maintenance services for performance vehicles and daily drivers alike.';
+    }
+
+    if ($ctaButtonText === '') {
+        $ctaButtonText = 'Book Appointment';
+    }
+
     $stmt = mysqli_prepare($conn, "
-        SELECT * FROM website_customizations 
-        WHERE tenantID = ? 
+        INSERT INTO website_customizations
+            (tenantID, logoPath, primaryColor, heroHeading, heroSubtext, heroBackground, ctaButtonText, services, carouselImages)
+        VALUES
+            (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON DUPLICATE KEY UPDATE
+            logoPath = VALUES(logoPath),
+            primaryColor = VALUES(primaryColor),
+            heroHeading = VALUES(heroHeading),
+            heroSubtext = VALUES(heroSubtext),
+            heroBackground = VALUES(heroBackground),
+            ctaButtonText = VALUES(ctaButtonText),
+            services = VALUES(services),
+            carouselImages = VALUES(carouselImages),
+            updated_at = CURRENT_TIMESTAMP
+    ");
+
+    if (!$stmt) {
+        jsonResponse('error', 'Database prepare failed: ' . mysqli_error($conn), null, 500);
+    }
+
+    mysqli_stmt_bind_param(
+        $stmt,
+        "issssssss",
+        $tenantID,
+        $logoPath,
+        $primaryColor,
+        $heroHeading,
+        $heroSubtext,
+        $heroBackground,
+        $ctaButtonText,
+        $services,
+        $carouselImages
+    );
+
+    $success = mysqli_stmt_execute($stmt);
+    $error = mysqli_stmt_error($stmt);
+    mysqli_stmt_close($stmt);
+
+    if (!$success) {
+        jsonResponse('error', 'Failed to save customization: ' . $error, null, 500);
+    }
+
+    if (function_exists('log_event')) {
+        log_event($conn, 'SAVE WebsiteCustomization', 'website_customization', $tenantID, 'Saved website customization for tenant ID: ' . $tenantID);
+    }
+
+    jsonResponse('success', 'Website customization saved successfully.', [
+        'tenantID' => $tenantID,
+        'logoPath' => $logoPath,
+        'primaryColor' => $primaryColor,
+        'heroHeading' => $heroHeading,
+        'heroSubtext' => $heroSubtext,
+        'heroBackground' => $heroBackground,
+        'ctaButtonText' => $ctaButtonText,
+        'services' => $services ? json_decode($services, true) : [],
+        'carouselImages' => $carouselImages ? json_decode($carouselImages, true) : []
+    ]);
+}
+
+
+/*
+|--------------------------------------------------------------------------
+| Get Customization
+|--------------------------------------------------------------------------
+*/
+
+function getCustomization($conn, $tenantID)
+{
+    $stmt = mysqli_prepare($conn, "
+        SELECT
+            customization_id,
+            tenantID,
+            logoPath,
+            primaryColor,
+            heroHeading,
+            heroSubtext,
+            heroBackground,
+            ctaButtonText,
+            services,
+            carouselImages,
+            is_published,
+            created_at,
+            updated_at
+        FROM website_customizations
+        WHERE tenantID = ?
         LIMIT 1
     ");
+
+    if (!$stmt) {
+        jsonResponse('error', 'Database prepare failed: ' . mysqli_error($conn), null, 500);
+    }
+
     mysqli_stmt_bind_param($stmt, "i", $tenantID);
     mysqli_stmt_execute($stmt);
     $result = mysqli_stmt_get_result($stmt);
     $customization = mysqli_fetch_assoc($result);
     mysqli_stmt_close($stmt);
-    
-    if ($customization) {
-        // Parse JSON fields
-        if ($customization['servicesData']) {
-            $customization['services'] = json_decode($customization['servicesData'], true);
-        }
-        unset($customization['servicesData']);
-        
-        http_response_code(200);
-        echo json_encode([
-            'status' => 'success',
-            'data' => $customization
-        ]);
+
+    if (!$customization) {
+        $customization = [
+            'customization_id' => null,
+            'tenantID' => $tenantID,
+            'logoPath' => '',
+            'primaryColor' => '#1152d4',
+            'heroHeading' => 'Precision Engineering. Absolute Reliability.',
+            'heroSubtext' => 'Expert automotive repair and maintenance services for performance vehicles and daily drivers alike.',
+            'heroBackground' => '',
+            'ctaButtonText' => 'Book Appointment',
+            'services' => [],
+            'carouselImages' => [],
+            'is_published' => 1,
+            'created_at' => null,
+            'updated_at' => null
+        ];
     } else {
-        http_response_code(404);
-        echo json_encode([
-            'status' => 'error',
-            'message' => 'No customization found'
-        ]);
+        $customization['services'] = $customization['services']
+            ? json_decode($customization['services'], true)
+            : [];
+
+        $customization['carouselImages'] = $customization['carouselImages']
+            ? json_decode($customization['carouselImages'], true)
+            : [];
     }
-    exit;
+
+    jsonResponse('success', 'Customization loaded successfully.', $customization);
 }
 
-/**
- * Handle image upload
- */
-function uploadImage($conn, $tenantID) {
+
+/*
+|--------------------------------------------------------------------------
+| Upload Image
+|--------------------------------------------------------------------------
+| FormData:
+|   image = file
+|   type = logo | hero | carousel
+|--------------------------------------------------------------------------
+*/
+
+function uploadImage($tenantID)
+{
     if (!isset($_FILES['image'])) {
-        http_response_code(400);
-        echo json_encode(['status' => 'error', 'message' => 'No image provided']);
-        exit;
+        jsonResponse('error', 'No image provided.', null, 400);
     }
-    
+
+    $type = cleanText($_POST['type'] ?? 'general', 30);
+    $allowedUploadTypes = ['logo', 'hero', 'carousel', 'general'];
+
+    if (!in_array($type, $allowedUploadTypes, true)) {
+        $type = 'general';
+    }
+
     $file = $_FILES['image'];
-    $uploadDir = __DIR__ . '/uploads/tenant_' . $tenantID . '/customizations/';
-    
-    // Create directory if it doesn't exist
-    if (!is_dir($uploadDir)) {
-        mkdir($uploadDir, 0755, true);
+
+    if (!isset($file['tmp_name']) || !is_uploaded_file($file['tmp_name'])) {
+        jsonResponse('error', 'Invalid upload.', null, 400);
     }
-    
-    $allowedTypes = ['image/jpeg', 'image/png', 'image/svg+xml', 'image/webp'];
-    $maxFileSize = 2 * 1024 * 1024; // 2MB
-    
-    if (!in_array($file['type'], $allowedTypes)) {
-        http_response_code(400);
-        echo json_encode(['status' => 'error', 'message' => 'Invalid image type']);
-        exit;
+
+    if ($file['error'] !== UPLOAD_ERR_OK) {
+        jsonResponse('error', 'Upload error code: ' . $file['error'], null, 400);
     }
-    
+
+    $maxFileSize = 3 * 1024 * 1024; // 3MB
     if ($file['size'] > $maxFileSize) {
-        http_response_code(400);
-        echo json_encode(['status' => 'error', 'message' => 'File too large']);
-        exit;
+        jsonResponse('error', 'File too large. Maximum allowed size is 3MB.', null, 400);
     }
-    
-    // Generate unique filename
-    $fileExt = pathinfo($file['name'], PATHINFO_EXTENSION);
-    $fileName = 'customization_' . time() . '_' . uniqid() . '.' . $fileExt;
-    $filePath = $uploadDir . $fileName;
-    
-    if (move_uploaded_file($file['tmp_name'], $filePath)) {
-        $relativePath = '/uploads/tenant_' . $tenantID . '/customizations/' . $fileName;
-        http_response_code(200);
-        echo json_encode([
-            'status' => 'success',
-            'message' => 'Image uploaded successfully',
-            'path' => $relativePath
-        ]);
-    } else {
-        http_response_code(500);
-        echo json_encode(['status' => 'error', 'message' => 'Failed to upload image']);
+
+    $finfo = finfo_open(FILEINFO_MIME_TYPE);
+    $mimeType = finfo_file($finfo, $file['tmp_name']);
+    finfo_close($finfo);
+
+    $allowedTypes = [
+        'image/jpeg' => 'jpg',
+        'image/png' => 'png',
+        'image/webp' => 'webp',
+        'image/svg+xml' => 'svg'
+    ];
+
+    if (!isset($allowedTypes[$mimeType])) {
+        jsonResponse('error', 'Invalid image type. Allowed: JPG, PNG, WEBP, SVG.', null, 400);
     }
-    exit;
+
+    /*
+     * If this file is inside /tenant, uploads should go one level up to project root:
+     * /RapidRepair/uploads/website_customizations/tenant_1/
+     */
+    $projectRoot = realpath(__DIR__ . '/..');
+
+    if ($projectRoot === false || !file_exists($projectRoot . '/db.php')) {
+        $projectRoot = __DIR__;
+    }
+
+    $relativeDir = '/uploads/website_customizations/tenant_' . $tenantID . '/';
+    $uploadDir = $projectRoot . $relativeDir;
+
+    if (!is_dir($uploadDir)) {
+        if (!mkdir($uploadDir, 0755, true)) {
+            jsonResponse('error', 'Failed to create upload directory.', null, 500);
+        }
+    }
+
+    $extension = $allowedTypes[$mimeType];
+    $fileName = $type . '_' . date('Ymd_His') . '_' . bin2hex(random_bytes(6)) . '.' . $extension;
+    $targetPath = $uploadDir . $fileName;
+
+    if (!move_uploaded_file($file['tmp_name'], $targetPath)) {
+        jsonResponse('error', 'Failed to upload image.', null, 500);
+    }
+
+    $relativePath = $relativeDir . $fileName;
+    $publicUrl = makePublicUrl($relativePath);
+
+    jsonResponse('success', 'Image uploaded successfully.', [
+        'type' => $type,
+        'path' => $relativePath,
+        'url' => $publicUrl
+    ]);
 }
 ?>

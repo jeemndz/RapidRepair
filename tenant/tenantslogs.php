@@ -337,13 +337,12 @@ function getStatusIcon($action): string {
         </div>
         <div class="p-4 border-t border-slate-200 dark:border-slate-800">
             <div class="flex items-center gap-3">
-                <div
-                    class="size-10 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center overflow-hidden">
-                    <span class="material-symbols-outlined">person</span>
+                <div class="size-10 rounded-full bg-slate-200 flex items-center justify-center overflow-hidden shrink-0">
+                    <span class="material-symbols-outlined text-slate-500">person</span>
                 </div>
                 <div class="flex-1 min-w-0">
-                    <p class="text-sm font-semibold truncate"><?php echo h($shopName); ?></p>
-                    <p class="text-xs text-slate-500 truncate">Admin Panel</p>
+                    <p class="text-sm font-semibold truncate text-slate-900 dark:text-white"><?php echo h($shopName); ?></p>
+                    <p class="text-xs text-slate-500 dark:text-slate-400 truncate">Admin Panel</p>
                 </div>
                 <form method="post" action="../logout/logout.php" class="inline">
                     <input type="hidden" name="action" value="confirm" />
@@ -371,17 +370,6 @@ function getStatusIcon($action): string {
             <button class="p-2 text-slate-500 hover:text-primary transition-all">
                 <span class="material-symbols-outlined">help_outline</span>
             </button>
-            <div class="h-8 w-px bg-slate-200 mx-2"></div>
-            <div class="flex items-center gap-3">
-                <div class="text-right hidden sm:block">
-                    <p class="text-xs font-bold text-slate-900 dark:text-slate-100">System Admin</p>
-                    <p class="text-[10px] text-slate-500 uppercase font-semibold">Audit Logs</p>
-                </div>
-                <div
-                    class="h-10 w-10 rounded-full border-2 border-primary/20 bg-slate-200 dark:bg-slate-700 flex items-center justify-center overflow-hidden">
-                    <span class="material-symbols-outlined text-slate-600 dark:text-slate-400">person</span>
-                </div>
-            </div>
         </div>
     </header>
     <!-- Content Area -->

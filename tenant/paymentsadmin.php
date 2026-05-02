@@ -974,35 +974,6 @@ function buildPageUrl($pageNumber, $shopQuery, $search, $statusFilter, $methodFi
                 </div>
             <?php endif; ?>
 
-            <form method="get"
-                class="bg-white rounded-xl border border-slate-200 shadow-sm p-4 mb-6 flex flex-wrap gap-3 items-end">
-                <input type="hidden" name="shop" value="<?php echo h($loginSlug); ?>">
-                <div>
-                    <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Search</label>
-                    <input type="text" name="search" value="<?php echo h($search); ?>"
-                        class="rounded-lg border-slate-300 text-sm w-64" placeholder="Customer, ref, payment id">
-                </div>
-                <div>
-                    <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Status</label>
-                    <select name="status" class="rounded-lg border-slate-300 text-sm">
-                        <?php foreach ($allowedStatuses as $status): ?>
-                            <option value="<?php echo h($status); ?>" <?php echo $statusFilter === $status ? 'selected' : ''; ?>><?php echo h($status); ?></option>
-                        <?php endforeach; ?>
-                    </select>
-                </div>
-                <div>
-                    <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Method</label>
-                    <select name="method" class="rounded-lg border-slate-300 text-sm">
-                        <?php foreach ($allowedMethods as $method): ?>
-                            <option value="<?php echo h($method); ?>" <?php echo $methodFilter === $method ? 'selected' : ''; ?>><?php echo h($method); ?></option>
-                        <?php endforeach; ?>
-                    </select>
-                </div>
-                <button class="px-4 py-2 bg-primary text-white text-sm font-bold rounded-lg">Apply Filters</button>
-                <a href="paymentsadmin.php?shop=<?php echo $shopQuery; ?>"
-                    class="px-4 py-2 bg-slate-100 text-slate-700 text-sm font-bold rounded-lg">Reset</a>
-            </form>
-
             <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
                 <div class="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
                     <div class="flex items-center justify-between mb-4">
@@ -1117,15 +1088,34 @@ function buildPageUrl($pageNumber, $shopQuery, $search, $statusFilter, $methodFi
             </div>
 
             <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden mb-8">
-                <div class="p-6 border-b border-slate-100 flex items-center justify-between">
-                    <h4 class="text-lg font-bold text-on-surface">Pending Payments</h4>
-                    <div class="text-xs text-slate-500 font-medium">
-                        <?php echo number_format(count($pendingPayments)); ?> pending
+                <div class="p-6 border-b border-slate-100 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+                    <div>
+                        <h4 class="text-lg font-bold text-on-surface">Pending Payments</h4>
+                        <p class="text-xs text-slate-500 font-medium mt-1">
+                            <span id="pendingPaymentsVisibleCount"><?php echo number_format(count($pendingPayments)); ?></span> of <?php echo number_format(count($pendingPayments)); ?> pending records
+                        </p>
+                    </div>
+                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 w-full lg:w-auto">
+                        <div>
+                            <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Search Pending</label>
+                            <input id="pendingTableSearch" type="text" class="w-full rounded-lg border-slate-300 text-sm" placeholder="ID, customer, ref">
+                        </div>
+                        <div>
+                            <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Method</label>
+                            <select id="pendingTableMethodFilter" class="w-full rounded-lg border-slate-300 text-sm">
+                                <?php foreach ($allowedMethods as $method): ?>
+                                    <option value="<?php echo h($method); ?>"><?php echo h($method); ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                        <div class="flex items-end">
+                            <button id="resetPendingTableFilters" type="button" class="w-full px-4 py-2 bg-slate-100 text-slate-700 text-sm font-bold rounded-lg hover:bg-slate-200">Reset</button>
+                        </div>
                     </div>
                 </div>
 
                 <div class="overflow-x-auto">
-                    <table class="w-full text-left border-collapse">
+                    <table id="pendingPaymentsTable" class="w-full text-left border-collapse">
                         <thead class="bg-surface">
                             <tr>
                                 <th
@@ -1159,7 +1149,7 @@ function buildPageUrl($pageNumber, $shopQuery, $search, $statusFilter, $methodFi
                         </thead>
                         <tbody class="divide-y divide-slate-100">
                             <?php if (count($pendingPayments) === 0): ?>
-                                <tr>
+                                <tr id="pendingPaymentsEmptyRow">
                                     <td colspan="9" class="px-6 py-10 text-center text-sm text-slate-500">
                                         No pending payments.
                                     </td>
@@ -1171,7 +1161,7 @@ function buildPageUrl($pageNumber, $shopQuery, $search, $statusFilter, $methodFi
                                     $gcashRef = trim((string) ($payment['gcashReferenceNumber'] ?? ''));
                                     $displayReference = $gcashRef !== '' ? $gcashRef : ($reference !== '' ? $reference : 'N/A');
                                     ?>
-                                    <tr class="hover:bg-slate-50/50 transition-colors">
+                                    <tr class="pending-payment-row hover:bg-slate-50/50 transition-colors" data-method="<?php echo h($payment['paymentMethod']); ?>" data-search="<?php echo h(strtolower('#' . (int) $payment['payment_id'] . ' ' . $payment['customer_name'] . ' ' . $payment['paymentMethod'] . ' ' . $displayReference)); ?>">
                                         <td class="px-6 py-4 text-sm font-bold text-on-surface">#<?php echo (int) $payment['payment_id']; ?></td>
                                         <td class="px-6 py-4">
                                             <div class="text-sm font-medium text-on-surface"><?php echo h($payment['customer_name']); ?></div>
@@ -1196,11 +1186,40 @@ function buildPageUrl($pageNumber, $shopQuery, $search, $statusFilter, $methodFi
             </div>
 
             <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-                <div class="p-6 border-b border-slate-100 flex items-center justify-between">
-                    <h4 class="text-lg font-bold text-on-surface">Transaction History</h4>
-                    <div class="text-xs text-slate-500 font-medium">
-                        <?php echo number_format($totalRows); ?> total records
+                <div class="p-6 border-b border-slate-100 flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+                    <div>
+                        <h4 class="text-lg font-bold text-on-surface">Transaction History</h4>
+                        <p class="text-xs text-slate-500 font-medium mt-1"><?php echo number_format($totalRows); ?> total records</p>
                     </div>
+                    <form method="get" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 w-full xl:w-auto">
+                        <input type="hidden" name="shop" value="<?php echo h($loginSlug); ?>">
+                        <div>
+                            <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Search History</label>
+                            <input type="text" name="search" value="<?php echo h($search); ?>" class="w-full rounded-lg border-slate-300 text-sm" placeholder="Customer, ref, ID">
+                        </div>
+                        <div>
+                            <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Status</label>
+                            <select name="status" class="w-full rounded-lg border-slate-300 text-sm">
+                                <?php foreach ($allowedStatuses as $status): ?>
+                                    <option value="<?php echo h($status); ?>" <?php echo $statusFilter === $status ? 'selected' : ''; ?>><?php echo h($status); ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Method</label>
+                            <select name="method" class="w-full rounded-lg border-slate-300 text-sm">
+                                <?php foreach ($allowedMethods as $method): ?>
+                                    <option value="<?php echo h($method); ?>" <?php echo $methodFilter === $method ? 'selected' : ''; ?>><?php echo h($method); ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                        <div class="flex items-end">
+                            <button class="w-full px-4 py-2 bg-primary text-white text-sm font-bold rounded-lg hover:bg-blue-700">Apply</button>
+                        </div>
+                        <div class="flex items-end">
+                            <a href="paymentsadmin.php?shop=<?php echo $shopQuery; ?>" class="w-full px-4 py-2 bg-slate-100 text-slate-700 text-sm font-bold rounded-lg text-center hover:bg-slate-200">Reset</a>
+                        </div>
+                    </form>
                 </div>
 
                 <div class="overflow-x-auto">
@@ -1542,6 +1561,60 @@ function buildPageUrl($pageNumber, $shopQuery, $search, $statusFilter, $methodFi
         addPaymentModal.classList.add('flex');
     }
     <?php endif; ?>
+
+
+    function filterPendingPaymentsTable() {
+        const searchInput = document.getElementById('pendingTableSearch');
+        const methodFilter = document.getElementById('pendingTableMethodFilter');
+        const rows = document.querySelectorAll('.pending-payment-row');
+        const emptyRow = document.getElementById('pendingPaymentsEmptyRow');
+        const visibleCount = document.getElementById('pendingPaymentsVisibleCount');
+        const searchValue = (searchInput?.value || '').trim().toLowerCase();
+        const methodValue = methodFilter?.value || 'All';
+        let visible = 0;
+
+        rows.forEach((row) => {
+            const rowSearch = row.dataset.search || row.textContent.toLowerCase();
+            const rowMethod = row.dataset.method || '';
+            const matchesSearch = searchValue === '' || rowSearch.includes(searchValue);
+            const matchesMethod = methodValue === 'All' || rowMethod === methodValue;
+            const shouldShow = matchesSearch && matchesMethod;
+            row.classList.toggle('hidden', !shouldShow);
+            if (shouldShow) {
+                visible += 1;
+            }
+        });
+
+        if (visibleCount) {
+            visibleCount.textContent = visible.toLocaleString();
+        }
+        if (emptyRow) {
+            emptyRow.classList.toggle('hidden', rows.length > 0 && visible > 0);
+            const emptyCell = emptyRow.querySelector('td');
+            if (emptyCell && rows.length > 0) {
+                emptyCell.textContent = 'No pending payments match the selected filters.';
+            }
+        }
+    }
+
+    const pendingTableSearch = document.getElementById('pendingTableSearch');
+    const pendingTableMethodFilter = document.getElementById('pendingTableMethodFilter');
+    const resetPendingTableFilters = document.getElementById('resetPendingTableFilters');
+
+    if (pendingTableSearch) {
+        pendingTableSearch.addEventListener('input', filterPendingPaymentsTable);
+    }
+    if (pendingTableMethodFilter) {
+        pendingTableMethodFilter.addEventListener('change', filterPendingPaymentsTable);
+    }
+    if (resetPendingTableFilters) {
+        resetPendingTableFilters.addEventListener('click', () => {
+            if (pendingTableSearch) pendingTableSearch.value = '';
+            if (pendingTableMethodFilter) pendingTableMethodFilter.value = 'All';
+            filterPendingPaymentsTable();
+        });
+    }
+    filterPendingPaymentsTable();
 
     // Dropdown menu click handler
     document.querySelectorAll('.settings-dropdown-btn').forEach(button => {

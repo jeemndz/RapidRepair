@@ -1,46 +1,43 @@
 <?php
-session_start();
 include __DIR__ . '/../db.php';
-include __DIR__ . '/../session_security.php';
 
-// Check if tenant is logged in
-if (!isset($_SESSION['tenantID'])) {
-    header('Location: tenantlogin.php');
-    exit;
-}
+// PUBLIC TENANT WEBSITE
+// This page does NOT require login.
+// It loads the tenant website using the public shop slug in the URL:
+// tenantwebsite.php?shop=your-shop-slug
 
-$tenantID = (int) $_SESSION['tenantID'];
-
-// Try session slug first, then URL slug
 $login_slug = '';
-if (isset($_SESSION['login_slug']) && trim((string) $_SESSION['login_slug']) !== '') {
-    $login_slug = trim((string) $_SESSION['login_slug']);
-} elseif (isset($_GET['shop']) && trim((string) $_GET['shop']) !== '') {
+if (isset($_GET['shop']) && trim((string) $_GET['shop']) !== '') {
     $login_slug = trim((string) $_GET['shop']);
-    $_SESSION['login_slug'] = $login_slug;
 }
 
 if ($login_slug === '') {
-    session_unset();
-    session_destroy();
-    header('Location: tenantlogin.php');
+    http_response_code(404);
+    echo 'Shop not found. Please provide a valid shop link.';
     exit;
 }
 
-// Get tenant information
-$stmt = mysqli_prepare($conn, "SELECT * FROM owners WHERE tenantID = ? AND login_slug = ? LIMIT 1");
-mysqli_stmt_bind_param($stmt, "is", $tenantID, $login_slug);
+// Get tenant information using public slug only
+$stmt = mysqli_prepare($conn, "SELECT * FROM owners WHERE login_slug = ? LIMIT 1");
+if (!$stmt) {
+    http_response_code(500);
+    echo 'Unable to load shop website.';
+    exit;
+}
+
+mysqli_stmt_bind_param($stmt, "s", $login_slug);
 mysqli_stmt_execute($stmt);
 $result = mysqli_stmt_get_result($stmt);
 $owner = mysqli_fetch_assoc($result);
 mysqli_stmt_close($stmt);
 
 if (!$owner) {
-    session_unset();
-    session_destroy();
-    header('Location: tenantlogin.php');
+    http_response_code(404);
+    echo 'Shop not found.';
     exit;
 }
+
+$tenantID = (int)$owner['tenantID'];
 
 // Function to get website customization
 function websiteCustomizationsTableExists($conn) {
@@ -76,6 +73,36 @@ $shopName = isset($owner['shopName']) && $owner['shopName'] !== '' ? $owner['sho
 
 // Load website customizations
 $customization = getWebsiteCustomization($conn, $tenantID);
+
+function rrAssetUrl($path) {
+    $path = trim((string)$path);
+    if ($path === '') {
+        return '';
+    }
+    if (preg_match('/^(https?:)?\/\//i', $path) || strpos($path, 'data:') === 0) {
+        return $path;
+    }
+    if (strpos($path, '/uploads/') === 0) {
+        return $path;
+    }
+    if (strpos($path, 'uploads/') === 0) {
+        return '/' . $path;
+    }
+    return $path;
+}
+
+$carouselImages = array();
+if (isset($customization['carouselImages']) && $customization['carouselImages'] !== '') {
+    $decodedCarousel = json_decode($customization['carouselImages'], true);
+    if (is_array($decodedCarousel)) {
+        foreach ($decodedCarousel as $img) {
+            $imgUrl = rrAssetUrl($img);
+            if ($imgUrl !== '') {
+                $carouselImages[] = $imgUrl;
+            }
+        }
+    }
+}
 
 $apkFileName = 'My-Portfolion-Mobile-App.apk';
 $apkSourcePath = __DIR__ . '/application-8f4b4ec1-dcd9-4910-9902-bbd476535bb3.apk';
@@ -205,7 +232,7 @@ if (isset($_GET['download']) && $_GET['download'] === 'app') {
             <div class="hidden md:flex items-center space-x-8 font-['Inter'] tracking-tight text-sm font-medium">
                 <a class="text-[#0F4B3C] border-b-2 border-[#0F4B3C] pb-1" href="#home">Home</a>
                 <a class="text-slate-600 hover:text-[#0F4B3C] transition-colors" href="#services">Services</a>
-                <a class="text-slate-600 hover:text-[#0F4B3C] transition-colors" href="#mobileapp">Mobile App</a>
+                <a class="text-slate-600 hover:text-[#0F4B3C] transition-colors" href="#mobile-app">Mobile App</a>
                 <a class="text-slate-600 hover:text-[#0F4B3C] transition-colors" href="#about">About</a>
             </div>
             <div class="flex items-center gap-4">
@@ -221,7 +248,7 @@ if (isset($_GET['download']) && $_GET['download'] === 'app') {
             <div class="absolute inset-0 opacity-40">
                 <img alt="Modern Auto Repair Shop" class="w-full h-full object-cover"
                     data-alt="dramatic interior of a clean professional auto repair shop with blue neon lighting and high-tech diagnostic equipment on tool benches"
-                    src="<?php echo isset($customization['heroBackground']) && $customization['heroBackground'] ? htmlspecialchars($customization['heroBackground']) : 'https://lh3.googleusercontent.com/aida-public/AB6AXuAEtRZx2VtJU_zvHyWwsPzD6V-hQgNfAn2ej099PlXa6HKYmZqm9u0Cl5K4y-AzSzT4KPlh897GoHs2N4t_PifJp3y-dT-rj5YsB98I9Dnp799aPfP0rZ-vQZhqRNpq_Ll2qyR361GWZxFHoYgrFfUTBzh8STIl_1B0aQTSEGfgyxNhO7ix91KeXhv26XzL0sHPtMcsrGNRwCP_RGCYJ8Ny0heOO9T8o7EUb9hcDp1dSNVs5Fja1CgIgUO3RtwhBFeHSdHhfk06o3Lo'; ?>" />
+                    src="<?php echo isset($customization['heroBackground']) && $customization['heroBackground'] ? htmlspecialchars(rrAssetUrl($customization['heroBackground'])) : 'https://lh3.googleusercontent.com/aida-public/AB6AXuAEtRZx2VtJU_zvHyWwsPzD6V-hQgNfAn2ej099PlXa6HKYmZqm9u0Cl5K4y-AzSzT4KPlh897GoHs2N4t_PifJp3y-dT-rj5YsB98I9Dnp799aPfP0rZ-vQZhqRNpq_Ll2qyR361GWZxFHoYgrFfUTBzh8STIl_1B0aQTSEGfgyxNhO7ix91KeXhv26XzL0sHPtMcsrGNRwCP_RGCYJ8Ny0heOO9T8o7EUb9hcDp1dSNVs5Fja1CgIgUO3RtwhBFeHSdHhfk06o3Lo'; ?>" />
             </div>
             <div class="absolute inset-0 bg-gradient-to-r from-[#1A2A2A] via-[#1A2A2A]/80 to-transparent"></div>
             <div class="relative z-10 max-w-7xl mx-auto px-6 md:px-12">
@@ -245,6 +272,29 @@ if (isset($_GET['download']) && $_GET['download'] === 'app') {
                 </div>
             </div>
         </section>
+        <?php if (!empty($carouselImages)): ?>
+        <section id="gallery" class="py-24 bg-slate-50 scroll-mt-20">
+            <div class="max-w-7xl mx-auto px-6 md:px-12">
+                <div class="text-center mb-16">
+                    <span class="text-primary font-bold tracking-widest text-xs uppercase">Shop Gallery</span>
+                    <h2 class="text-4xl font-black tracking-tight mt-2">Inside Our Workshop</h2>
+                    <p class="text-slate-600 max-w-2xl mx-auto mt-4">Explore the uploaded pictures from our facility, team, and completed automotive work.</p>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <?php foreach ($carouselImages as $index => $carouselImage): ?>
+                        <div class="group rounded-xl overflow-hidden bg-white border border-outline shadow-sm hover:shadow-lg transition-all <?php echo $index === 0 ? 'md:col-span-2 md:row-span-2' : ''; ?>">
+                            <img
+                                src="<?php echo htmlspecialchars($carouselImage); ?>"
+                                alt="<?php echo htmlspecialchars($shopName); ?> gallery image <?php echo (int)$index + 1; ?>"
+                                class="w-full <?php echo $index === 0 ? 'h-[520px]' : 'h-64'; ?> object-cover group-hover:scale-[1.03] transition-transform duration-500"
+                            />
+                        </div>
+                    <?php endforeach; ?>
+                </div>
+            </div>
+        </section>
+        <?php endif; ?>
+
         <section class="py-24 bg-white">
             <div class="max-w-7xl mx-auto px-6 md:px-12">
                 <div class="text-center mb-16">

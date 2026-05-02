@@ -361,6 +361,8 @@ $listSql = '
         u.address,
         COALESCE((SELECT COUNT(*) FROM vehicleinformation v WHERE v.tenantID = u.tenantID AND v.user_id = u.user_id), 0) AS vehicle_count,
         COALESCE((SELECT SUM(CASE WHEN v.status = "Active" THEN 1 ELSE 0 END) FROM vehicleinformation v WHERE v.tenantID = u.tenantID AND v.user_id = u.user_id), 0) AS active_vehicle_count,
+        COALESCE((SELECT COUNT(*) FROM appointments a WHERE a.tenantID = u.tenantID AND a.user_id = u.user_id), 0) AS appointment_count,
+        COALESCE((SELECT COUNT(*) FROM payments p WHERE p.tenantID = u.tenantID AND p.user_id = u.user_id), 0) AS payment_count,
         (SELECT TRIM(CONCAT(COALESCE(v.brand, ""), " ", COALESCE(v.model, "")))
          FROM vehicleinformation v
          WHERE v.tenantID = u.tenantID AND v.user_id = u.user_id
@@ -418,6 +420,8 @@ $selectedCustomer = null;
 $selectedVehicles = [];
 $selectedCustomerVehiclesCount = 0;
 $selectedCustomerActiveVehicles = 0;
+$selectedCustomerAppointmentsCount = 0;
+$selectedCustomerPaymentsCount = 0;
 if ($selectedCustomerId > 0) {
     $selectedStmt = mysqli_prepare(
         $conn,
@@ -453,18 +457,31 @@ if ($selectedCustomerId > 0) {
         $selectedCountsStmt = mysqli_prepare(
             $conn,
             'SELECT
-                COUNT(*) AS total_vehicles,
-                COALESCE(SUM(CASE WHEN status = "Active" THEN 1 ELSE 0 END), 0) AS active_vehicles
-             FROM vehicleinformation
-             WHERE tenantID = ? AND user_id = ?'
+                COALESCE((SELECT COUNT(*) FROM vehicleinformation v WHERE v.tenantID = ? AND v.user_id = ?), 0) AS total_vehicles,
+                COALESCE((SELECT SUM(CASE WHEN v.status = "Active" THEN 1 ELSE 0 END) FROM vehicleinformation v WHERE v.tenantID = ? AND v.user_id = ?), 0) AS active_vehicles,
+                COALESCE((SELECT COUNT(*) FROM appointments a WHERE a.tenantID = ? AND a.user_id = ?), 0) AS total_appointments,
+                COALESCE((SELECT COUNT(*) FROM payments p WHERE p.tenantID = ? AND p.user_id = ?), 0) AS total_payments'
         );
         if ($selectedCountsStmt) {
-            mysqli_stmt_bind_param($selectedCountsStmt, 'ii', $tenantID, $selectedCustomerId);
+            mysqli_stmt_bind_param(
+                $selectedCountsStmt,
+                'iiiiiiii',
+                $tenantID,
+                $selectedCustomerId,
+                $tenantID,
+                $selectedCustomerId,
+                $tenantID,
+                $selectedCustomerId,
+                $tenantID,
+                $selectedCustomerId
+            );
             mysqli_stmt_execute($selectedCountsStmt);
             $selectedCountsResult = mysqli_stmt_get_result($selectedCountsStmt);
             if ($selectedCountsResult && $selectedCountsRow = mysqli_fetch_assoc($selectedCountsResult)) {
                 $selectedCustomerVehiclesCount = (int) ($selectedCountsRow['total_vehicles'] ?? 0);
                 $selectedCustomerActiveVehicles = (int) ($selectedCountsRow['active_vehicles'] ?? 0);
+                $selectedCustomerAppointmentsCount = (int) ($selectedCountsRow['total_appointments'] ?? 0);
+                $selectedCustomerPaymentsCount = (int) ($selectedCountsRow['total_payments'] ?? 0);
             }
             mysqli_stmt_close($selectedCountsStmt);
         }
@@ -594,6 +611,62 @@ if ($selectedCustomerId > 0) {
         .material-symbols-outlined {
             font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
             vertical-align: middle;
+        }
+
+        .customer-directory-scroll {
+            width: 100%;
+            overflow-x: hidden;
+        }
+
+        .customer-directory-table {
+            width: 100%;
+            table-layout: fixed;
+        }
+
+        .customer-directory-table th,
+        .customer-directory-table td {
+            white-space: normal;
+            word-break: break-word;
+            overflow-wrap: anywhere;
+            vertical-align: middle;
+        }
+
+        .customer-directory-table .customer-col {
+            width: 22%;
+        }
+
+        .customer-directory-table .contact-col {
+            width: 24%;
+        }
+
+        .customer-directory-table .vehicle-count-col {
+            width: 16%;
+        }
+
+        .customer-directory-table .latest-vehicle-col {
+            width: 15%;
+        }
+
+        .customer-directory-table .latest-visit-col {
+            width: 14%;
+        }
+
+        .customer-directory-table .actions-col {
+            width: 9%;
+        }
+
+        .customer-directory-table tbody tr.clickable-customer-row {
+            cursor: pointer;
+        }
+
+        .customer-directory-table tbody tr.clickable-customer-row:hover .row-click-hint {
+            opacity: 1;
+        }
+
+        .customer-directory-table th,
+        .customer-directory-table td {
+            padding-left: 1rem;
+            padding-right: 1rem;
         }
     </style>
 </head>
@@ -883,7 +956,7 @@ if ($selectedCustomerId > 0) {
 
             <div class="grid grid-cols-12 gap-8">
                 <div
-                    class="col-span-12 xl:col-span-8 bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
+                    class="col-span-12 2xl:col-span-9 bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
                     <div class="px-6 py-4 border-b border-slate-100 flex flex-wrap items-center justify-between gap-3">
                         <div>
                             <h3 class="font-bold text-on-surface">Customer Directory</h3>
@@ -901,32 +974,40 @@ if ($selectedCustomerId > 0) {
                                 type="submit">Search</button>
                         </form>
                     </div>
-                    <div class="overflow-x-auto">
-                        <table class="w-full text-left">
+                    <div class="customer-directory-scroll">
+                        <table class="customer-directory-table w-full text-left">
                             <thead>
                                 <tr
                                     class="bg-slate-50/70 text-slate-500 text-[10px] uppercase font-bold tracking-widest">
-                                    <th class="px-6 py-4">Customer</th>
-                                    <th class="px-6 py-4">Contact</th>
-                                    <th class="px-6 py-4">Vehicles</th>
-                                    <th class="px-6 py-4">Latest Vehicle</th>
-                                    <th class="px-6 py-4">Latest Visit</th>
-                                    <th class="px-6 py-4 text-right">Actions</th>
+                                    <th class="px-4 py-4 customer-col">Customer</th>
+                                    <th class="px-4 py-4 contact-col">Contact</th>
+                                    <th class="px-4 py-4 vehicle-count-col">Records</th>
+                                    <th class="px-4 py-4 latest-vehicle-col">Latest Vehicle</th>
+                                    <th class="px-4 py-4 latest-visit-col">Latest Visit</th>
+                                    <th class="px-4 py-4 text-right actions-col">Actions</th>
                                 </tr>
                             </thead>
                             <tbody class="divide-y divide-slate-100">
                                 <?php if (empty($customers)): ?>
                                     <tr>
-                                        <td colspan="6" class="px-6 py-16 text-center text-slate-500">
+                                        <td colspan="6" class="px-8 py-16 text-center text-slate-500">
                                             No customers found for the current filters.
                                         </td>
                                     </tr>
                                 <?php else: ?>
                                     <?php foreach ($customers as $customer): ?>
-                                        <?php $isSelected = $selectedCustomerId === (int) $customer['user_id']; ?>
-                                        <tr
-                                            class="hover:bg-slate-50/60 transition-colors <?php echo $isSelected ? 'bg-primary-container/30' : ''; ?>">
-                                            <td class="px-6 py-4">
+                                        <?php
+                                            $isSelected = $selectedCustomerId === (int) $customer['user_id'];
+                                            $customerRowUrl = 'customeradmin.php?' . http_build_query([
+                                                'shop' => $loginSlug,
+                                                'customer_id' => (int) $customer['user_id'],
+                                                'q' => $searchTerm,
+                                                'page' => $page,
+                                            ]) . '#linked-vehicles';
+                                        ?>
+                                        <tr onclick="window.location.href='<?php echo h($customerRowUrl); ?>'"
+                                            class="clickable-customer-row hover:bg-slate-50/60 transition-colors <?php echo $isSelected ? 'bg-primary-container/30' : ''; ?>">
+                                            <td class="px-4 py-4 customer-col">
                                                 <div class="flex items-center gap-3">
                                                     <div
                                                         class="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center text-slate-500 font-bold">
@@ -940,39 +1021,48 @@ if ($selectedCustomerId > 0) {
                                                     </div>
                                                 </div>
                                             </td>
-                                            <td class="px-6 py-4">
+                                            <td class="px-4 py-4 contact-col">
                                                 <p class="text-sm text-on-surface"><?php echo h($customer['email']); ?></p>
                                                 <p class="text-xs text-slate-500"><?php echo h($customer['contactNumber']); ?>
                                                 </p>
                                             </td>
-                                            <td class="px-6 py-4">
-                                                <div class="flex items-center gap-2">
-                                                    <span
-                                                        class="px-2 py-0.5 bg-slate-100 text-slate-700 text-[11px] font-bold rounded"><?php echo (int) $customer['vehicle_count']; ?></span>
-                                                    <span class="text-sm text-on-surface">Vehicles linked</span>
+                                            <td class="px-4 py-4 vehicle-count-col">
+                                                <div class="space-y-1.5 text-[11px]">
+                                                    <div class="flex items-center justify-between gap-2 rounded-lg bg-slate-50 px-2 py-1">
+                                                        <span class="font-semibold text-slate-600">Vehicles</span>
+                                                        <span class="font-black text-on-surface"><?php echo (int) $customer['vehicle_count']; ?></span>
+                                                    </div>
+                                                    <div class="flex items-center justify-between gap-2 rounded-lg bg-blue-50 px-2 py-1">
+                                                        <span class="font-semibold text-blue-700">Appointments</span>
+                                                        <span class="font-black text-blue-700"><?php echo (int) ($customer['appointment_count'] ?? 0); ?></span>
+                                                    </div>
+                                                    <div class="flex items-center justify-between gap-2 rounded-lg bg-emerald-50 px-2 py-1">
+                                                        <span class="font-semibold text-emerald-700">Payments</span>
+                                                        <span class="font-black text-emerald-700"><?php echo (int) ($customer['payment_count'] ?? 0); ?></span>
+                                                    </div>
                                                 </div>
                                             </td>
-                                            <td class="px-6 py-4">
+                                            <td class="px-4 py-4 latest-vehicle-col">
                                                 <p class="text-sm text-on-surface">
                                                     <?php echo h(trim((string) ($customer['latest_vehicle_label'] ?: 'No vehicle yet'))); ?>
                                                 </p>
                                                 <p class="text-[11px] text-slate-500">
                                                     <?php echo h($customer['latest_plate_number'] ?: 'No plate number'); ?></p>
                                             </td>
-                                            <td class="px-6 py-4">
+                                            <td class="px-4 py-4 latest-visit-col">
                                                 <p class="text-sm text-on-surface">
                                                     <?php echo h(formatDateValue($customer['latest_vehicle_date'])); ?></p>
                                                 <p class="text-[11px] text-slate-500">
                                                     <?php echo h($customer['latest_vehicle_status'] ?: 'No vehicle yet'); ?></p>
                                             </td>
-                                            <td class="px-6 py-4 text-right">
+                                            <td class="px-4 py-4 text-right actions-col">
                                                 <div class="flex justify-end gap-2">
-                                                    <a class="p-1.5 hover:bg-primary-container text-primary rounded transition-colors"
-                                                        title="View linked vehicles"
+                                                    <a onclick="event.stopPropagation();" class="p-1.5 hover:bg-primary-container text-primary rounded transition-colors"
+                                                        title="View customer records"
                                                         href="customeradmin.php?<?php echo h(http_build_query(['shop' => $loginSlug, 'customer_id' => (int) $customer['user_id'], 'q' => $searchTerm])); ?>#linked-vehicles">
                                                         <span class="material-symbols-outlined text-lg">history</span>
                                                     </a>
-                                                    <a class="p-1.5 hover:bg-slate-100 text-secondary rounded transition-colors"
+                                                    <a onclick="event.stopPropagation();" class="p-1.5 hover:bg-slate-100 text-secondary rounded transition-colors"
                                                         title="Open vehicle admin"
                                                         href="vehicleadmin.php?<?php echo h(http_build_query(['shop' => $loginSlug, 'user_id' => (int) $customer['user_id']])); ?>">
                                                         <span class="material-symbols-outlined text-lg">directions_car</span>
@@ -1015,16 +1105,16 @@ if ($selectedCustomerId > 0) {
                     </div>
                 </div>
 
-                <div class="col-span-12 xl:col-span-4 space-y-6">
+                <div class="col-span-12 2xl:col-span-3 space-y-6">
                     <div id="linked-vehicles" class="bg-white rounded-xl border border-slate-200 shadow-sm p-6">
                         <div class="flex items-start justify-between gap-3 mb-5">
                             <div>
-                                <h3 class="font-bold text-on-surface">Linked Vehicles</h3>
+                                <h3 class="font-bold text-on-surface">Customer Records</h3>
                                 <p class="text-xs text-slate-500"><?php echo h($selectedCustomerName); ?></p>
                             </div>
                             <span
-                                class="text-[10px] font-bold uppercase tracking-widest text-primary bg-primary-container px-2 py-1 rounded-full"><?php echo $selectedCustomerVehiclesCount; ?>
-                                vehicles</span>
+                                class="text-[10px] font-bold uppercase tracking-widest text-primary bg-primary-container px-2 py-1 rounded-full"><?php echo ($selectedCustomerVehiclesCount + $selectedCustomerAppointmentsCount + $selectedCustomerPaymentsCount); ?>
+                                records</span>
                         </div>
 
                         <?php if ($selectedCustomer): ?>
@@ -1036,7 +1126,7 @@ if ($selectedCustomerId > 0) {
                                 </p>
                                 <p class="text-xs text-slate-500 mt-1">
                                     <?php echo h($selectedCustomer['address'] ?: 'No address set'); ?></p>
-                                <div class="grid grid-cols-2 gap-3 mt-4 text-center">
+                                <div class="grid grid-cols-3 gap-3 mt-4 text-center">
                                     <div class="rounded-lg bg-white border border-slate-200 p-3">
                                         <p class="text-lg font-black text-on-surface">
                                             <?php echo $selectedCustomerVehiclesCount; ?></p>
@@ -1044,8 +1134,13 @@ if ($selectedCustomerId > 0) {
                                     </div>
                                     <div class="rounded-lg bg-white border border-slate-200 p-3">
                                         <p class="text-lg font-black text-on-surface">
-                                            <?php echo $selectedCustomerActiveVehicles; ?></p>
-                                        <p class="text-[10px] uppercase tracking-widest text-slate-500">Active</p>
+                                            <?php echo $selectedCustomerAppointmentsCount; ?></p>
+                                        <p class="text-[10px] uppercase tracking-widest text-slate-500">Appointments</p>
+                                    </div>
+                                    <div class="rounded-lg bg-white border border-slate-200 p-3">
+                                        <p class="text-lg font-black text-on-surface">
+                                            <?php echo $selectedCustomerPaymentsCount; ?></p>
+                                        <p class="text-[10px] uppercase tracking-widest text-slate-500">Payments</p>
                                     </div>
                                 </div>
                                 <div class="flex gap-2 mt-4">

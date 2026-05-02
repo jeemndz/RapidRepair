@@ -211,10 +211,10 @@ if ($ownerStmt) {
                             <label class="block">
                                 <span class="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-2">Shop Logo</span>
                                 <div
-                                    class="border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-xl p-6 flex flex-col items-center justify-center bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors cursor-pointer">
-                                    <img alt="Logo preview" class="h-12 w-auto mb-3"
+                                    id="logoUploadZone" class="border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-xl p-6 flex flex-col items-center justify-center bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors cursor-pointer">
+                                    <img id="logoUploadPreview" alt="Logo preview" class="h-12 w-auto mb-3"
                                         data-alt="minimalist modern automotive shop logo with stylized A icon in cobalt blue and white"
-                                        src="https://lh3.googleusercontent.com/aida-public/AB6AXuAAzMMnJym9F6czXksfZXzrPtKMH183e-EOvioThq9iGIP3-ZXYZuUlhftXt5iWp0siIIMP3RX_OHGVe8o0rIlmeediw01JDpZidL9P_J9IQ7DsJRwERvxhhak-_y4XDJusAg-qL6jvoC1C81Lg0YZsesYJhR5yUDW2J1Emkod0ZuLnYTdHtlOk3esIXKqlSMY8Oel5Ww6W9apG8yrx2P_JcyubEQwcoitk1GMzDXL2NtMS4qxv2aqd-JKps70-LX_rwkcCLR_Sl0oZ" />
+                                        src="https://placehold.co/160x80/e2e8f0/64748b?text=Upload+Logo" />
                                     <span class="text-xs text-slate-500 font-medium">Click to upload or drag &amp;
                                         drop</span>
                                     <span class="text-[10px] text-slate-400 mt-1">SVG, PNG or JPG (Max 2MB)</span>
@@ -224,18 +224,18 @@ if ($ownerStmt) {
                                 <span class="text-xs font-bold text-slate-700 dark:text-slate-300 block">Primary Brand Color</span>
                                 <div class="flex items-center gap-3">
                                     <div
-                                        class="h-10 w-10 rounded-lg bg-primary ring-2 ring-offset-2 ring-primary cursor-pointer shadow-sm">
+                                        id="primaryColorSwatch" class="h-10 w-10 rounded-lg bg-primary ring-2 ring-offset-2 ring-primary cursor-pointer shadow-sm">
                                     </div>
                                     <input
                                         class="flex-1 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white rounded-lg text-sm font-mono focus:ring-primary focus:border-primary dark:focus:ring-primary"
-                                        type="text" value="#1152d4" />
+                                        id="primaryColorInput" type="text" value="#1152d4" />
                                 </div>
                                 <div class="flex gap-2 pt-1">
-                                    <div class="h-6 w-6 rounded-full bg-[#1152d4] cursor-pointer"></div>
-                                    <div class="h-6 w-6 rounded-full bg-[#d41111] cursor-pointer"></div>
-                                    <div class="h-6 w-6 rounded-full bg-[#11d441] cursor-pointer"></div>
-                                    <div class="h-6 w-6 rounded-full bg-[#000000] cursor-pointer"></div>
-                                    <div class="h-6 w-6 rounded-full bg-[#6366f1] cursor-pointer"></div>
+                                    <button type="button" class="h-6 w-6 rounded-full bg-[#1152d4] cursor-pointer border border-slate-200" data-color="#1152d4" aria-label="Use #1152d4"></button>
+                                    <button type="button" class="h-6 w-6 rounded-full bg-[#d41111] cursor-pointer border border-slate-200" data-color="#d41111" aria-label="Use #d41111"></button>
+                                    <button type="button" class="h-6 w-6 rounded-full bg-[#11d441] cursor-pointer border border-slate-200" data-color="#11d441" aria-label="Use #11d441"></button>
+                                    <button type="button" class="h-6 w-6 rounded-full bg-[#000000] cursor-pointer border border-slate-200" data-color="#000000" aria-label="Use #000000"></button>
+                                    <button type="button" class="h-6 w-6 rounded-full bg-[#6366f1] cursor-pointer border border-slate-200" data-color="#6366f1" aria-label="Use #6366f1"></button>
                                 </div>
                             </div>
                         </div>
@@ -251,24 +251,24 @@ if ($ownerStmt) {
                                 <label class="text-xs font-bold text-slate-700 dark:text-slate-300">Main Heading</label>
                                 <textarea
                                     class="w-full border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white rounded-lg text-sm focus:ring-primary focus:border-primary font-bold"
-                                    rows="2">Precision Engineering. Absolute Reliability.</textarea>
+                                    id="heroHeadingInput" rows="2">Precision Engineering. Absolute Reliability.</textarea>
                             </div>
                             <div class="space-y-2">
                                 <label class="text-xs font-bold text-slate-700 dark:text-slate-300">Subtext</label>
                                 <textarea
                                     class="w-full border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white rounded-lg text-sm focus:ring-primary focus:border-primary"
-                                    rows="3">Expert automotive repair and maintenance services for performance vehicles and daily drivers alike.</textarea>
+                                    id="heroSubtextInput" rows="3">Expert automotive repair and maintenance services for performance vehicles and daily drivers alike.</textarea>
                             </div>
                             <div class="space-y-2">
                                 <label class="text-xs font-bold text-slate-700 dark:text-slate-300 block">Hero Background</label>
                                 <div
-                                    class="relative group rounded-xl overflow-hidden aspect-video border border-slate-200">
-                                    <img alt="Hero background" class="w-full h-full object-cover"
+                                    id="heroUploadZone" class="relative group rounded-xl overflow-hidden aspect-video border border-slate-200 cursor-pointer">
+                                    <img id="heroBackgroundUploadPreview" alt="Hero background" class="w-full h-full object-cover"
                                         data-alt="dark atmospheric car garage with luxury vehicle on hydraulic lift and dramatic industrial lighting"
-                                        src="https://lh3.googleusercontent.com/aida-public/AB6AXuAAEZoRvP3cMoUAVGKEn0It-hmRsA1SyxyvB4Q7rQ1ZCdmQ2cV7q-hIMLuoBa7_CqNQTWi6jDYPp6v959Tj6DrZDcqxD8TmkVnQ7sKMZ3lAzHhx24IHW8cZP9InEDM4nLAtrMtf-KjqkjRqQNiwDGk-5lw-86c7XQPqFA2yy73An2brlcVRgz1YyvIOd-Zyed5aD9ilvLWqBCDN18ZJhQ-cVSgeiEhlAJb7GFZdWldZ9ttKApne0LizHsag6CM4J3ytnsVga2qyAPy0" />
+                                        src="https://placehold.co/800x450/e2e8f0/64748b?text=Upload+Hero+Background" />
                                     <div
                                         class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                                        <button
+                                        <button type="button"
                                             class="bg-white/90 text-slate-900 px-3 py-1.5 rounded text-[10px] font-bold">Replace
                                             Image</button>
                                     </div>
@@ -284,12 +284,12 @@ if ($ownerStmt) {
                             </h3>
                         </div>
                         <div class="space-y-3">
-                            <div class="grid grid-cols-3 gap-2">
+                            <div id="carouselGrid" class="grid grid-cols-3 gap-2">
                                 <!-- Thumbnail 1 -->
                                 <div
                                     class="relative aspect-square rounded-lg overflow-hidden border border-slate-200 group">
                                     <img alt="Carousel thumbnail" class="w-full h-full object-cover"
-                                        src="https://lh3.googleusercontent.com/aida-public/AB6AXuCwGXEfTy8DlOw1YNRg6RLzDpkkwxZlAKRx2lvHV2OzUdmIBAI-80Yb82sDcTixdMIjcM2Bje12VI2U06L83ro_Gg8kT8tyW4eTj5Fl-8jCeUIhU1obV_sG15n45_cU-1nHjIlN6Vr14rB36GtVUC58vqCEpZN0r2k-p0xM2huhLhR9r-uPnAu21ulzIqlMGwy-PIbqQB4vGaeuYxj5rETFjptOlHV3_qferqA4FOg-GWBckKwV3Y24CIZHunAsnqwtq2QIlw3xPZEo" />
+                                        src="https://placehold.co/300x300/f1f5f9/64748b?text=Carousel+Image" />
                                     <div
                                         class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
                                         <button class="material-symbols-outlined text-white text-sm hover:text-red-400"
@@ -300,7 +300,7 @@ if ($ownerStmt) {
                                 <div
                                     class="relative aspect-square rounded-lg overflow-hidden border border-slate-200 group">
                                     <img alt="Carousel thumbnail" class="w-full h-full object-cover"
-                                        src="https://lh3.googleusercontent.com/aida-public/AB6AXuC6WYbEGYRuc18Q-3jm5xKblfYfIFt3AdDPamfPaDpDfp9hNkz_lsQp6vALQCLbG7QZCVbRdfvfe0pvhng3qJuP0MR7jGnci3Mtbwre28IYur9PRpR3vmJvUntKxdpEQLTEip-8nSxws-lOz4gPWEL2pOmQ4cBqo7Hjjw2a3itXG9nF_Ng-gDY8pJVD5wAJIZFaHJogBo1Y6Hn0kfW6R3bIBWTb_d_3qe9CYorXDTti1_564wc8wvJh2bVlBQGv5Igs6ptBRLmcABQo" />
+                                        src="https://placehold.co/300x300/f1f5f9/64748b?text=Carousel+Image" />
                                     <div
                                         class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
                                         <button class="material-symbols-outlined text-white text-sm hover:text-red-400"
@@ -311,7 +311,7 @@ if ($ownerStmt) {
                                 <div
                                     class="relative aspect-square rounded-lg overflow-hidden border border-slate-200 group">
                                     <img alt="Carousel thumbnail" class="w-full h-full object-cover"
-                                        src="https://lh3.googleusercontent.com/aida-public/AB6AXuD0vciZ07jYRKeWn1spvw7knCLljGODiLcThQQZOShgePH8_nh2Il4JTMJV5oEiGIrlCWYA00WxUR0y94y48RyqANFlzJff4f0Of_TmutplWAoCW_oRQLA4itduTywEgTWiAUgWXzzCr-dWkYykHDUue32coaGylSYy5X4GaCbuBNVOJlaxk2GjHYznAAXeJIFI-Ii2HQPT0SA0tf4D8w1MqwPBWOh7A8mKvmgQL9GOSk_8jOoVpOz888V6U-vy2fLs6diY36YRDXvU" />
+                                        src="https://placehold.co/300x300/f1f5f9/64748b?text=Carousel+Image" />
                                     <div
                                         class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
                                         <button class="material-symbols-outlined text-white text-sm hover:text-red-400"
@@ -319,7 +319,7 @@ if ($ownerStmt) {
                                     </div>
                                 </div>
                             </div>
-                            <button
+                            <button id="addCarouselImageBtn" type="button"
                                 class="w-full py-2 border-2 border-dashed border-slate-200 rounded-lg text-xs font-bold text-slate-500 hover:border-primary hover:text-primary transition-all flex items-center justify-center gap-2">
                                 <span class="material-symbols-outlined text-sm"
                                     data-icon="add_photo_alternate">add_photo_alternate</span>
@@ -377,7 +377,7 @@ if ($ownerStmt) {
                             <label class="text-xs font-bold text-slate-700 dark:text-slate-300">Primary Button Text</label>
                             <input
                                 class="w-full border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white rounded-lg text-sm focus:ring-primary focus:border-primary"
-                                type="text" value="Book Appointment" />
+                                id="ctaButtonTextInput" type="text" value="Book Appointment" />
                         </div>
                     </div>
                 </div>
@@ -407,84 +407,134 @@ if ($ownerStmt) {
                         </div>
                     </div>
                     <!-- Scaled Content -->
-                    <div class="w-full h-full overflow-y-auto">
-                        <!-- Website Nav -->
-                        <nav class="h-20 px-12 flex items-center justify-between border-b border-slate-100 bg-white">
-                            <div class="flex items-center gap-2">
-                                <div
-                                    class="h-10 w-10 bg-primary rounded flex items-center justify-center text-white font-black text-lg">
-                                    A</div>
-                                <span class="font-black text-xl tracking-tight text-slate-900">APEX AUTO</span>
-                            </div>
-                            <div class="flex gap-8 text-sm font-semibold text-slate-600">
-                                <a class="text-primary" href="#">Home</a>
-                                <a href="#">Services</a>
-                                <a href="#">About</a>
-                                <a href="#">Contact</a>
-                            </div>
-                            <button class="bg-primary text-white px-6 py-2.5 rounded-lg text-sm font-bold">Book
-                                Appointment</button>
-                        </nav>
-                        <!-- Website Hero -->
-                        <section class="relative h-[480px] flex items-center px-24 overflow-hidden">
-                            <img alt="Hero Preview" class="absolute inset-0 w-full h-full object-cover"
-                                data-alt="professional mechanic workshop with sleek high-end cars and clinical blue lighting"
-                                src="https://lh3.googleusercontent.com/aida-public/AB6AXuA0zmutvRnUl-GPzbS-QT9sT-esKJdfNuSKhnLh1fTUPzENyd0Zzo-ohnNpN66RlwQJhlPCQBYqVW7PmRJvJAt1gI9zDLzS0xpQ4ZaGQH3uOhzpSZqipJvISctGkdw4YVFw_zt_rbiGBEUyeTlMPK7HcscBwu3_2-GD3DZHdWU5KkNZQT59iorXGFpytVXaffS-fTig4CY1nMCp8T6BeGaC0UI4EKJJ0UfZYWgUmhPD29Lf9QDPBG4Amzp9lzVaaoUnf0SjEl2chzzJ" />
-                            <div class="absolute inset-0 bg-slate-900/60"></div>
-                            <div class="relative max-w-2xl text-white">
-                                <h2 class="text-5xl font-black tracking-tight mb-6 leading-tight">Precision Engineering.
-                                    Absolute Reliability.</h2>
-                                <p class="text-xl text-slate-200 mb-8 leading-relaxed">Expert automotive repair and
-                                    maintenance services for performance vehicles and daily drivers alike.</p>
-                                <div class="flex gap-4">
-                                    <button class="bg-primary px-8 py-4 rounded-lg font-bold text-lg">Book
-                                        Appointment</button>
-                                    <button
-                                        class="bg-white/10 backdrop-blur-md border border-white/20 px-8 py-4 rounded-lg font-bold text-lg">View
-                                        Services</button>
-                                </div>
-                            </div>
-                        </section>
-                        <!-- Website Services -->
-                        <section class="py-24 px-24 bg-white">
-                            <div class="text-center mb-16">
-                                <span class="text-primary font-bold text-sm tracking-widest uppercase mb-2 block">Our
-                                    Expertise</span>
-                                <h3 class="text-4xl font-black text-slate-900 tracking-tight">World Class Service</h3>
-                            </div>
-                            <div class="grid grid-cols-3 gap-8">
-                                <div class="p-10 bg-slate-50 border border-slate-100 rounded-xl">
-                                    <div
-                                        class="h-14 w-14 bg-primary/10 rounded-xl flex items-center justify-center text-primary mb-6">
-                                        <span class="material-symbols-outlined text-3xl"
-                                            data-icon="troubleshoot">troubleshoot</span>
+                    <div id="websitePreview" class="w-full h-full overflow-y-auto bg-surface text-on-surface" style="--preview-primary:#1152d4; font-family: Inter, sans-serif;">
+                        <header class="sticky top-0 z-30 bg-white/90 backdrop-blur-md border-b border-slate-200 shadow-sm">
+                            <nav class="flex justify-between items-center h-16 px-6 md:px-10 max-w-7xl mx-auto">
+                                <div class="flex items-center gap-3 min-w-0">
+                                    <img id="previewLogoImg" alt="Shop logo" class="hidden h-10 w-10 rounded-lg object-contain bg-white border border-slate-200" src="" />
+                                    <div id="previewLogoFallback" class="h-10 w-10 rounded-lg flex items-center justify-center text-white font-black text-lg" style="background:var(--preview-primary);">
+                                        <?php echo strtoupper(substr($shopName, 0, 1)); ?>
                                     </div>
-                                    <h4 class="text-xl font-bold text-slate-900 mb-3">Diagnostics</h4>
-                                    <p class="text-slate-500 leading-relaxed">State-of-the-art computer analysis to
-                                        identify vehicle issues rapidly.</p>
+                                    <div id="previewShopName" class="text-xl font-black tracking-tighter text-[#0F4B3C] truncate max-w-[260px]"><?php echo htmlspecialchars($shopName, ENT_QUOTES, 'UTF-8'); ?></div>
                                 </div>
-                                <div class="p-10 bg-slate-50 border border-slate-100 rounded-xl">
-                                    <div
-                                        class="h-14 w-14 bg-primary/10 rounded-xl flex items-center justify-center text-primary mb-6">
-                                        <span class="material-symbols-outlined text-3xl"
-                                            data-icon="car_repair">car_repair</span>
+                                <div class="hidden md:flex items-center space-x-8 tracking-tight text-sm font-medium">
+                                    <a class="pb-1 border-b-2" style="color:#0F4B3C;border-color:#0F4B3C;" href="#">Home</a>
+                                    <a class="text-slate-600" href="#">Services</a>
+                                    <a class="text-slate-600" href="#">Mobile App</a>
+                                    <a class="text-slate-600" href="#">About</a>
+                                </div>
+                                <button id="previewHeaderCta" class="text-white px-5 py-2 rounded-lg font-semibold text-sm" style="background:var(--preview-primary);">Book Appointment</button>
+                            </nav>
+                        </header>
+
+                        <main>
+                            <section class="relative w-full overflow-hidden bg-[#1A2A2A] py-20 md:py-28">
+                                <div class="absolute inset-0 opacity-40">
+                                    <img id="previewHeroImage" alt="Modern Auto Repair Shop" class="w-full h-full object-cover" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAEtRZx2VtJU_zvHyWwsPzD6V-hQgNfAn2ej099PlXa6HKYmZqm9u0Cl5K4y-AzSzT4KPlh897GoHs2N4t_PifJp3y-dT-rj5YsB98I9Dnp799aPfP0rZ-vQZhqRNpq_Ll2qyR361GWZxFHoYgrFfUTBzh8STIl_1B0aQTSEGfgyxNhO7ix91KeXhv26XzL0sHPtMcsrGNRwCP_RGCYJ8Ny0heOO9T8o7EUb9hcDp1dSNVs5Fja1CgIgUO3RtwhBFeHSdHhfk06o3Lo" />
+                                </div>
+                                <div class="absolute inset-0 bg-gradient-to-r from-[#1A2A2A] via-[#1A2A2A]/80 to-transparent"></div>
+                                <div class="relative z-10 max-w-7xl mx-auto px-6 md:px-12">
+                                    <div class="max-w-2xl">
+                                        <h1 id="previewHeroHeading" class="text-white text-5xl md:text-6xl font-black tracking-tight mb-6">Precision Engineering. Absolute Reliability.</h1>
+                                        <p id="previewHeroSubtext" class="text-slate-300 text-lg mb-8 font-medium leading-relaxed">Expert automotive repair and maintenance services for performance vehicles and daily drivers alike.</p>
+                                        <div class="flex flex-col sm:flex-row gap-4">
+                                            <button id="previewHeroCta" class="inline-flex items-center justify-center text-white px-8 py-4 rounded-lg font-bold text-base shadow-lg transition-all" style="background:var(--preview-primary);">Book Appointment</button>
+                                            <button class="inline-flex items-center justify-center border border-white/20 bg-white/5 backdrop-blur-md text-white px-8 py-4 rounded-lg font-bold text-base">View Services</button>
+                                        </div>
                                     </div>
-                                    <h4 class="text-xl font-bold text-slate-900 mb-3">Brake Repair</h4>
-                                    <p class="text-slate-500 leading-relaxed">Full system inspection, pad replacement,
-                                        and rotor resurfacing.</p>
                                 </div>
-                                <div class="p-10 bg-slate-50 border border-slate-100 rounded-xl">
-                                    <div
-                                        class="h-14 w-14 bg-primary/10 rounded-xl flex items-center justify-center text-primary mb-6">
-                                        <span class="material-symbols-outlined text-3xl"
-                                            data-icon="oil_barrel">oil_barrel</span>
+                            </section>
+
+                            <section class="py-20 bg-white">
+                                <div class="max-w-7xl mx-auto px-6 md:px-12">
+                                    <div class="text-center mb-14">
+                                        <span class="font-bold tracking-widest text-xs uppercase" style="color:var(--preview-primary);">The <?php echo htmlspecialchars($shopName, ENT_QUOTES, 'UTF-8'); ?> Advantage</span>
+                                        <h2 class="text-4xl font-black tracking-tight mt-2">Engineered Excellence</h2>
                                     </div>
-                                    <h4 class="text-xl font-bold text-slate-900 mb-3">Oil Changes</h4>
-                                    <p class="text-slate-500 leading-relaxed">Premium synthetic fluids and
-                                        high-efficiency filtration systems.</p>
+                                    <div id="previewAdvantageGrid" class="grid grid-cols-1 md:grid-cols-3 gap-10">
+                                        <div class="group"><div class="w-14 h-14 bg-slate-100 rounded-xl flex items-center justify-center mb-6"><span class="material-symbols-outlined text-3xl">troubleshoot</span></div><h3 class="text-xl font-bold mb-3">Expert Diagnostics</h3><p class="text-slate-600 text-sm leading-relaxed">Advanced diagnostics to detect issues before they become costly repairs.</p></div>
+                                        <div class="group"><div class="w-14 h-14 bg-slate-100 rounded-xl flex items-center justify-center mb-6"><span class="material-symbols-outlined text-3xl">precision_manufacturing</span></div><h3 class="text-xl font-bold mb-3">Precision Tuning</h3><p class="text-slate-600 text-sm leading-relaxed">Performance-focused service built for daily drivers and business fleets.</p></div>
+                                        <div class="group"><div class="w-14 h-14 bg-slate-100 rounded-xl flex items-center justify-center mb-6"><span class="material-symbols-outlined text-3xl">verified</span></div><h3 class="text-xl font-bold mb-3">Genuine Parts</h3><p class="text-slate-600 text-sm leading-relaxed">Quality components and transparent work from start to finish.</p></div>
+                                    </div>
                                 </div>
-                            </div>
-                        </section>
+                            </section>
+
+                            <section class="py-20 max-w-7xl mx-auto px-6 md:px-12">
+                                <div class="mb-14">
+                                    <span class="font-bold tracking-widest text-xs uppercase" style="color:var(--preview-primary);">Core Capabilities</span>
+                                    <h2 class="text-4xl font-black tracking-tight mt-2">Expert Maintenance</h2>
+                                </div>
+                                <div id="previewServicesGrid" class="grid grid-cols-1 md:grid-cols-12 gap-6">
+                                    <div class="md:col-span-8 bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm flex flex-col md:flex-row">
+                                        <div class="md:w-1/2 p-10 flex flex-col justify-center">
+                                            <div class="w-12 h-12 rounded-lg flex items-center justify-center mb-6" style="background:rgba(17,82,212,.12);color:var(--preview-primary);"><span class="material-symbols-outlined">computer</span></div>
+                                            <h3 class="text-2xl font-bold mb-4">Engine Diagnostics</h3>
+                                            <p class="text-slate-600 text-sm leading-relaxed mb-6">Using scanning technology to identify engine, ECU, and sensor problems fast.</p>
+                                            <ul class="space-y-2 mb-8 text-sm font-medium"><li class="flex items-center gap-2"><span class="material-symbols-outlined text-sm" style="color:var(--preview-primary);">check_circle</span> Fault Code Analysis</li><li class="flex items-center gap-2"><span class="material-symbols-outlined text-sm" style="color:var(--preview-primary);">check_circle</span> Sensor Calibration</li></ul>
+                                        </div>
+                                        <div class="md:w-1/2 h-64 md:h-auto"><img class="w-full h-full object-cover" alt="Engine Diagnostics" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAeKwRX9gbVEj_ZDeKQztbtFR3l2RkUj4tNbp_L-TFGvm_1jZRDe4LRtNoz63vt3g288vvZCM_Tg1tfutLMBK9h5Ojugz9xfAK3phYFqL7orQYkLgJ7BNYUiZXRmr9yhQZWdtcu-H43u1PiDPSiYjV_X8l32DK-Ng8x_9u4W86W7VeI9Xyc0VSEb0QYIXm2S6VSbd-TacddkVNW8kRnGzKMsZ5WzvgQbpNT945kqTAtanzRhHEk4ink6T4g7Gyl7w2l5iUpLdBrUjyK" /></div>
+                                    </div>
+                                    <div class="md:col-span-4 bg-white border border-slate-200 rounded-xl p-10 shadow-sm">
+                                        <div class="w-12 h-12 rounded-lg flex items-center justify-center mb-6" style="background:rgba(17,82,212,.12);color:var(--preview-primary);"><span class="material-symbols-outlined">settings_backup_restore</span></div>
+                                        <h3 class="text-2xl font-bold mb-4">Brake Systems</h3>
+                                        <p class="text-slate-600 text-sm leading-relaxed">Brake inspection, pad replacement, and rotor servicing for safe stopping power.</p>
+                                    </div>
+                                    <div class="md:col-span-4 bg-white border border-slate-200 rounded-xl p-10 shadow-sm">
+                                        <div class="w-12 h-12 rounded-lg flex items-center justify-center mb-6" style="background:rgba(17,82,212,.12);color:var(--preview-primary);"><span class="material-symbols-outlined">oil_barrel</span></div>
+                                        <h3 class="text-2xl font-bold mb-4">Precision Lube</h3>
+                                        <p class="text-slate-600 text-sm leading-relaxed">Synthetic fluids and premium filtration to extend vehicle life.</p>
+                                    </div>
+                                    <div class="md:col-span-8 text-white rounded-xl p-10 shadow-lg flex flex-col md:flex-row items-center gap-8" style="background:var(--preview-primary);">
+                                        <div class="md:w-2/3"><h3 class="text-3xl font-black mb-4">Commercial Fleet Solutions</h3><p class="text-white/80 text-sm leading-relaxed mb-6">Priority scheduling and maintenance plans that keep business vehicles moving.</p><button class="bg-white px-6 py-2 rounded-lg font-bold text-xs uppercase tracking-widest" style="color:var(--preview-primary);">Inquire Now</button></div>
+                                        <div class="md:w-1/3 flex justify-center"><span class="material-symbols-outlined text-[120px] text-white/20">local_shipping</span></div>
+                                    </div>
+                                </div>
+                            </section>
+
+                            <section class="py-20 bg-white">
+                                <div class="max-w-7xl mx-auto px-6 md:px-12 grid md:grid-cols-2 gap-14 items-center">
+                                    <div class="aspect-square rounded-xl overflow-hidden border-8 border-slate-100 shadow-xl"><img id="previewCarouselMain" alt="Workshop Interior" class="w-full h-full object-cover" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCNivH_gwqpoPun0DlJsk-9blL2X9GmrPZadgtfgSk_cfbrHcq_2Jj_Kv_acazMye-HCCWv3eZvFJsHjr-YrA_PdQ2Dc85Dk6eNetLGhRSxIlWTGUnZdLAs5em2s8xJ6Xxvy0C3isvjOWRs5KrnrdAJb6MuRGEgio9BCz-zTo3KZ4fhPwzI1i3ItWpxuos6F8vcgwsySr6X68R7sHCMNE6BJhr6e3-3uZv38v00EUgCyTafeawupM7Aoy0SfVrV6rKZjcAueOVkLia1" /></div>
+                                    <div><span class="font-bold tracking-widest text-xs uppercase" style="color:var(--preview-primary);">Legacy &amp; Vision</span><h2 class="text-4xl font-black tracking-tight mt-2 mb-8">About <?php echo htmlspecialchars($shopName, ENT_QUOTES, 'UTF-8'); ?></h2><p class="text-slate-600 leading-relaxed">Founded on transparency and technical mastery, <?php echo htmlspecialchars($shopName, ENT_QUOTES, 'UTF-8'); ?> delivers professional automotive care with clear service tracking and reliable workmanship.</p></div>
+                                </div>
+                            </section>
+
+                            <section id="previewImageCarouselSection" class="py-20 bg-slate-50">
+                                <div class="max-w-7xl mx-auto px-6 md:px-12">
+                                    <div class="text-center mb-12">
+                                        <span class="font-bold tracking-widest text-xs uppercase" style="color:var(--preview-primary);">Shop Gallery</span>
+                                        <h2 class="text-4xl font-black tracking-tight mt-2">Pictures Carousel</h2>
+                                        <p class="text-slate-600 mt-4">Uploaded carousel images appear here in real time.</p>
+                                    </div>
+                                    <div id="previewCarouselGrid" class="grid grid-cols-1 md:grid-cols-3 gap-6"></div>
+                                </div>
+                            </section>
+
+                            <section class="py-20 bg-white overflow-hidden">
+                                <div class="max-w-7xl mx-auto px-6 md:px-12">
+                                    <div class="text-center max-w-3xl mx-auto mb-14">
+                                        <span class="font-bold tracking-widest text-xs uppercase" style="color:var(--preview-primary);">Owner Satisfaction</span>
+                                        <h2 class="text-4xl font-black tracking-tight mt-2">The <?php echo htmlspecialchars($shopName, ENT_QUOTES, 'UTF-8'); ?> Standard</h2>
+                                    </div>
+                                    <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
+                                        <div class="bg-slate-50 p-8 border border-slate-200 rounded-xl shadow-sm"><div class="flex gap-1 text-amber-500 mb-6"><span class="material-symbols-outlined" style="font-variation-settings:'FILL' 1;">star</span><span class="material-symbols-outlined" style="font-variation-settings:'FILL' 1;">star</span><span class="material-symbols-outlined" style="font-variation-settings:'FILL' 1;">star</span><span class="material-symbols-outlined" style="font-variation-settings:'FILL' 1;">star</span><span class="material-symbols-outlined" style="font-variation-settings:'FILL' 1;">star</span></div><p class="text-slate-700 text-sm italic leading-relaxed mb-8">Professional diagnostics, clear reports, and dependable repair service.</p><div class="text-sm font-bold">Marcus Chen</div><div class="text-xs text-slate-500">Vehicle Owner</div></div>
+                                        <div class="bg-slate-50 p-8 border border-slate-200 rounded-xl shadow-sm"><div class="flex gap-1 text-amber-500 mb-6"><span class="material-symbols-outlined" style="font-variation-settings:'FILL' 1;">star</span><span class="material-symbols-outlined" style="font-variation-settings:'FILL' 1;">star</span><span class="material-symbols-outlined" style="font-variation-settings:'FILL' 1;">star</span><span class="material-symbols-outlined" style="font-variation-settings:'FILL' 1;">star</span><span class="material-symbols-outlined" style="font-variation-settings:'FILL' 1;">star</span></div><p class="text-slate-700 text-sm italic leading-relaxed mb-8">Clean, organized, and transparent from booking to completion.</p><div class="text-sm font-bold">Sarah Jenkins</div><div class="text-xs text-slate-500">Fleet Manager</div></div>
+                                        <div class="bg-slate-50 p-8 border border-slate-200 rounded-xl shadow-sm"><div class="flex gap-1 text-amber-500 mb-6"><span class="material-symbols-outlined" style="font-variation-settings:'FILL' 1;">star</span><span class="material-symbols-outlined" style="font-variation-settings:'FILL' 1;">star</span><span class="material-symbols-outlined" style="font-variation-settings:'FILL' 1;">star</span><span class="material-symbols-outlined" style="font-variation-settings:'FILL' 1;">star</span><span class="material-symbols-outlined" style="font-variation-settings:'FILL' 1;">star</span></div><p class="text-slate-700 text-sm italic leading-relaxed mb-8">A reliable shop with attention to detail and excellent follow-through.</p><div class="text-sm font-bold">David Rossi</div><div class="text-xs text-slate-500">Classic Car Collector</div></div>
+                                    </div>
+                                </div>
+                            </section>
+
+                            <section class="py-20 bg-slate-900 overflow-hidden text-white relative">
+                                <div class="max-w-7xl mx-auto px-6 md:px-12 flex flex-col md:flex-row items-center gap-14">
+                                    <div class="md:w-1/2">
+                                        <span class="font-bold tracking-widest text-xs uppercase mb-4 block" style="color:var(--preview-primary);">Connected Service</span>
+                                        <h2 class="text-4xl md:text-5xl font-black tracking-tight mb-6">Manage Your Vehicle from Your Pocket</h2>
+                                        <p class="text-slate-400 text-lg mb-10 leading-relaxed">Download the <?php echo htmlspecialchars($shopName, ENT_QUOTES, 'UTF-8'); ?> app to track service history, appointments, and repair updates.</p>
+                                        <button class="text-white border rounded-xl px-6 py-3 flex items-center gap-3 font-bold" style="background:var(--preview-primary);border-color:var(--preview-primary);"><span class="material-symbols-outlined">folder</span> Download Here</button>
+                                    </div>
+                                    <div class="md:w-1/2 flex justify-center"><div class="w-56 h-[420px] bg-slate-800 rounded-[2.5rem] border-8 border-slate-700 p-5 shadow-2xl"><div class="h-full bg-white rounded-[2rem] p-5 text-slate-900"><div class="text-sm font-black mb-5"><?php echo htmlspecialchars($shopName, ENT_QUOTES, 'UTF-8'); ?> App</div><div class="space-y-3"><div class="h-16 rounded-xl bg-slate-100"></div><div class="h-16 rounded-xl bg-slate-100"></div><div class="h-24 rounded-xl" style="background:var(--preview-primary);"></div><div class="h-16 rounded-xl bg-slate-100"></div></div></div></div></div>
+                                </div>
+                            </section>
+                        </main>
                     </div>
                     <!-- Overlay Label -->
                     <div
@@ -516,169 +566,301 @@ if ($ownerStmt) {
         // Customization System
         const customizationSystem = {
             tenantID: <?php echo $tenantID; ?>,
-            
-            // Initialize the system
+            shopName: <?php echo json_encode($shopName); ?>,
+            defaultHeroImage: 'https://lh3.googleusercontent.com/aida-public/AB6AXuAEtRZx2VtJU_zvHyWwsPzD6V-hQgNfAn2ej099PlXa6HKYmZqm9u0Cl5K4y-AzSzT4KPlh897GoHs2N4t_PifJp3y-dT-rj5YsB98I9Dnp799aPfP0rZ-vQZhqRNpq_Ll2qyR361GWZxFHoYgrFfUTBzh8STIl_1B0aQTSEGfgyxNhO7ix91KeXhv26XzL0sHPtMcsrGNRwCP_RGCYJ8Ny0heOO9T8o7EUb9hcDp1dSNVs5Fja1CgIgUO3RtwhBFeHSdHhfk06o3Lo',
+            placeholderThumb: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="600" height="400"><rect width="100%" height="100%" fill="#f1f5f9"/><text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" fill="#64748b" font-family="Arial" font-size="24">Image preview unavailable</text></svg>'),
+            carouselImages: [],
+            services: [],
+
             init() {
-                this.loadCustomization();
+                this.cacheElements();
                 this.attachEventListeners();
+                this.loadCustomization();
+                this.updatePreview();
             },
-            
-            // Load existing customization from database
+
+            cacheElements() {
+                this.el = {
+                    saveButton: document.getElementById('saveButton'),
+                    primaryColorInput: document.getElementById('primaryColorInput'),
+                    primaryColorSwatch: document.getElementById('primaryColorSwatch'),
+                    heroHeadingInput: document.getElementById('heroHeadingInput'),
+                    heroSubtextInput: document.getElementById('heroSubtextInput'),
+                    ctaButtonTextInput: document.getElementById('ctaButtonTextInput'),
+                    logoZone: document.getElementById('logoUploadZone'),
+                    logoUploadPreview: document.getElementById('logoUploadPreview'),
+                    heroZone: document.getElementById('heroUploadZone'),
+                    heroBackgroundUploadPreview: document.getElementById('heroBackgroundUploadPreview'),
+                    carouselGrid: document.getElementById('carouselGrid'),
+                    addCarouselImageBtn: document.getElementById('addCarouselImageBtn'),
+                    websitePreview: document.getElementById('websitePreview'),
+                    previewLogoImg: document.getElementById('previewLogoImg'),
+                    previewLogoFallback: document.getElementById('previewLogoFallback'),
+                    previewShopName: document.getElementById('previewShopName'),
+                    previewHeaderCta: document.getElementById('previewHeaderCta'),
+                    previewHeroImage: document.getElementById('previewHeroImage'),
+                    previewCarouselGrid: document.getElementById('previewCarouselGrid'),
+                    previewCarouselMain: document.getElementById('previewCarouselMain'),
+                    previewHeroHeading: document.getElementById('previewHeroHeading'),
+                    previewHeroSubtext: document.getElementById('previewHeroSubtext'),
+                    previewHeroCta: document.getElementById('previewHeroCta'),
+                    previewCarouselMain: document.getElementById('previewCarouselMain')
+                };
+            },
+
             async loadCustomization() {
                 try {
-                    const response = await fetch(`customization_handler.php?action=get_customization`);
+                    const response = await fetch('customization_handler.php?action=get_customization');
                     const result = await response.json();
-                    
-                    if (result.status === 'success') {
+
+                    if (result.status === 'success' && result.data) {
                         this.populateFormData(result.data);
+                        this.updatePreview();
                     }
                 } catch (error) {
-                    console.log('No existing customization found');
+                    console.log('No existing customization found', error);
                 }
             },
-            
-            // Populate form with existing data
+
             populateFormData(data) {
-                // Shop Name
-                const shopNameInput = document.querySelector('textarea');
-                if (shopNameInput && data.shopName) {
-                    shopNameInput.value = data.shopName;
+                if (this.el.primaryColorInput && data.primaryColor) this.el.primaryColorInput.value = data.primaryColor;
+                if (this.el.heroHeadingInput && data.heroHeading) this.el.heroHeadingInput.value = data.heroHeading;
+                if (this.el.heroSubtextInput && data.heroSubtext) this.el.heroSubtextInput.value = data.heroSubtext;
+                if (this.el.ctaButtonTextInput && data.ctaButtonText) this.el.ctaButtonTextInput.value = data.ctaButtonText;
+
+                if (data.logoPath) {
+                    this.el.logoUploadPreview.src = this.toDisplayPath(data.logoPath);
+                    this.el.logoUploadPreview.dataset.path = data.logoPath;
                 }
-                
-                // Primary Color
-                const colorInput = document.querySelector('input[type="text"][value="#1152d4"]');
-                if (colorInput && data.primaryColor) {
-                    colorInput.value = data.primaryColor;
-                    const colorPreview = document.querySelector('.bg-primary.ring-2');
-                    if (colorPreview) {
-                        colorPreview.style.backgroundColor = data.primaryColor;
-                        colorPreview.style.borderColor = data.primaryColor;
-                    }
+
+                if (data.heroBackground) {
+                    this.el.heroBackgroundUploadPreview.src = this.toDisplayPath(data.heroBackground);
+                    this.el.heroBackgroundUploadPreview.dataset.path = data.heroBackground;
                 }
-                
-                // Hero Section
-                const heroTextareas = document.querySelectorAll('textarea');
-                if (heroTextareas[1] && data.heroHeading) {
-                    heroTextareas[1].value = data.heroHeading;
-                }
-                if (heroTextareas[2] && data.heroSubtext) {
-                    heroTextareas[2].value = data.heroSubtext;
-                }
-                
-                // CTA Button Text
-                const ctaInput = document.querySelector('input[value="Book Appointment"]');
-                if (ctaInput && data.ctaButtonText) {
-                    ctaInput.value = data.ctaButtonText;
-                }
+
+                this.carouselImages = Array.isArray(data.carouselImages) ? data.carouselImages : [];
+                this.services = Array.isArray(data.services) ? data.services : [];
+                if (this.carouselImages.length) this.renderCarouselThumbnails();
             },
-            
-            // Attach event listeners
+
             attachEventListeners() {
-                const saveButton = document.getElementById('saveButton');
-                if (saveButton) {
-                    saveButton.addEventListener('click', () => this.saveCustomization());
-                }
-                
-                // Color picker circles
-                document.querySelectorAll('.bg-\\[\\#1152d4\\], .bg-\\[\\#d41111\\], .bg-\\[\\#11d441\\], .bg-\\[\\#000000\\], .bg-\\[\\#6366f1\\]').forEach((circle, index) => {
-                    circle.addEventListener('click', (e) => {
-                        const colors = ['#1152d4', '#d41111', '#11d441', '#000000', '#6366f1'];
-                        const colorInput = document.querySelector('input[type="text"][value="#1152d4"]');
-                        if (colorInput) {
-                            colorInput.value = colors[index];
-                        }
+                if (this.el.saveButton) this.el.saveButton.addEventListener('click', () => this.saveCustomization());
+
+                [this.el.primaryColorInput, this.el.heroHeadingInput, this.el.heroSubtextInput, this.el.ctaButtonTextInput].forEach(field => {
+                    if (!field) return;
+                    field.addEventListener('input', () => this.updatePreview());
+                    field.addEventListener('change', () => this.updatePreview());
+                });
+
+                document.querySelectorAll('[data-color]').forEach(circle => {
+                    circle.addEventListener('click', () => {
+                        this.el.primaryColorInput.value = circle.dataset.color;
+                        this.updatePreview();
                     });
                 });
-                
-                // Image upload handlers
-                this.attachImageUploadHandlers();
-            },
-            
-            // Attach image upload handlers
-            attachImageUploadHandlers() {
-                const logoDragZone = document.querySelector('[data-alt*="minimalist modern automotive"]').parentElement.parentElement;
-                if (logoDragZone) {
-                    logoDragZone.addEventListener('click', () => this.triggerImageUpload('logo'));
-                    logoDragZone.addEventListener('dragover', (e) => {
-                        e.preventDefault();
-                        logoDragZone.classList.add('bg-blue-50');
-                    });
-                    logoDragZone.addEventListener('dragleave', () => {
-                        logoDragZone.classList.remove('bg-blue-50');
-                    });
-                    logoDragZone.addEventListener('drop', (e) => {
-                        e.preventDefault();
-                        logoDragZone.classList.remove('bg-blue-50');
-                        const files = e.dataTransfer.files;
-                        if (files.length > 0) {
-                            this.uploadImage(files[0], 'logo');
-                        }
+
+                this.attachDropZone(this.el.logoZone, 'logo');
+                this.attachDropZone(this.el.heroZone, 'hero');
+
+                if (this.el.addCarouselImageBtn) {
+                    this.el.addCarouselImageBtn.addEventListener('click', () => this.triggerImageUpload('carousel'));
+                }
+
+                if (this.el.carouselGrid) {
+                    this.el.carouselGrid.addEventListener('click', (e) => {
+                        const deleteBtn = e.target.closest('[data-delete-carousel-index]');
+                        if (!deleteBtn) return;
+                        this.carouselImages.splice(Number(deleteBtn.dataset.deleteCarouselIndex), 1);
+                        this.renderCarouselThumbnails();
+                        this.updatePreview();
                     });
                 }
             },
-            
-            // Trigger file input for image upload
+
+            attachDropZone(zone, type) {
+                if (!zone) return;
+                zone.addEventListener('click', (e) => {
+                    if (e.target.closest('button')) e.preventDefault();
+                    this.triggerImageUpload(type);
+                });
+                zone.addEventListener('dragover', (e) => {
+                    e.preventDefault();
+                    zone.classList.add('bg-blue-50', 'dark:bg-slate-700');
+                });
+                zone.addEventListener('dragleave', () => zone.classList.remove('bg-blue-50', 'dark:bg-slate-700'));
+                zone.addEventListener('drop', (e) => {
+                    e.preventDefault();
+                    zone.classList.remove('bg-blue-50', 'dark:bg-slate-700');
+                    if (e.dataTransfer.files.length > 0) this.uploadImage(e.dataTransfer.files[0], type);
+                });
+            },
+
             triggerImageUpload(type) {
                 const input = document.createElement('input');
                 input.type = 'file';
                 input.accept = 'image/*';
                 input.addEventListener('change', (e) => {
-                    if (e.target.files.length > 0) {
-                        this.uploadImage(e.target.files[0], type);
-                    }
+                    if (e.target.files.length > 0) this.uploadImage(e.target.files[0], type);
                 });
                 input.click();
             },
-            
-            // Upload image to server
+
             async uploadImage(file, type) {
                 const formData = new FormData();
                 formData.append('image', file);
-                
+                formData.append('type', type);
+
                 try {
-                    const response = await fetch(`customization_handler.php?action=upload_image`, {
+                    const response = await fetch('customization_handler.php?action=upload_image', {
                         method: 'POST',
                         body: formData
                     });
-                    
                     const result = await response.json();
-                    
-                    if (result.status === 'success') {
-                        this.handleImageUploadSuccess(type, result.path, file.name);
-                    } else {
+                    if (result.status !== 'success') {
                         this.showNotification('Error uploading image: ' + result.message, 'error');
+                        return;
                     }
+
+                    const uploadedPath = result.data?.path || result.path || result.data?.url || '';
+                    const displayPath = result.data?.url || uploadedPath;
+                    this.handleImageUploadSuccess(type, uploadedPath, displayPath);
                 } catch (error) {
                     this.showNotification('Error uploading image: ' + error.message, 'error');
                 }
             },
-            
-            // Handle successful image upload
-            handleImageUploadSuccess(type, path, originalName) {
+
+            handleImageUploadSuccess(type, savedPath, displayPath) {
                 if (type === 'logo') {
-                    const logoImg = document.querySelector('[data-alt*="minimalist modern automotive"]');
-                    if (logoImg) {
-                        logoImg.src = path;
-                    }
+                    this.el.logoUploadPreview.src = this.toDisplayPath(displayPath);
+                    this.el.logoUploadPreview.dataset.path = savedPath;
                     this.showNotification('Logo uploaded successfully', 'success');
+                } else if (type === 'hero') {
+                    this.el.heroBackgroundUploadPreview.src = this.toDisplayPath(displayPath);
+                    this.el.heroBackgroundUploadPreview.dataset.path = savedPath;
+                    this.showNotification('Hero background uploaded successfully', 'success');
+                } else if (type === 'carousel') {
+                    this.carouselImages.push(savedPath);
+                    this.renderCarouselThumbnails();
+                    this.showNotification('Carousel image added successfully', 'success');
+                }
+                this.updatePreview();
+            },
+
+            renderCarouselThumbnails() {
+                if (!this.el.carouselGrid) return;
+                const defaultThumbs = Array.from(this.el.carouselGrid.querySelectorAll('img')).map(img => img.src);
+                const images = this.carouselImages.length ? this.carouselImages : defaultThumbs.slice(0, 3);
+
+                this.el.carouselGrid.innerHTML = images.map((src, index) => `
+                    <div class="relative aspect-square rounded-lg overflow-hidden border border-slate-200 group">
+                        <img alt="Carousel thumbnail" class="w-full h-full object-cover" src="${this.escapeAttr(this.toDisplayPath(src))}" onerror="this.onerror=null;this.src='${this.placeholderThumb}'" />
+                        <div class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                            <button type="button" class="material-symbols-outlined text-white text-sm hover:text-red-400" data-delete-carousel-index="${index}">delete</button>
+                        </div>
+                    </div>
+                `).join('');
+            },
+
+            collectFormData() {
+                return {
+                    primaryColor: this.normalizeHex(this.el.primaryColorInput?.value || '#1152d4'),
+                    logoPath: this.el.logoUploadPreview?.dataset.path || '',
+                    heroHeading: this.el.heroHeadingInput?.value.trim() || 'Precision Engineering. Absolute Reliability.',
+                    heroSubtext: this.el.heroSubtextInput?.value.trim() || 'Expert automotive repair and maintenance services for performance vehicles and daily drivers alike.',
+                    heroBackground: this.el.heroBackgroundUploadPreview?.dataset.path || '',
+                    ctaButtonText: this.el.ctaButtonTextInput?.value.trim() || 'Book Appointment',
+                    services: this.services,
+                    carouselImages: this.carouselImages
+                };
+            },
+
+            updatePreview() {
+                const data = this.collectFormData();
+                const color = this.normalizeHex(data.primaryColor);
+
+                if (this.el.websitePreview) this.el.websitePreview.style.setProperty('--preview-primary', color);
+                if (this.el.primaryColorSwatch) {
+                    this.el.primaryColorSwatch.style.backgroundColor = color;
+                    this.el.primaryColorSwatch.style.boxShadow = `0 0 0 2px white, 0 0 0 4px ${color}`;
+                }
+
+                if (this.el.previewShopName) this.el.previewShopName.textContent = this.shopName;
+                if (this.el.previewHeaderCta) this.el.previewHeaderCta.textContent = data.ctaButtonText;
+                if (this.el.previewHeroCta) this.el.previewHeroCta.textContent = data.ctaButtonText;
+                if (this.el.previewHeroHeading) this.el.previewHeroHeading.innerHTML = this.formatPreviewHeading(data.heroHeading);
+                if (this.el.previewHeroSubtext) this.el.previewHeroSubtext.textContent = data.heroSubtext;
+
+                const logoPath = this.el.logoUploadPreview?.src || this.toDisplayPath(data.logoPath);
+                if (data.logoPath || (logoPath && !logoPath.includes('aida-public'))) {
+                    this.el.previewLogoImg.src = logoPath;
+                    this.el.previewLogoImg.classList.remove('hidden');
+                    this.el.previewLogoFallback.classList.add('hidden');
+                } else {
+                    this.el.previewLogoImg.classList.add('hidden');
+                    this.el.previewLogoFallback.classList.remove('hidden');
+                }
+
+                const heroSrc = this.el.heroBackgroundUploadPreview?.src || this.toDisplayPath(data.heroBackground) || this.defaultHeroImage;
+                if (this.el.previewHeroImage) this.el.previewHeroImage.src = heroSrc;
+
+                const carouselDisplayImages = this.carouselImages.length ? this.carouselImages : [];
+                if (this.el.previewCarouselMain && carouselDisplayImages.length > 0) {
+                    this.el.previewCarouselMain.src = this.toDisplayPath(carouselDisplayImages[0]);
+                }
+                if (this.el.previewCarouselGrid) {
+                    if (carouselDisplayImages.length === 0) {
+                        this.el.previewCarouselGrid.innerHTML = `<div class="md:col-span-3 border-2 border-dashed border-slate-300 rounded-xl p-10 text-center text-slate-500 font-semibold">Uploaded picture carousel images will show here.</div>`;
+                    } else {
+                        this.el.previewCarouselGrid.innerHTML = carouselDisplayImages.map((src, index) => `
+                            <div class="rounded-xl overflow-hidden border border-slate-200 bg-white shadow-sm">
+                                <img src="${this.escapeAttr(this.toDisplayPath(src))}" alt="Carousel image ${index + 1}" class="w-full h-64 object-cover" onerror="this.onerror=null;this.src='${this.placeholderThumb}'" />
+                            </div>
+                        `).join('');
+                    }
                 }
             },
-            
-            // Save customization to database
+
+            toDisplayPath(path) {
+                path = String(path || '').trim();
+                if (!path) return '';
+                if (/^(https?:)?\/\//i.test(path) || path.startsWith('data:') || path.startsWith('blob:')) return path;
+                if (path.startsWith('../') || path.startsWith('./')) return path;
+                if (path.startsWith('/uploads/')) return '..' + path;
+                if (path.startsWith('uploads/')) return '../' + path;
+                return path;
+            },
+
+            normalizeHex(color) {
+                color = String(color || '').trim();
+                return /^#[0-9A-Fa-f]{6}$/.test(color) ? color : '#1152d4';
+            },
+
+            formatPreviewHeading(text) {
+                const safe = this.escapeHtml(text || 'Precision Engineering. Absolute Reliability.');
+                const parts = safe.split(/\s+/);
+                if (parts.length <= 2) return safe;
+                const lastTwo = parts.splice(-2).join(' ');
+                return `${parts.join(' ')} <br><span style="color:var(--preview-primary);">${lastTwo}</span>`;
+            },
+
+            escapeHtml(value) {
+                return String(value).replace(/[&<>'"]/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[char]));
+            },
+
+            escapeAttr(value) {
+                return this.escapeHtml(value).replace(/`/g, '&#96;');
+            },
+
             async saveCustomization() {
                 const customizationData = this.collectFormData();
-                
+
                 try {
                     const response = await fetch('customization_handler.php?action=save_customization', {
                         method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json'
-                        },
+                        headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify(customizationData)
                     });
-                    
                     const result = await response.json();
-                    
                     if (result.status === 'success') {
                         this.showNotification('Changes saved successfully!', 'success');
                     } else {
@@ -688,57 +870,19 @@ if ($ownerStmt) {
                     this.showNotification('Error saving changes: ' + error.message, 'error');
                 }
             },
-            
-            // Collect form data
-            collectFormData() {
-                const textareas = document.querySelectorAll('textarea');
-                const inputs = document.querySelectorAll('input[type="text"]');
-                
-                return {
-                    shopName: textareas[0]?.value || '',
-                    primaryColor: inputs[0]?.value || '#1152d4',
-                    shopLogo: inputs[0]?.dataset.logoPath || '',
-                    heroHeading: textareas[1]?.value || '',
-                    heroSubtext: textareas[2]?.value || '',
-                    heroBackground: inputs[1]?.dataset.bgPath || '',
-                    ctaButtonText: inputs[2]?.value || 'Book Appointment',
-                    services: this.collectServices()
-                };
-            },
-            
-            // Collect services data
-            collectServices() {
-                const services = [];
-                document.querySelectorAll('.p-3.border.border-slate-200.rounded-lg.bg-slate-50').forEach(serviceDiv => {
-                    const title = serviceDiv.querySelector('p')?.textContent || '';
-                    const icon = serviceDiv.querySelector('.material-symbols-outlined')?.getAttribute('data-icon') || '';
-                    services.push({ title, icon });
-                });
-                return services;
-            },
-            
-            // Show notification
+
             showNotification(message, type = 'info') {
                 const notification = document.createElement('div');
                 notification.className = `fixed bottom-8 right-8 px-6 py-4 rounded-lg text-white font-semibold shadow-lg z-50 ${
-                    type === 'success' ? 'bg-green-500' :
-                    type === 'error' ? 'bg-red-500' :
-                    'bg-blue-500'
+                    type === 'success' ? 'bg-green-500' : type === 'error' ? 'bg-red-500' : 'bg-blue-500'
                 }`;
                 notification.textContent = message;
-                
                 document.body.appendChild(notification);
-                
-                setTimeout(() => {
-                    notification.remove();
-                }, 3000);
+                setTimeout(() => notification.remove(), 3000);
             }
         };
-        
-        // Initialize when DOM is ready
-        document.addEventListener('DOMContentLoaded', () => {
-            customizationSystem.init();
-        });
+
+        document.addEventListener('DOMContentLoaded', () => customizationSystem.init());
     </script>
     <script>
         // Dropdown menu click handler

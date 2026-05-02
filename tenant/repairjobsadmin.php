@@ -57,14 +57,6 @@ $_SESSION['login_slug'] = $loginSlug;
 $shopName = !empty($owner['shopName']) ? $owner['shopName'] : 'AutoFix Pro';
 $shopQuery = urlencode($loginSlug);
 
-log_event(
-    $conn,
-    'VIEW Repair Jobs',
-    'repair_job',
-    null,
-    'Opened repair jobs dashboard'
-);
-
 $currentScript = basename($_SERVER['PHP_SELF']);
 if ($_SERVER['REQUEST_METHOD'] === 'GET' && (!isset($_GET['shop']) || trim((string) $_GET['shop']) !== $loginSlug)) {
     $redirectParams = $_GET;
@@ -272,6 +264,90 @@ function createPaymentForJob(mysqli $conn, int $tenantID, int $repairJobId): int
     return $insertedId;
 }
 
+
+/**
+ * When a repair job is cancelled, keep related database records aligned.
+ * This updates:
+ * - appointments.status to Cancelled
+ * - repair_job_services.service_status to Cancelled
+ * - pending diagnostic reports to Declined
+ * - pending payment records for the job to Failed
+ */
+function cancelRepairJobRelatedRecords(mysqli $conn, int $tenantID, int $repairJobId): void
+{
+    $appointmentStmt = mysqli_prepare(
+        $conn,
+        'UPDATE appointments a
+         INNER JOIN repair_jobs rj ON rj.appointment_id = a.appointment_id AND rj.tenantID = a.tenantID
+         SET a.status = "Cancelled",
+             a.updated_at = NOW()
+         WHERE rj.repair_job_id = ?
+           AND rj.tenantID = ?
+           AND a.status <> "Cancelled"'
+    );
+    if ($appointmentStmt) {
+        mysqli_stmt_bind_param($appointmentStmt, 'ii', $repairJobId, $tenantID);
+        if (mysqli_stmt_execute($appointmentStmt)) {
+            log_event($conn, 'UPDATE Appointment', 'appointment', $repairJobId, 'Updated appointment status to Cancelled from cancelled repair job');
+        }
+        mysqli_stmt_close($appointmentStmt);
+    }
+
+    $servicesStmt = mysqli_prepare(
+        $conn,
+        'UPDATE repair_job_services
+         SET service_status = "Cancelled",
+             updated_at = CURRENT_TIMESTAMP
+         WHERE repair_job_id = ?
+           AND tenantID = ?
+           AND service_status <> "Cancelled"'
+    );
+    if ($servicesStmt) {
+        mysqli_stmt_bind_param($servicesStmt, 'ii', $repairJobId, $tenantID);
+        if (mysqli_stmt_execute($servicesStmt)) {
+            log_event($conn, 'UPDATE RepairJobService', 'repair_job_service', $repairJobId, 'Cancelled services linked to repair job');
+        }
+        mysqli_stmt_close($servicesStmt);
+    }
+
+    $diagnosticStmt = mysqli_prepare(
+        $conn,
+        'UPDATE diagnostic_reports
+         SET customer_approval = CASE WHEN customer_approval = "Pending" THEN "Declined" ELSE customer_approval END,
+             diagnosis_status = CASE WHEN diagnosis_status IN ("Draft", "Submitted") THEN "Declined" ELSE diagnosis_status END,
+             declined_at = CASE WHEN declined_at IS NULL THEN NOW() ELSE declined_at END,
+             updated_at = CURRENT_TIMESTAMP
+         WHERE repair_job_id = ?
+           AND tenantID = ?
+           AND (customer_approval = "Pending" OR diagnosis_status IN ("Draft", "Submitted"))'
+    );
+    if ($diagnosticStmt) {
+        mysqli_stmt_bind_param($diagnosticStmt, 'ii', $repairJobId, $tenantID);
+        if (mysqli_stmt_execute($diagnosticStmt)) {
+            log_event($conn, 'UPDATE DiagnosticReport', 'diagnostic_report', $repairJobId, 'Declined pending diagnostic report because repair job was cancelled');
+        }
+        mysqli_stmt_close($diagnosticStmt);
+    }
+
+    $paymentStmt = mysqli_prepare(
+        $conn,
+        'UPDATE payments
+         SET paymentStatus = "Failed",
+             remarks = TRIM(CONCAT(COALESCE(remarks, ""), CASE WHEN COALESCE(remarks, "") = "" THEN "" ELSE " | " END, "Auto-marked failed because repair job was cancelled")),
+             updated_at = CURRENT_TIMESTAMP
+         WHERE repair_job_id = ?
+           AND tenantID = ?
+           AND paymentStatus = "Pending"'
+    );
+    if ($paymentStmt) {
+        mysqli_stmt_bind_param($paymentStmt, 'ii', $repairJobId, $tenantID);
+        if (mysqli_stmt_execute($paymentStmt)) {
+            log_event($conn, 'UPDATE Payment', 'payment', $repairJobId, 'Marked pending payment as Failed because repair job was cancelled');
+        }
+        mysqli_stmt_close($paymentStmt);
+    }
+}
+
 $message = '';
 $messageType = 'success';
 
@@ -336,6 +412,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_job_status']))
             log_event($conn, 'UPDATE RepairJob', 'repair_job', $repairJobId, 'Updated job_status to ' . $newStatus);
         }
         mysqli_stmt_close($updateJobStmt);
+
+        // If the job was cancelled, update related database records (appointment, services, diagnostics, pending payments).
+        if ($newStatus === 'Cancelled') {
+            cancelRepairJobRelatedRecords($conn, $tenantID, $repairJobId);
+        }
 
         // If the job was completed, create a payment record (best-effort)
         if ($newStatus === 'Completed') {
