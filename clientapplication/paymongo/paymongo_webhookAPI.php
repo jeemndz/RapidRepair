@@ -14,7 +14,7 @@ include __DIR__ . "/../db.php";
 
 header("Content-Type: application/json");
 
-$PAYMONGO_WEBHOOK_SECRET = ""; // Add your webhook signing secret later.
+$PAYMONGO_WEBHOOK_SECRET = "whsk_yiWLH6JVZmVGkXsHKX9fTATp"; // Add your webhook signing secret later.
 
 function webhookLog($message, $context = null)
 {
