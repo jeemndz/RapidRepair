@@ -1,7 +1,4 @@
 <?php
-// api/appointment_history.php
-// Put this file in: C:\xampp\htdocs\RapidRepair\api\appointment_history.php
-
 header("Content-Type: application/json; charset=UTF-8");
 header("Access-Control-Allow-Origin: *");
 header("Access-Control-Allow-Methods: GET, OPTIONS");
@@ -12,7 +9,7 @@ if ($_SERVER["REQUEST_METHOD"] === "OPTIONS") {
     exit;
 }
 
-require_once __DIR__ . "/../db.php";
+require_once __DIR__ . "/db.php";
 
 function jsonResponse($success, $message, $data = null, $statusCode = 200)
 {
