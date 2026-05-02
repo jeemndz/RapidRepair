@@ -150,6 +150,91 @@ function getRedirectParams(string $loginSlug, string $search, string $jobStatusF
     ];
 }
 
+/**
+ * Create a payment record for a completed repair job.
+ * Returns inserted payment_id on success, 0 on failure.
+ */
+function createPaymentForJob(mysqli $conn, int $tenantID, int $repairJobId): int
+{
+    $stmt = mysqli_prepare(
+        $conn,
+        'SELECT user_id, appointment_id, labor_total, parts_total, grand_total
+         FROM repair_jobs
+         WHERE repair_job_id = ? AND tenantID = ? LIMIT 1'
+    );
+
+    if (!$stmt) {
+        return 0;
+    }
+
+    mysqli_stmt_bind_param($stmt, 'ii', $repairJobId, $tenantID);
+    mysqli_stmt_execute($stmt);
+    $res = mysqli_stmt_get_result($stmt);
+    $row = $res ? mysqli_fetch_assoc($res) : null;
+    mysqli_stmt_close($stmt);
+
+    if (!$row) {
+        return 0;
+    }
+
+    $userId = (int) ($row['user_id'] ?? 0);
+    $appointmentId = (int) ($row['appointment_id'] ?? 0);
+    $laborTotal = (float) ($row['labor_total'] ?? 0.00);
+    $partsTotal = (float) ($row['parts_total'] ?? 0.00);
+    $grandTotal = (float) ($row['grand_total'] ?? 0.00);
+
+    $amountPaid = 0.00;
+    $balance = round($grandTotal - $amountPaid, 2);
+    $paymentMethod = 'Cash';
+    $paymentStatus = 'Pending';
+    $referenceNumber = '';
+    $gcashReferenceNumber = '';
+    $remarks = 'Auto-generated payment for completed repair job';
+    $invoiceItems = json_encode([]);
+
+    $insertStmt = mysqli_prepare(
+        $conn,
+        'INSERT INTO payments
+            (tenantID, user_id, appointment_id, repair_job_id, paymentAmount, labor_total, parts_total, grand_total, amountPaid, balance, paymentMethod, paymentDate, paymentStatus, referenceNumber, gcashReferenceNumber, remarks, invoice_items, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?, ?, ?, ?, ?, NOW())'
+    );
+
+    if (!$insertStmt) {
+        return 0;
+    }
+
+    $paymentAmount = $grandTotal;
+    mysqli_stmt_bind_param(
+        $insertStmt,
+        'iiiiddddddssssss',
+        $tenantID,
+        $userId,
+        $appointmentId,
+        $repairJobId,
+        $paymentAmount,
+        $laborTotal,
+        $partsTotal,
+        $grandTotal,
+        $amountPaid,
+        $balance,
+        $paymentMethod,
+        $paymentStatus,
+        $referenceNumber,
+        $gcashReferenceNumber,
+        $remarks,
+        $invoiceItems
+    );
+
+    $insertedId = 0;
+    if (mysqli_stmt_execute($insertStmt)) {
+        $insertedId = (int) mysqli_insert_id($conn);
+        log_event($conn, 'CREATE Payment', 'payment', $insertedId, 'Auto-created payment for repair_job_id ' . $repairJobId);
+    }
+
+    mysqli_stmt_close($insertStmt);
+    return $insertedId;
+}
+
 $message = '';
 $messageType = 'success';
 
@@ -214,6 +299,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_job_status']))
             log_event($conn, 'UPDATE RepairJob', 'repair_job', $repairJobId, 'Updated job_status to ' . $newStatus);
         }
         mysqli_stmt_close($updateJobStmt);
+
+        // If the job was completed, create a payment record (best-effort)
+        if ($newStatus === 'Completed') {
+            $paymentId = createPaymentForJob($conn, $tenantID, $repairJobId);
+            if (!$paymentId) {
+                // non-fatal: log failure to create payment
+                log_event($conn, 'ERROR Create Payment', 'repair_job', $repairJobId, 'Failed to auto-create payment for completed job');
+            }
+        }
 
         if ($newStatus === 'Diagnostics') {
             $apptStmt = mysqli_prepare(
@@ -539,19 +633,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_diagnostic_rep
             'UPDATE repair_jobs
              SET job_status = "Diagnostics",
                  diagnosis_notes = ?,
-                 grand_total = ?,
+                 labor_total = ?,
+                 grand_total = labor_total + parts_total,
                  updated_at = NOW()
              WHERE repair_job_id = ? AND tenantID = ?
              LIMIT 1'
         );
 
         if ($updateJobStmt) {
-            mysqli_stmt_bind_param($updateJobStmt, 'sdii', $findings, $estimatedTotal, $repairJobId, $tenantID);
+            mysqli_stmt_bind_param(
+                $updateJobStmt,
+                'sdii',
+                $findings,
+                $estimatedTotal,
+                $repairJobId,
+                $tenantID
+            );
+
             if (!mysqli_stmt_execute($updateJobStmt)) {
                 $saveOk = false;
             } else {
-                log_event($conn, 'UPDATE RepairJob', 'repair_job', $repairJobId, 'Updated grand_total to ' . number_format($estimatedTotal, 2));
+                log_event(
+                    $conn,
+                    'UPDATE RepairJob',
+                    'repair_job',
+                    $repairJobId,
+                    'Updated labor_total to ' . number_format($estimatedTotal, 2) . ' and recalculated grand_total'
+                );
             }
+
             mysqli_stmt_close($updateJobStmt);
         } else {
             $saveOk = false;
@@ -698,29 +808,64 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['complete_with_parts']
     }
 
     $laborTotal = 0.00;
+
     if ($completeOk) {
         $jobLaborStmt = mysqli_prepare(
             $conn,
-            'SELECT labor_total FROM repair_jobs WHERE repair_job_id = ? AND tenantID = ? LIMIT 1'
+            'SELECT labor_total
+             FROM repair_jobs
+             WHERE repair_job_id = ? AND tenantID = ?
+             LIMIT 1'
         );
+
         if ($jobLaborStmt) {
             mysqli_stmt_bind_param($jobLaborStmt, 'ii', $repairJobId, $tenantID);
             mysqli_stmt_execute($jobLaborStmt);
             $jobLaborResult = mysqli_stmt_get_result($jobLaborStmt);
+
             if ($jobLaborResult && $jobLaborRow = mysqli_fetch_assoc($jobLaborResult)) {
                 $laborTotal = (float) ($jobLaborRow['labor_total'] ?? 0);
             }
+
             mysqli_stmt_close($jobLaborStmt);
         }
     }
 
-    $newGrandTotal = $laborTotal + $totalPartsCost;
+    /**
+     * Fallback: if labor_total is still 0, compute it from active repair job services.
+     * This ensures the final amount is always service/labor total + inventory parts total.
+     */
+    if ($completeOk && $laborTotal <= 0) {
+        $laborStmt = mysqli_prepare(
+            $conn,
+            'SELECT COALESCE(SUM(service_price), 0) AS labor_total
+             FROM repair_job_services
+             WHERE repair_job_id = ?
+               AND tenantID = ?
+               AND service_status <> "Cancelled"'
+        );
+
+        if ($laborStmt) {
+            mysqli_stmt_bind_param($laborStmt, 'ii', $repairJobId, $tenantID);
+            mysqli_stmt_execute($laborStmt);
+            $laborResult = mysqli_stmt_get_result($laborStmt);
+
+            if ($laborResult && $laborRow = mysqli_fetch_assoc($laborResult)) {
+                $laborTotal = (float) ($laborRow['labor_total'] ?? 0);
+            }
+
+            mysqli_stmt_close($laborStmt);
+        }
+    }
+
+    $newGrandTotal = round($laborTotal + $totalPartsCost, 2);
 
     if ($completeOk) {
         $updateJobStmt = mysqli_prepare(
             $conn,
             'UPDATE repair_jobs
              SET job_status = "Completed",
+                 labor_total = ?,
                  parts_total = ?,
                  grand_total = ?,
                  updated_at = CURRENT_TIMESTAMP,
@@ -730,12 +875,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['complete_with_parts']
         );
 
         if ($updateJobStmt) {
-            mysqli_stmt_bind_param($updateJobStmt, 'ddii', $totalPartsCost, $newGrandTotal, $repairJobId, $tenantID);
+            mysqli_stmt_bind_param(
+                $updateJobStmt,
+                'dddii',
+                $laborTotal,
+                $totalPartsCost,
+                $newGrandTotal,
+                $repairJobId,
+                $tenantID
+            );
+
             if (!mysqli_stmt_execute($updateJobStmt)) {
                 $completeOk = false;
             } else {
-                log_event($conn, 'UPDATE RepairJob', 'repair_job', $repairJobId, 'Updated parts_total to ' . number_format($totalPartsCost, 2));
+                log_event(
+                    $conn,
+                    'UPDATE RepairJob',
+                    'repair_job',
+                    $repairJobId,
+                    'Updated labor_total to ' . number_format($laborTotal, 2) .
+                    ', parts_total to ' . number_format($totalPartsCost, 2) .
+                    ', grand_total to ' . number_format($newGrandTotal, 2)
+                );
             }
+
             mysqli_stmt_close($updateJobStmt);
         } else {
             $completeOk = false;
@@ -756,6 +919,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['complete_with_parts']
                 log_event($conn, 'UPDATE Appointment', 'appointment', $repairJobId, 'Updated total_amount to ' . number_format($newGrandTotal, 2));
             }
             mysqli_stmt_close($updateApptStmt);
+        }
+    }
+
+    if ($completeOk) {
+        // Create payment record for completed job (best-effort)
+        $paymentId = createPaymentForJob($conn, $tenantID, $repairJobId);
+        if (!$paymentId) {
+            log_event($conn, 'ERROR Create Payment', 'repair_job', $repairJobId, 'Failed to auto-create payment for completed job (parts flow)');
         }
     }
 
