@@ -21,7 +21,6 @@ function respond($statusCode, array $payload)
 function normalizeInviteCode($value)
 {
     $digits = preg_replace('/\D+/', '', (string) $value);
-
     return str_pad(substr($digits, -6), 6, '0', STR_PAD_LEFT);
 }
 
@@ -34,6 +33,7 @@ if (!isset($conn) || !$conn || $conn->connect_error) {
 
 $rawInput = file_get_contents('php://input');
 $data = json_decode($rawInput, true);
+
 if (!is_array($data)) {
     $data = $_POST;
 }
@@ -45,9 +45,18 @@ $email = trim((string) ($data['email'] ?? ''));
 $address = trim((string) ($data['address'] ?? ''));
 $phone = trim((string) ($data['phone'] ?? ''));
 $password = (string) ($data['password'] ?? '');
-$inviteCode = normalizeInviteCode($data['invite_code'] ?? $data['inviteCode'] ?? $data['code'] ?? '');
+$inviteCode = normalizeInviteCode($data['invite_code'] ?? $data['inviteCode'] ?? '');
 
-if ($firstName === '' || $lastName === '' || $email === '' || $phone === '' || $password === '' || $inviteCode === '' || $address === '') {
+if (
+    $firstName === '' ||
+    $lastName === '' ||
+    $usernameInput === '' ||
+    $email === '' ||
+    $address === '' ||
+    $phone === '' ||
+    $password === '' ||
+    $inviteCode === ''
+) {
     respond(400, [
         'status' => 'error',
         'message' => 'Please fill all fields.',
@@ -77,14 +86,11 @@ try {
     }
 
     $stmt->bind_param('s', $email);
-    if (!$stmt->execute()) {
-        throw new Exception('Failed to check existing user: ' . $stmt->error);
-    }
-
-    $result = $stmt->get_result();
+    $stmt->execute();
+    $emailResult = $stmt->get_result();
     $stmt->close();
 
-    if ($result && $result->num_rows > 0) {
+    if ($emailResult && $emailResult->num_rows > 0) {
         $conn->rollback();
         respond(409, [
             'status' => 'error',
@@ -92,16 +98,19 @@ try {
         ]);
     }
 
-    $stmt = $conn->prepare('SELECT tenantID, ownerName, shopName FROM owners WHERE invite_code = ? LIMIT 1');
+    $stmt = $conn->prepare("
+        SELECT tenantID, ownerName, shopName
+        FROM owners
+        WHERE invite_code = ?
+        LIMIT 1
+    ");
+
     if (!$stmt) {
         throw new Exception('Failed to prepare invite code lookup: ' . $conn->error);
     }
 
     $stmt->bind_param('s', $inviteCode);
-    if (!$stmt->execute()) {
-        throw new Exception('Failed to validate invite code: ' . $stmt->error);
-    }
-
+    $stmt->execute();
     $ownerResult = $stmt->get_result();
     $owner = $ownerResult ? $ownerResult->fetch_assoc() : null;
     $stmt->close();
@@ -115,14 +124,15 @@ try {
     }
 
     $tenantID = (int) ($owner['tenantID'] ?? 0);
+
     if ($tenantID <= 0) {
         throw new Exception('Invalid tenant linked to invite code.');
     }
 
     $fullName = trim($firstName . ' ' . $lastName);
-    $usernameBase = $usernameInput !== '' ? $usernameInput : (strstr($email, '@', true) ?: $fullName);
-    $username = strtolower(preg_replace('/[^a-z0-9._-]+/', '.', $usernameBase));
+    $username = strtolower(preg_replace('/[^a-z0-9._-]+/', '.', $usernameInput));
     $username = trim($username, '.');
+
     if ($username === '') {
         $username = strtolower(preg_replace('/\s+/', '.', $fullName));
         $username = trim($username, '.');
@@ -130,37 +140,40 @@ try {
 
     $hashedPassword = password_hash($password, PASSWORD_DEFAULT);
 
-    $stmt = $conn->prepare("INSERT INTO users (tenantID, fullName, username, address, email, password, contactNumber, role) VALUES (?, ?, ?, ?, ?, ?, ?, 'client')");
+    $stmt = $conn->prepare("
+        INSERT INTO users (
+            tenantID,
+            fullName,
+            username,
+            address,
+            email,
+            password,
+            contactNumber,
+            role
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, 'client')
+    ");
+
     if (!$stmt) {
         throw new Exception('Failed to prepare user insert: ' . $conn->error);
     }
 
-    $stmt->bind_param('issssss', $tenantID, $fullName, $username, $address, $email, $hashedPassword, $phone);
+    $stmt->bind_param(
+        'issssss',
+        $tenantID,
+        $fullName,
+        $username,
+        $address,
+        $email,
+        $hashedPassword,
+        $phone
+    );
+
     if (!$stmt->execute()) {
         throw new Exception('Registration failed: ' . $stmt->error);
     }
+
     $newUserId = (int) $conn->insert_id;
     $stmt->close();
-
-    // Safety check: ensure the inserted row is tied to the tenant from invite_code.
-    $stmt = $conn->prepare('SELECT tenantID FROM users WHERE user_id = ? LIMIT 1');
-    if (!$stmt) {
-        throw new Exception('Failed to prepare tenant verification query: ' . $conn->error);
-    }
-
-    $stmt->bind_param('i', $newUserId);
-    if (!$stmt->execute()) {
-        throw new Exception('Failed to verify inserted tenantID: ' . $stmt->error);
-    }
-
-    $verifyResult = $stmt->get_result();
-    $insertedRow = $verifyResult ? $verifyResult->fetch_assoc() : null;
-    $stmt->close();
-
-    $insertedTenantId = (int) ($insertedRow['tenantID'] ?? 0);
-    if ($insertedTenantId !== $tenantID) {
-        throw new Exception('tenantID mismatch after insert. Registration was cancelled.');
-    }
 
     $conn->commit();
 
@@ -169,9 +182,9 @@ try {
         'message' => 'User registered successfully.',
         'user_id' => $newUserId,
         'tenantID' => $tenantID,
-        'invite_code' => $inviteCode,
         'shopName' => $owner['shopName'] ?? '',
     ]);
+
 } catch (Throwable $e) {
     if (isset($conn) && $conn instanceof mysqli) {
         $conn->rollback();
@@ -183,5 +196,4 @@ try {
         'details' => $e->getMessage(),
     ]);
 }
-
 ?>
