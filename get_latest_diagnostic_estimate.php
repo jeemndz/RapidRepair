@@ -59,17 +59,16 @@ $stmt = mysqli_prepare($conn, "
         AND rj.tenantID = dr.tenantID
     WHERE dr.tenantID = ?
       AND rj.user_id = ?
-      AND dr.diagnosis_status IN ('Submitted', 'Approved')
+      AND dr.customer_approval = 'Pending'
+      AND dr.diagnosis_status = 'Submitted'
       AND EXISTS (
           SELECT 1
           FROM diagnostic_report_services drs
           WHERE drs.diagnostic_id = dr.diagnostic_id
             AND drs.tenantID = dr.tenantID
+            AND drs.approval_status = 'Pending'
       )
-    ORDER BY
-      CASE WHEN dr.customer_approval = 'Pending' THEN 0 ELSE 1 END,
-      dr.updated_at DESC,
-      dr.created_at DESC
+    ORDER BY dr.updated_at DESC, dr.created_at DESC
     LIMIT 1
 ");
 
@@ -91,10 +90,11 @@ if (!$diagnostic) {
     echo json_encode([
         'success' => true,
         'has_estimate' => false,
-        'message' => 'No diagnostic estimate found',
+        'message' => 'No pending diagnostic estimate found',
         'diagnostic_id' => null,
         'diagnostic' => null,
-        'services' => []
+        'services' => [],
+        'recommended_services' => []
     ]);
     exit;
 }
