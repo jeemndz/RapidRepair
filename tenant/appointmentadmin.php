@@ -132,6 +132,7 @@ $reviewForm = [
     'job_status' => 'Queued',
     'assigned_technician' => '',
     'bay_no' => '',
+    'bay_no_custom' => '',
 ];
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_review'])) {
@@ -141,6 +142,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_review'])) {
     $reviewForm['job_status'] = isset($_POST['job_status']) ? trim((string) $_POST['job_status']) : '';
     $reviewForm['assigned_technician'] = isset($_POST['assigned_technician']) ? trim((string) $_POST['assigned_technician']) : '';
     $reviewForm['bay_no'] = isset($_POST['bay_no']) ? trim((string) $_POST['bay_no']) : '';
+    $reviewForm['bay_no_custom'] = isset($_POST['bay_no_custom']) ? trim((string) $_POST['bay_no_custom']) : '';
+
+    $selectedBayNo = $reviewForm['bay_no'];
+    if ($selectedBayNo === '__custom__') {
+        $selectedBayNo = $reviewForm['bay_no_custom'];
+    }
 
     $reviewAppointmentId = $reviewForm['appointment_id'];
 
@@ -154,8 +161,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_review'])) {
         $actionError = 'Invalid repair job status selected.';
     } elseif ($reviewForm['assigned_technician'] === '') {
         $actionError = 'Assigned technician is required.';
-    } elseif ($reviewForm['bay_no'] === '') {
+    } elseif ($selectedBayNo === '') {
         $actionError = 'Bay number is required.';
+    } elseif (strlen($selectedBayNo) > 50) {
+        $actionError = 'Bay number is too long.';
     }
 
     if ($actionError === '') {
@@ -250,12 +259,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_review'])) {
                         $actionError = 'Unable to update repair job details: ' . mysqli_error($conn);
                     } else {
                         $repairJobId = (int) $repairRow['repair_job_id'];
+                        $bayValue = $selectedBayNo;
                         mysqli_stmt_bind_param(
                             $updateRepairStmt,
                             'sssdii',
                             $reviewForm['job_status'],
                             $reviewForm['assigned_technician'],
-                            $reviewForm['bay_no'],
+                            $bayValue,
                             $grandTotal,
                             $repairJobId,
                             $tenantID
@@ -271,6 +281,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_review'])) {
                 } elseif ($saveOk) {
                     $newJobOrderNo = generateRepairJobOrderNo($conn, $tenantID);
                     $grandTotal = (float) ($apptRow['total_amount'] ?? 0);
+                    $bayValue = $selectedBayNo;
                     $insertRepairStmt = mysqli_prepare(
                         $conn,
                         'INSERT INTO repair_jobs
@@ -291,7 +302,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_review'])) {
                             $apptRow['user_id'],
                             $apptRow['vehicle_id'],
                             $newJobOrderNo,
-                            $reviewForm['bay_no'],
+                            $bayValue,
                             $reviewForm['assigned_technician'],
                             $reviewForm['job_status'],
                             $defaultPriority,
@@ -771,7 +782,7 @@ if ($showReviewModal && $reviewAppointmentId > 0) {
     }
 }
 
-$allBayNumbers = ['Bay 1', 'Bay 2', 'Bay 3', 'Bay 4', 'Bay 5', 'Bay 6', 'Bay 7', 'Bay 8'];
+$allBayNumbers = ['Bay 1', 'Bay 2', 'Bay 3'];
 $occupiedBays = [];
 $occupiedBayStmt = mysqli_prepare(
     $conn,
@@ -793,7 +804,14 @@ if ($occupiedBayStmt) {
 }
 
 $availableBays = array_values(array_filter($allBayNumbers, static fn ($bay) => !in_array($bay, $occupiedBays, true)));
-if ($reviewForm['bay_no'] !== '' && !in_array($reviewForm['bay_no'], $availableBays, true)) {
+$showCustomBayInput = false;
+if ($reviewForm['bay_no'] !== '' && !in_array($reviewForm['bay_no'], $allBayNumbers, true)) {
+    $reviewForm['bay_no_custom'] = $reviewForm['bay_no'];
+    $reviewForm['bay_no'] = '__custom__';
+    $showCustomBayInput = true;
+}
+
+if ($reviewForm['bay_no'] !== '' && $reviewForm['bay_no'] !== '__custom__' && !in_array($reviewForm['bay_no'], $availableBays, true)) {
     $availableBays[] = $reviewForm['bay_no'];
 }
 sort($availableBays);
@@ -1205,7 +1223,7 @@ if ($historyStmt) {
                 </div>
                 <div>
                     <h1 class="text-lg font-bold leading-none"><?php echo h($shopName); ?></h1>
-                    <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Repair Management</p>
+                    <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Your Repair Shop</p>
                 </div>
             </div>
             <nav class="space-y-1">
@@ -1591,13 +1609,25 @@ if ($historyStmt) {
                             </div>
 
                             <div>
-                                <label class="text-xs font-bold uppercase text-slate-500">Bay Number Available</label>
-                                <select name="bay_no" class="mt-1 w-full rounded-lg border-slate-300 text-sm" required>
+                                <label class="text-xs font-bold uppercase text-slate-500">Bay Number</label>
+                                <select name="bay_no" id="bay_no_select" class="mt-1 w-full rounded-lg border-slate-300 text-sm" required>
                                     <option value="">Select bay</option>
                                     <?php foreach ($availableBays as $bayOption): ?>
                                         <option value="<?php echo h($bayOption); ?>" <?php echo $reviewForm['bay_no'] === $bayOption ? 'selected' : ''; ?>><?php echo h($bayOption); ?></option>
                                     <?php endforeach; ?>
+                                    <option value="__custom__" <?php echo $reviewForm['bay_no'] === '__custom__' ? 'selected' : ''; ?>>Add New Bay...</option>
                                 </select>
+                                <div id="custom_bay_wrapper" class="mt-3 <?php echo $reviewForm['bay_no'] === '__custom__' ? '' : 'hidden'; ?>">
+                                    <label class="text-xs font-bold uppercase text-slate-500">Custom Bay Number</label>
+                                    <input
+                                        type="text"
+                                        name="bay_no_custom"
+                                        id="bay_no_custom"
+                                        value="<?php echo h($reviewForm['bay_no_custom']); ?>"
+                                        placeholder="e.g. Bay 9"
+                                        class="mt-1 w-full rounded-lg border-slate-300 text-sm">
+                                    <p class="mt-1 text-xs text-slate-500">Use this when you need to add a bay that is not in the preset list.</p>
+                                </div>
                             </div>
 
                             <div class="md:col-span-2">
@@ -2109,6 +2139,29 @@ if ($historyStmt) {
         setSelectedTimeSlot(appointmentTimeInput.value);
     }
     updateSlotAvailability();
+
+    const bayNoSelect = document.getElementById('bay_no_select');
+    const customBayWrapper = document.getElementById('custom_bay_wrapper');
+    const customBayInput = document.getElementById('bay_no_custom');
+
+    function toggleCustomBayField() {
+        if (!bayNoSelect || !customBayWrapper || !customBayInput) {
+            return;
+        }
+
+        const isCustom = bayNoSelect.value === '__custom__';
+        customBayWrapper.classList.toggle('hidden', !isCustom);
+        customBayInput.required = isCustom;
+
+        if (!isCustom) {
+            customBayInput.value = '';
+        }
+    }
+
+    if (bayNoSelect) {
+        bayNoSelect.addEventListener('change', toggleCustomBayField);
+        toggleCustomBayField();
+    }
 
     // Dropdown menu click handler
     document.querySelectorAll('.settings-dropdown-btn').forEach(button => {

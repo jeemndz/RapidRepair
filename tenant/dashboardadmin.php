@@ -51,6 +51,28 @@ $shopName = isset($owner['shopName']) && $owner['shopName'] !== '' ? $owner['sho
 $shopSlug = $login_slug;
 $shopQuery = urlencode($shopSlug);
 
+$customization = null;
+$logoPath = '';
+$customizationStmt = mysqli_prepare(
+    $conn,
+    'SELECT logo_path, shop_name FROM tenant_customizations WHERE tenantID = ? LIMIT 1'
+);
+if ($customizationStmt) {
+    mysqli_stmt_bind_param($customizationStmt, 'i', $tenantID);
+    mysqli_stmt_execute($customizationStmt);
+    $customizationResult = mysqli_stmt_get_result($customizationStmt);
+    $customization = $customizationResult ? mysqli_fetch_assoc($customizationResult) : null;
+    mysqli_stmt_close($customizationStmt);
+}
+
+if ($customization && !empty($customization['logo_path'])) {
+    $logoPath = '../pictures/' . ltrim((string) $customization['logo_path'], '/\\');
+}
+
+if ($customization && !empty($customization['shop_name'])) {
+    $shopName = (string) $customization['shop_name'];
+}
+
 // Keep URL consistent
 $currentScript = basename($_SERVER['PHP_SELF']);
 if (!isset($_GET['shop']) || trim((string) $_GET['shop']) !== $shopSlug) {
@@ -420,11 +442,15 @@ if ($repairTableStmt) {
             <div class="p-6 flex-1">
                 <div class="flex items-center gap-3 mb-8">
                     <div class="bg-primary rounded-lg p-2 text-white">
-                        <span class="material-symbols-outlined">directions_car</span>
+                        <?php if ($logoPath !== ''): ?>
+                            <img src="<?php echo h($logoPath); ?>" alt="<?php echo h($shopName); ?> logo" class="h-6 w-6 object-contain" />
+                        <?php else: ?>
+                            <span class="material-symbols-outlined">directions_car</span>
+                        <?php endif; ?>
                     </div>
                     <div>
                         <h1 class="text-lg font-bold leading-none"><?php echo htmlspecialchars($shopName, ENT_QUOTES, 'UTF-8'); ?></h1>
-                        <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Repair Management</p>
+                        <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Your Repair Shop</p>
                     </div>
                 </div>
                 <nav class="space-y-1">

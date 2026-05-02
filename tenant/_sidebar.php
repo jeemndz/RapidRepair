@@ -17,7 +17,7 @@ $primaryColor = '#1152d4'; // Default primary blue
             </div>
             <div>
                 <h1 class="text-lg font-bold leading-none"><?php echo h($shopName); ?></h1>
-                <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Repair Management</p>
+                <p class="text-xs text-slate-500 dark:text-slate-400 mt-1"></p>
             </div>
         </div>
         <nav class="space-y-1">

@@ -151,6 +151,43 @@ function getRedirectParams(string $loginSlug, string $search, string $jobStatusF
 }
 
 /**
+ * Get the original/main diagnostic service total already selected in the booking.
+ * This amount must remain included when adding recommended diagnostic sub-services
+ * and later when adding used parts/inventory costs.
+ */
+function getDiagnosticMainServiceTotal(mysqli $conn, int $tenantID, int $repairJobId): float
+{
+    $total = 0.00;
+
+    $stmt = mysqli_prepare(
+        $conn,
+        'SELECT COALESCE(SUM(rjs.service_price), 0) AS total
+         FROM repair_job_services rjs
+         INNER JOIN services s ON s.service_id = rjs.service_id AND s.tenantID = rjs.tenantID
+         WHERE rjs.repair_job_id = ?
+           AND rjs.tenantID = ?
+           AND rjs.service_status <> "Cancelled"
+           AND (
+                s.service_type = "Main"
+                OR s.category = "Diagnostics"
+                OR LOWER(s.service_name) LIKE "%diagnostic%"
+           )'
+    );
+
+    if ($stmt) {
+        mysqli_stmt_bind_param($stmt, 'ii', $repairJobId, $tenantID);
+        mysqli_stmt_execute($stmt);
+        $result = mysqli_stmt_get_result($stmt);
+        if ($result && $row = mysqli_fetch_assoc($result)) {
+            $total = (float) ($row['total'] ?? 0);
+        }
+        mysqli_stmt_close($stmt);
+    }
+
+    return round($total, 2);
+}
+
+/**
  * Create a payment record for a completed repair job.
  * Returns inserted payment_id on success, 0 on failure.
  */
@@ -435,7 +472,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_diagnostic_rep
     }
 
     $serviceRows = [];
-    $estimatedTotal = 0.00;
+    $diagnosticMainTotal = getDiagnosticMainServiceTotal($conn, $tenantID, $repairJobId);
+    $recommendedServicesTotal = 0.00;
+    $estimatedTotal = $diagnosticMainTotal;
 
     foreach ($recommendedServiceIds as $serviceId) {
         $serviceStmt = mysqli_prepare(
@@ -458,7 +497,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_diagnostic_rep
 
             if ($serviceRow) {
                 $serviceRows[] = $serviceRow;
-                $estimatedTotal += (float) ($serviceRow['price'] ?? 0);
+                $recommendedServicesTotal += (float) ($serviceRow['price'] ?? 0);
+                $estimatedTotal = $diagnosticMainTotal + $recommendedServicesTotal;
             }
         }
     }
@@ -951,6 +991,8 @@ $confirmedSyncSql = "SELECT
         a.vehicle_id,
         a.notes,
         a.total_amount,
+        a.appointment_date,
+        a.appointment_time,
         a.status,
         SUM(CASE WHEN s.category = 'Diagnostics' OR LOWER(s.service_name) LIKE '%diagnostic%' THEN 1 ELSE 0 END) AS diagnostic_count
     FROM appointments a
@@ -964,7 +1006,7 @@ $confirmedSyncSql = "SELECT
         WHERE rj.tenantID = a.tenantID
           AND rj.appointment_id = a.appointment_id
       )
-    GROUP BY a.appointment_id, a.user_id, a.vehicle_id, a.notes, a.total_amount, a.status";
+    GROUP BY a.appointment_id, a.user_id, a.vehicle_id, a.notes, a.total_amount, a.appointment_date, a.appointment_time, a.status";
 
 $confirmedSyncStmt = mysqli_prepare($conn, $confirmedSyncSql);
 if ($confirmedSyncStmt) {
@@ -978,6 +1020,12 @@ if ($confirmedSyncStmt) {
         $vehicleId = (int) ($appointmentRow['vehicle_id'] ?? 0);
         $concern = trim((string) ($appointmentRow['notes'] ?? ''));
         $grandTotal = (float) ($appointmentRow['total_amount'] ?? 0);
+        $appointmentDate = trim((string) ($appointmentRow['appointment_date'] ?? ''));
+        $appointmentTime = trim((string) ($appointmentRow['appointment_time'] ?? ''));
+        $appointmentDateTimeValue = trim($appointmentDate . ' ' . ($appointmentTime !== '' ? $appointmentTime : '00:00:00'));
+        $hasAppointmentStarted = $appointmentDateTimeValue !== '' && strtotime($appointmentDateTimeValue) !== false
+            ? strtotime($appointmentDateTimeValue) <= time()
+            : true;
         $isDiagnostic = ((int) ($appointmentRow['diagnostic_count'] ?? 0)) > 0 || in_array((string) $appointmentRow['status'], ['For Diagnosis', 'Diagnosing'], true);
 
         if ($appointmentId <= 0 || $userId <= 0 || $vehicleId <= 0) {
@@ -1009,15 +1057,16 @@ if ($confirmedSyncStmt) {
         $syncOk = true;
 
         $jobOrderNo = generateJobOrderNo($conn, $tenantID);
-        $initialJobStatus = $isDiagnostic ? 'Diagnostics' : 'In Progress';
-        $initialAppointmentStatus = $isDiagnostic ? 'Diagnosing' : 'In Progress';
+        $initialJobStatus = $hasAppointmentStarted ? ($isDiagnostic ? 'Diagnostics' : 'In Progress') : 'Queued';
+        $initialAppointmentStatus = $hasAppointmentStarted ? ($isDiagnostic ? 'Diagnosing' : 'In Progress') : (string) $appointmentRow['status'];
+        $workStartedSql = $hasAppointmentStarted ? 'NOW()' : 'NULL';
         $concernValue = $concern !== '' ? $concern : null;
 
         $insertJobStmt = mysqli_prepare(
             $conn,
             'INSERT INTO repair_jobs
                 (tenantID, appointment_id, user_id, vehicle_id, job_order_no, job_status, priority, concern, check_in_time, work_started_at, labor_total, parts_total, grand_total)
-             VALUES (?, ?, ?, ?, ?, ?, "Normal", ?, NOW(), NOW(), ?, 0.00, ?)'
+             VALUES (?, ?, ?, ?, ?, ?, "Normal", ?, NOW(), ' . $workStartedSql . ', ?, 0.00, ?)'
         );
 
         if (!$insertJobStmt) {
@@ -1120,6 +1169,55 @@ if ($confirmedSyncStmt) {
     mysqli_stmt_close($confirmedSyncStmt);
 }
 
+
+/**
+ * Keep repair job status aligned with the appointment schedule.
+ * Future scheduled jobs stay Queued. Jobs only move into In Progress/Diagnostics when their appointment date/time has arrived.
+ */
+$queueFutureJobsStmt = mysqli_prepare(
+    $conn,
+    "UPDATE repair_jobs rj
+     INNER JOIN appointments a ON a.appointment_id = rj.appointment_id AND a.tenantID = rj.tenantID
+     SET rj.job_status = 'Queued',
+         rj.work_started_at = NULL,
+         rj.updated_at = NOW()
+     WHERE rj.tenantID = ?
+       AND rj.job_status IN ('In Progress', 'Diagnostics')
+       AND TIMESTAMP(a.appointment_date, COALESCE(a.appointment_time, '00:00:00')) > NOW()"
+);
+if ($queueFutureJobsStmt) {
+    mysqli_stmt_bind_param($queueFutureJobsStmt, 'i', $tenantID);
+    mysqli_stmt_execute($queueFutureJobsStmt);
+    mysqli_stmt_close($queueFutureJobsStmt);
+}
+
+$startDueJobsStmt = mysqli_prepare(
+    $conn,
+    "UPDATE repair_jobs rj
+     INNER JOIN appointments a ON a.appointment_id = rj.appointment_id AND a.tenantID = rj.tenantID
+     SET rj.job_status = CASE
+            WHEN EXISTS (
+                SELECT 1
+                FROM repair_job_services rjs
+                INNER JOIN services s ON s.service_id = rjs.service_id AND s.tenantID = rjs.tenantID
+                WHERE rjs.repair_job_id = rj.repair_job_id
+                  AND rjs.tenantID = rj.tenantID
+                  AND (s.category = 'Diagnostics' OR LOWER(s.service_name) LIKE '%diagnostic%')
+            ) THEN 'Diagnostics'
+            ELSE 'In Progress'
+         END,
+         rj.work_started_at = COALESCE(rj.work_started_at, NOW()),
+         rj.updated_at = NOW()
+     WHERE rj.tenantID = ?
+       AND rj.job_status = 'Queued'
+       AND TIMESTAMP(a.appointment_date, COALESCE(a.appointment_time, '00:00:00')) <= NOW()"
+);
+if ($startDueJobsStmt) {
+    mysqli_stmt_bind_param($startDueJobsStmt, 'i', $tenantID);
+    mysqli_stmt_execute($startDueJobsStmt);
+    mysqli_stmt_close($startDueJobsStmt);
+}
+
 /**
  * Modal state: Parts completion
  */
@@ -1137,7 +1235,8 @@ if (isset($_GET['show_parts_modal'])) {
                     COALESCE(u.fullName, CONCAT("User #", rj.user_id)) AS customer_name,
                     CONCAT(IFNULL(v.year_model, ""), " ", IFNULL(v.brand, ""), " ", IFNULL(v.model, "")) AS vehicle_name
              FROM repair_jobs rj
-             LEFT JOIN users u ON u.user_id = rj.user_id
+             LEFT JOIN appointments a ON a.appointment_id = rj.appointment_id AND a.tenantID = rj.tenantID
+    LEFT JOIN users u ON u.user_id = rj.user_id
              LEFT JOIN vehicleinformation v ON v.vehicle_id = rj.vehicle_id AND v.tenantID = rj.tenantID
              WHERE rj.repair_job_id = ? AND rj.tenantID = ? LIMIT 1'
         );
@@ -1192,8 +1291,10 @@ $diagnosticModalJob = null;
 $existingDiagnosticReport = null;
 $existingDiagnosticServiceIds = [];
 $subServiceOptions = [];
+$diagnosticMainServiceTotal = 0.00;
 
 if ($diagnosticModalJobId > 0) {
+    $diagnosticMainServiceTotal = getDiagnosticMainServiceTotal($conn, $tenantID, $diagnosticModalJobId);
     $diagnosticJobStmt = mysqli_prepare(
         $conn,
         'SELECT
@@ -1308,6 +1409,12 @@ $stats = [
     'for_approval' => 0,
 ];
 
+$notificationStats = [
+    'approved_diagnostics' => 0,
+    'new_repair_jobs' => 0,
+];
+$notificationItems = [];
+
 $statsStmt = mysqli_prepare(
     $conn,
     "SELECT
@@ -1340,6 +1447,109 @@ if ($statsStmt) {
     mysqli_stmt_close($statsStmt);
 }
 
+$approvedDiagnosticsStmt = mysqli_prepare(
+    $conn,
+    "SELECT COUNT(*) AS total
+     FROM diagnostic_reports dr
+     WHERE dr.tenantID = ?
+       AND dr.customer_approval = 'Approved'
+       AND dr.diagnosis_status = 'Approved'
+       AND dr.approved_at >= CURDATE()"
+);
+if ($approvedDiagnosticsStmt) {
+    mysqli_stmt_bind_param($approvedDiagnosticsStmt, 'i', $tenantID);
+    mysqli_stmt_execute($approvedDiagnosticsStmt);
+    $approvedDiagnosticsResult = mysqli_stmt_get_result($approvedDiagnosticsStmt);
+    if ($approvedDiagnosticsResult && $approvedDiagnosticsRow = mysqli_fetch_assoc($approvedDiagnosticsResult)) {
+        $notificationStats['approved_diagnostics'] = (int) ($approvedDiagnosticsRow['total'] ?? 0);
+    }
+    mysqli_stmt_close($approvedDiagnosticsStmt);
+}
+
+$newRepairJobsStmt = mysqli_prepare(
+    $conn,
+    "SELECT COUNT(*) AS total
+     FROM repair_jobs rj
+     WHERE rj.tenantID = ?
+       AND rj.check_in_time >= CURDATE()
+       AND rj.job_status IN ('Queued', 'In Progress', 'Diagnostics')"
+);
+if ($newRepairJobsStmt) {
+    mysqli_stmt_bind_param($newRepairJobsStmt, 'i', $tenantID);
+    mysqli_stmt_execute($newRepairJobsStmt);
+    $newRepairJobsResult = mysqli_stmt_get_result($newRepairJobsStmt);
+    if ($newRepairJobsResult && $newRepairJobsRow = mysqli_fetch_assoc($newRepairJobsResult)) {
+        $notificationStats['new_repair_jobs'] = (int) ($newRepairJobsRow['total'] ?? 0);
+    }
+    mysqli_stmt_close($newRepairJobsStmt);
+}
+
+if ($notificationStats['approved_diagnostics'] > 0) {
+    $approvedRecentStmt = mysqli_prepare(
+        $conn,
+        "SELECT dr.diagnostic_id, dr.repair_job_id, dr.approved_at, rj.job_order_no,
+                COALESCE(u.fullName, CONCAT('User #', rj.user_id)) AS customer_name
+         FROM diagnostic_reports dr
+         INNER JOIN repair_jobs rj ON rj.repair_job_id = dr.repair_job_id AND rj.tenantID = dr.tenantID
+         LEFT JOIN users u ON u.user_id = rj.user_id
+         WHERE dr.tenantID = ?
+           AND dr.customer_approval = 'Approved'
+           AND dr.diagnosis_status = 'Approved'
+           AND dr.approved_at >= CURDATE()
+         ORDER BY dr.approved_at DESC
+         LIMIT 5"
+    );
+    if ($approvedRecentStmt) {
+        mysqli_stmt_bind_param($approvedRecentStmt, 'i', $tenantID);
+        mysqli_stmt_execute($approvedRecentStmt);
+        $approvedRecentResult = mysqli_stmt_get_result($approvedRecentStmt);
+        while ($approvedRecentResult && $row = mysqli_fetch_assoc($approvedRecentResult)) {
+            $notificationItems[] = [
+                'type' => 'approved_diagnostic',
+                'title' => 'Diagnostic approved by customer',
+                'detail' => 'Job ' . ($row['job_order_no'] ?? ('#' . (int) $row['repair_job_id'])) . ' - ' . ($row['customer_name'] ?? 'Customer'),
+                'time' => !empty($row['approved_at']) ? date('M d, h:i A', strtotime((string) $row['approved_at'])) : '',
+            ];
+        }
+        mysqli_stmt_close($approvedRecentStmt);
+    }
+}
+
+if ($notificationStats['new_repair_jobs'] > 0) {
+    $newJobsRecentStmt = mysqli_prepare(
+        $conn,
+        "SELECT rj.repair_job_id, rj.job_order_no, rj.check_in_time,
+                COALESCE(u.fullName, CONCAT('User #', rj.user_id)) AS customer_name
+         FROM repair_jobs rj
+         LEFT JOIN users u ON u.user_id = rj.user_id
+         WHERE rj.tenantID = ?
+           AND rj.check_in_time >= CURDATE()
+           AND rj.job_status IN ('Queued', 'In Progress', 'Diagnostics')
+         ORDER BY rj.check_in_time DESC
+         LIMIT 5"
+    );
+    if ($newJobsRecentStmt) {
+        mysqli_stmt_bind_param($newJobsRecentStmt, 'i', $tenantID);
+        mysqli_stmt_execute($newJobsRecentStmt);
+        $newJobsRecentResult = mysqli_stmt_get_result($newJobsRecentStmt);
+        while ($newJobsRecentResult && $row = mysqli_fetch_assoc($newJobsRecentResult)) {
+            $notificationItems[] = [
+                'type' => 'new_job',
+                'title' => 'New repair job arrived',
+                'detail' => 'Job ' . ($row['job_order_no'] ?? ('#' . (int) $row['repair_job_id'])) . ' - ' . ($row['customer_name'] ?? 'Customer'),
+                'time' => !empty($row['check_in_time']) ? date('M d, h:i A', strtotime((string) $row['check_in_time'])) : '',
+            ];
+        }
+        mysqli_stmt_close($newJobsRecentStmt);
+    }
+}
+
+usort($notificationItems, static function (array $left, array $right): int {
+    return strcmp($right['time'] ?? '', $left['time'] ?? '');
+});
+
+$notificationCount = $notificationStats['approved_diagnostics'] + $notificationStats['new_repair_jobs'];
+
 $avgCycleHours = $stats['avg_cycle_minutes'] > 0 ? $stats['avg_cycle_minutes'] / 60 : 0;
 
 $searchLike = '%' . $search . '%';
@@ -1370,6 +1580,8 @@ $jobsSortDir = strtoupper(trim((string) ($_GET['jobs_sort_dir'] ?? 'DESC')));
 $allowedJobsSorts = [
     'repair_job_id' => 'rj.repair_job_id',
     'appointment_id' => 'rj.appointment_id',
+    'appointment_date' => 'a.appointment_date',
+    'appointment_time' => 'a.appointment_time',
     'job_status' => 'rj.job_status',
     'priority' => 'rj.priority',
     'grand_total' => 'rj.grand_total',
@@ -1539,6 +1751,8 @@ $jobsOffset = ($jobsPage - 1) * $recordsPerPage;
 $jobsSql = "SELECT
         rj.repair_job_id,
         rj.appointment_id,
+        a.appointment_date,
+        a.appointment_time,
         rj.job_order_no,
         rj.job_status,
         rj.priority,
@@ -1559,6 +1773,7 @@ $jobsSql = "SELECT
         dr.customer_approval,
         dr.diagnosis_status
     FROM repair_jobs rj
+    LEFT JOIN appointments a ON a.appointment_id = rj.appointment_id AND a.tenantID = rj.tenantID
     LEFT JOIN users u ON u.user_id = rj.user_id
     LEFT JOIN vehicleinformation v ON v.vehicle_id = rj.vehicle_id AND v.tenantID = rj.tenantID
     LEFT JOIN repair_job_services rjs ON rjs.repair_job_id = rj.repair_job_id AND rjs.tenantID = rj.tenantID
@@ -1572,6 +1787,8 @@ $jobsSql = "SELECT
     GROUP BY
         rj.repair_job_id,
         rj.appointment_id,
+        a.appointment_date,
+        a.appointment_time,
         rj.job_order_no,
         rj.job_status,
         rj.priority,
@@ -1762,7 +1979,7 @@ if ($diagnosticStmt) {
                 </div>
                 <div>
                     <h1 class="text-lg font-bold leading-none"><?php echo h($shopName); ?></h1>
-                    <p class="text-xs text-slate-500 mt-1">Repair Management</p>
+                    <p class="text-xs text-slate-500 mt-1">Your Repair Shop</p>
                 </div>
             </div>
 
@@ -1879,7 +2096,7 @@ if ($diagnosticStmt) {
             <div class="flex items-center gap-4">
                 <button type="button" id="notificationBtn" class="relative p-2 text-slate-500 hover:text-blue-700 transition-all">
                     <span class="material-symbols-outlined">notifications</span>
-                    <?php if ($stats['for_approval'] > 0): ?>
+                    <?php if ($notificationCount > 0): ?>
                         <span class="absolute right-1 top-1 flex h-2.5 w-2.5 rounded-full bg-red-500"></span>
                     <?php endif; ?>
                 </button>
@@ -1889,7 +2106,7 @@ if ($diagnosticStmt) {
             </div>
         </header>
 
-        <div id="notificationPanel" class="hidden fixed right-8 top-20 z-50 w-80 rounded-2xl border border-slate-200 bg-white shadow-2xl">
+        <div id="notificationPanel" class="hidden fixed right-8 top-20 z-50 w-80 rounded-2xl border border-slate-200 bg-white shadow-2xl opacity-0 translate-y-2 transition-all duration-300 ease-out">
             <div class="p-4 border-b border-slate-100 flex items-center justify-between">
                 <div>
                     <p class="font-bold text-slate-900">Notifications</p>
@@ -1899,13 +2116,30 @@ if ($diagnosticStmt) {
             </div>
             <div class="p-4 space-y-3">
                 <div class="rounded-xl bg-blue-50 border border-blue-100 p-3">
-                    <p class="text-sm font-bold text-blue-900"><?php echo number_format($stats['for_approval']); ?> diagnostic report(s)</p>
-                    <p class="text-xs text-blue-700 mt-1">Waiting for customer approval.</p>
+                    <p class="text-sm font-bold text-blue-900"><?php echo number_format($notificationStats['approved_diagnostics']); ?> approved diagnostic(s)</p>
+                    <p class="text-xs text-blue-700 mt-1">Customer approval received today.</p>
                 </div>
                 <div class="rounded-xl bg-amber-50 border border-amber-100 p-3">
-                    <p class="text-sm font-bold text-amber-900"><?php echo number_format($stats['waiting_parts']); ?> job(s)</p>
-                    <p class="text-xs text-amber-700 mt-1">Waiting for parts.</p>
+                    <p class="text-sm font-bold text-amber-900"><?php echo number_format($notificationStats['new_repair_jobs']); ?> new repair job(s)</p>
+                    <p class="text-xs text-amber-700 mt-1">Arrived today and waiting in the queue.</p>
                 </div>
+                <?php if (count($notificationItems) > 0): ?>
+                    <div class="space-y-2 pt-1">
+                        <?php foreach ($notificationItems as $item): ?>
+                            <div class="rounded-xl border border-slate-200 p-3">
+                                <p class="text-sm font-bold text-slate-900"><?php echo h($item['title']); ?></p>
+                                <p class="text-xs text-slate-600 mt-1"><?php echo h($item['detail']); ?></p>
+                                <?php if (!empty($item['time'])): ?>
+                                    <p class="text-[11px] text-slate-400 mt-1"><?php echo h($item['time']); ?></p>
+                                <?php endif; ?>
+                            </div>
+                        <?php endforeach; ?>
+                    </div>
+                <?php else: ?>
+                    <div class="rounded-xl border border-slate-200 p-3 text-sm text-slate-500">
+                        No new notifications right now.
+                    </div>
+                <?php endif; ?>
             </div>
         </div>
 
@@ -2122,6 +2356,8 @@ if ($diagnosticStmt) {
                         <select name="jobs_sort_by" class="rounded-lg border-slate-300 text-sm min-w-[170px]">
                             <option value="repair_job_id" <?php echo $jobsSortBy === 'repair_job_id' ? 'selected' : ''; ?>>Sort: Repair Job ID</option>
                             <option value="appointment_id" <?php echo $jobsSortBy === 'appointment_id' ? 'selected' : ''; ?>>Sort: Appointment ID</option>
+                            <option value="appointment_date" <?php echo $jobsSortBy === 'appointment_date' ? 'selected' : ''; ?>>Sort: Repair Date</option>
+                            <option value="appointment_time" <?php echo $jobsSortBy === 'appointment_time' ? 'selected' : ''; ?>>Sort: Repair Time</option>
                             <option value="job_status" <?php echo $jobsSortBy === 'job_status' ? 'selected' : ''; ?>>Sort: Job Status</option>
                             <option value="priority" <?php echo $jobsSortBy === 'priority' ? 'selected' : ''; ?>>Sort: Priority</option>
                             <option value="grand_total" <?php echo $jobsSortBy === 'grand_total' ? 'selected' : ''; ?>>Sort: Grand Total</option>
@@ -2144,6 +2380,7 @@ if ($diagnosticStmt) {
                         <tr class="bg-slate-50/50">
                             <th class="px-6 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">Order Details</th>
                             <th class="px-6 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">Services</th>
+                            <th class="px-6 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">Repair Date & Time</th>
                             <th class="px-6 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">Total</th>
                             <th class="px-6 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">Labor Hrs</th>
                             <th class="px-6 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">Status</th>
@@ -2153,7 +2390,7 @@ if ($diagnosticStmt) {
                         <tbody class="divide-y divide-slate-100">
                         <?php if (count($jobRows) === 0): ?>
                             <tr>
-                                <td colspan="6" class="px-6 py-10 text-center text-sm text-slate-500">No repair jobs found for this filter.</td>
+                                <td colspan="7" class="px-6 py-10 text-center text-sm text-slate-500">No repair jobs found for this filter.</td>
                             </tr>
                         <?php else: ?>
                             <?php foreach ($jobRows as $job): ?>
@@ -2161,6 +2398,10 @@ if ($diagnosticStmt) {
                                 $vehicleText = trim(((string) ($job['year_model'] ?? '')) . ' ' . ((string) ($job['brand'] ?? '')) . ' ' . ((string) ($job['model'] ?? '')));
                                 $estimatedHours = ((float) ($job['total_estimated_minutes'] ?? 0)) / 60;
                                 $actualHours = ((float) ($job['total_actual_minutes'] ?? 0)) / 60;
+                                $repairDateRaw = trim((string) ($job['appointment_date'] ?? ''));
+                                $repairTimeRaw = trim((string) ($job['appointment_time'] ?? ''));
+                                $repairDateLabel = $repairDateRaw !== '' ? date('M d, Y', strtotime($repairDateRaw)) : 'No date set';
+                                $repairTimeLabel = $repairTimeRaw !== '' ? date('h:i A', strtotime($repairTimeRaw)) : 'No time set';
                                 $hasDiagnosticReport = !empty($job['diagnostic_id']);
                                 $hasDiagnosticMainService = ((int) ($job['diagnostic_service_count'] ?? 0)) > 0;
                                 ?>
@@ -2180,6 +2421,10 @@ if ($diagnosticStmt) {
                                         <?php endif; ?>
                                     </td>
                                     <td class="px-6 py-4 text-sm text-slate-700 max-w-md"><?php echo h($job['services']); ?></td>
+                                    <td class="px-6 py-4 text-sm text-slate-700">
+                                        <div class="font-semibold text-slate-900"><?php echo h($repairDateLabel); ?></div>
+                                        <div class="text-xs text-slate-500"><?php echo h($repairTimeLabel); ?></div>
+                                    </td>
                                     <td class="px-6 py-4 text-sm font-bold text-slate-900">₱<?php echo number_format((float) ($job['grand_total'] ?? 0), 2); ?></td>
                                     <td class="px-6 py-4 text-sm font-medium text-slate-600"><?php echo number_format($actualHours, 1); ?> / <?php echo number_format($estimatedHours, 1); ?></td>
                                     <td class="px-6 py-4">
@@ -2486,6 +2731,9 @@ if ($diagnosticStmt) {
                         <div class="text-right">
                             <p class="text-xs font-bold text-slate-500 uppercase">Estimated Total</p>
                             <p class="text-xl font-black text-blue-700" id="diagnosticTotal">₱0.00</p>
+                            <p class="text-[11px] text-slate-500 mt-1">
+                                Main diagnostic: ₱<?php echo number_format((float) $diagnosticMainServiceTotal, 2); ?>
+                            </p>
                         </div>
                     </div>
 
@@ -2734,20 +2982,65 @@ const notificationBtn = document.getElementById('notificationBtn');
 const notificationPanel = document.getElementById('notificationPanel');
 
 if (notificationBtn && notificationPanel) {
+    let notificationHideTimer = null;
+
+    function hideNotificationPanel() {
+        if (notificationHideTimer) {
+            clearTimeout(notificationHideTimer);
+            notificationHideTimer = null;
+        }
+
+        notificationPanel.classList.add('opacity-0', 'translate-y-2');
+        notificationPanel.classList.remove('opacity-100', 'translate-y-0');
+
+        window.setTimeout(() => {
+            notificationPanel.classList.add('hidden');
+        }, 300);
+    }
+
+    function showNotificationPanel(autoHide = false) {
+        if (notificationHideTimer) {
+            clearTimeout(notificationHideTimer);
+            notificationHideTimer = null;
+        }
+
+        notificationPanel.classList.remove('hidden');
+        requestAnimationFrame(() => {
+            notificationPanel.classList.remove('opacity-0', 'translate-y-2');
+            notificationPanel.classList.add('opacity-100', 'translate-y-0');
+        });
+
+        if (autoHide) {
+            notificationHideTimer = window.setTimeout(() => {
+                hideNotificationPanel();
+            }, 5000);
+        }
+    }
+
     notificationBtn.addEventListener('click', function (e) {
         e.stopPropagation();
-        notificationPanel.classList.toggle('hidden');
+        if (notificationPanel.classList.contains('hidden')) {
+            showNotificationPanel(false);
+        } else {
+            hideNotificationPanel();
+        }
     });
+
+    <?php if ($notificationCount > 0): ?>
+    showNotificationPanel(true);
+    <?php endif; ?>
 
     document.addEventListener('click', function (e) {
         if (!notificationPanel.contains(e.target) && !notificationBtn.contains(e.target)) {
-            notificationPanel.classList.add('hidden');
+            hideNotificationPanel();
         }
     });
 }
 
+const diagnosticMainServiceTotal = Number('<?php echo isset($diagnosticMainServiceTotal) ? (float) $diagnosticMainServiceTotal : 0; ?>');
+
 function updateDiagnosticTotal() {
-    let total = 0;
+    let total = diagnosticMainServiceTotal;
     document.querySelectorAll('.diagnostic-service-checkbox:checked').forEach((checkbox) => {
         total += Number(checkbox.getAttribute('data-price') || 0);
     });
