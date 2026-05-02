@@ -1348,6 +1348,63 @@ $upcomingPage = max(1, (int) ($_GET['upcoming_page'] ?? 1));
 $jobsPage = max(1, (int) ($_GET['jobs_page'] ?? 1));
 $diagnosticsPage = max(1, (int) ($_GET['diagnostics_page'] ?? 1));
 
+$upcomingSortBy = trim((string) ($_GET['upcoming_sort_by'] ?? 'appointment_id'));
+$upcomingSortDir = strtoupper(trim((string) ($_GET['upcoming_sort_dir'] ?? 'DESC')));
+$allowedUpcomingSorts = [
+    'appointment_id' => 'a.appointment_id',
+    'appointment_date' => 'a.appointment_date',
+    'appointment_time' => 'a.appointment_time',
+    'status' => 'a.status',
+    'total_amount' => 'a.total_amount',
+];
+if (!isset($allowedUpcomingSorts[$upcomingSortBy])) {
+    $upcomingSortBy = 'appointment_id';
+}
+if (!in_array($upcomingSortDir, ['ASC', 'DESC'], true)) {
+    $upcomingSortDir = 'DESC';
+}
+$upcomingOrderBy = $allowedUpcomingSorts[$upcomingSortBy] . ' ' . $upcomingSortDir;
+
+$jobsSortBy = trim((string) ($_GET['jobs_sort_by'] ?? 'repair_job_id'));
+$jobsSortDir = strtoupper(trim((string) ($_GET['jobs_sort_dir'] ?? 'DESC')));
+$allowedJobsSorts = [
+    'repair_job_id' => 'rj.repair_job_id',
+    'appointment_id' => 'rj.appointment_id',
+    'job_status' => 'rj.job_status',
+    'priority' => 'rj.priority',
+    'grand_total' => 'rj.grand_total',
+    'updated_at' => 'rj.updated_at',
+    'completed_at' => 'rj.completed_at',
+];
+if (!isset($allowedJobsSorts[$jobsSortBy])) {
+    $jobsSortBy = 'repair_job_id';
+}
+if (!in_array($jobsSortDir, ['ASC', 'DESC'], true)) {
+    $jobsSortDir = 'DESC';
+}
+$jobsOrderBy = $allowedJobsSorts[$jobsSortBy] . ' ' . $jobsSortDir;
+
+$diagnosticsSortBy = trim((string) ($_GET['diagnostics_sort_by'] ?? 'updated_at'));
+$diagnosticsSortDir = strtoupper(trim((string) ($_GET['diagnostics_sort_dir'] ?? 'DESC')));
+$allowedDiagnosticSorts = [
+    'diagnostic_id' => 'dr.diagnostic_id',
+    'repair_job_id' => 'dr.repair_job_id',
+    'appointment_id' => 'dr.appointment_id',
+    'mechanic_name' => 'dr.mechanic_name',
+    'estimated_total' => 'dr.estimated_total',
+    'customer_approval' => 'dr.customer_approval',
+    'diagnosis_status' => 'dr.diagnosis_status',
+    'created_at' => 'dr.created_at',
+    'updated_at' => 'dr.updated_at',
+];
+if (!isset($allowedDiagnosticSorts[$diagnosticsSortBy])) {
+    $diagnosticsSortBy = 'updated_at';
+}
+if (!in_array($diagnosticsSortDir, ['ASC', 'DESC'], true)) {
+    $diagnosticsSortDir = 'DESC';
+}
+$diagnosticsOrderBy = $allowedDiagnosticSorts[$diagnosticsSortBy] . ' ' . $diagnosticsSortDir;
+
 /**
  * Upcoming appointments
  */
@@ -1413,7 +1470,7 @@ $upcomingStmt = mysqli_prepare(
               AND rj.tenantID = a.tenantID
               AND rj.job_status = 'Completed'
        )
-     ORDER BY a.appointment_date ASC, a.appointment_time ASC
+         ORDER BY {$upcomingOrderBy}, a.appointment_id DESC
      LIMIT ?, ?"
 );
 
@@ -1531,7 +1588,7 @@ $jobsSql = "SELECT
         dr.diagnostic_id,
         dr.customer_approval,
         dr.diagnosis_status
-    ORDER BY rj.updated_at DESC
+    ORDER BY {$jobsOrderBy}, rj.repair_job_id DESC
     LIMIT ?, ?";
 
 $jobsStmt = mysqli_prepare($conn, $jobsSql);
@@ -1649,7 +1706,7 @@ $diagnosticStmt = mysqli_prepare(
         v.year_model,
         v.brand,
         v.model
-     ORDER BY dr.updated_at DESC
+      ORDER BY {$diagnosticsOrderBy}, dr.diagnostic_id DESC
      LIMIT ?, ?"
 );
 
@@ -1900,7 +1957,32 @@ if ($diagnosticStmt) {
                         <h3 class="text-lg font-bold text-slate-900">Upcoming Appointments</h3>
                         <p class="text-xs text-slate-500 font-medium">Pending, confirmed, diagnostic, approval, and in-progress appointments.</p>
                     </div>
-                    <a href="appointmentadmin.php?shop=<?php echo h($shopQuery); ?>" class="text-xs font-semibold text-blue-700 hover:underline">Open Appointments Page</a>
+                    <div class="flex items-center gap-2">
+                        <form method="get" class="flex items-center gap-2">
+                            <input type="hidden" name="shop" value="<?php echo h($loginSlug); ?>">
+                            <input type="hidden" name="q" value="<?php echo h($search); ?>">
+                            <input type="hidden" name="job_status" value="<?php echo h($jobStatusFilter); ?>">
+                            <input type="hidden" name="service_status" value="<?php echo h($serviceStatusFilter); ?>">
+                            <input type="hidden" name="priority" value="<?php echo h($priorityFilter); ?>">
+                            <input type="hidden" name="jobs_sort_by" value="<?php echo h($jobsSortBy); ?>">
+                            <input type="hidden" name="jobs_sort_dir" value="<?php echo h($jobsSortDir); ?>">
+                            <input type="hidden" name="diagnostics_sort_by" value="<?php echo h($diagnosticsSortBy); ?>">
+                            <input type="hidden" name="diagnostics_sort_dir" value="<?php echo h($diagnosticsSortDir); ?>">
+                            <select name="upcoming_sort_by" class="rounded-lg border-slate-300 text-xs min-w-[150px]">
+                                <option value="appointment_id" <?php echo $upcomingSortBy === 'appointment_id' ? 'selected' : ''; ?>>Sort: Appointment ID</option>
+                                <option value="appointment_date" <?php echo $upcomingSortBy === 'appointment_date' ? 'selected' : ''; ?>>Sort: Date</option>
+                                <option value="appointment_time" <?php echo $upcomingSortBy === 'appointment_time' ? 'selected' : ''; ?>>Sort: Time</option>
+                                <option value="status" <?php echo $upcomingSortBy === 'status' ? 'selected' : ''; ?>>Sort: Status</option>
+                                <option value="total_amount" <?php echo $upcomingSortBy === 'total_amount' ? 'selected' : ''; ?>>Sort: Amount</option>
+                            </select>
+                            <select name="upcoming_sort_dir" class="rounded-lg border-slate-300 text-xs min-w-[110px]">
+                                <option value="DESC" <?php echo $upcomingSortDir === 'DESC' ? 'selected' : ''; ?>>Descending</option>
+                                <option value="ASC" <?php echo $upcomingSortDir === 'ASC' ? 'selected' : ''; ?>>Ascending</option>
+                            </select>
+                            <button type="submit" class="px-3 py-2 rounded-lg border border-slate-300 bg-white text-xs font-semibold text-slate-700 hover:bg-slate-100">Apply</button>
+                        </form>
+                        <a href="appointmentadmin.php?shop=<?php echo h($shopQuery); ?>" class="text-xs font-semibold text-blue-700 hover:underline">Open Appointments Page</a>
+                    </div>
                 </div>
 
                 <div class="overflow-x-auto">
@@ -1963,6 +2045,12 @@ if ($diagnosticStmt) {
                                 'job_status' => $jobStatusFilter,
                                 'service_status' => $serviceStatusFilter,
                                 'priority' => $priorityFilter,
+                                'upcoming_sort_by' => $upcomingSortBy,
+                                'upcoming_sort_dir' => $upcomingSortDir,
+                                'jobs_sort_by' => $jobsSortBy,
+                                'jobs_sort_dir' => $jobsSortDir,
+                                'diagnostics_sort_by' => $diagnosticsSortBy,
+                                'diagnostics_sort_dir' => $diagnosticsSortDir,
                                 'upcoming_page' => $upcomingPage - 1,
                                 'jobs_page' => $jobsPage,
                                 'diagnostics_page' => $diagnosticsPage,
@@ -1978,6 +2066,12 @@ if ($diagnosticStmt) {
                                 'job_status' => $jobStatusFilter,
                                 'service_status' => $serviceStatusFilter,
                                 'priority' => $priorityFilter,
+                                'upcoming_sort_by' => $upcomingSortBy,
+                                'upcoming_sort_dir' => $upcomingSortDir,
+                                'jobs_sort_by' => $jobsSortBy,
+                                'jobs_sort_dir' => $jobsSortDir,
+                                'diagnostics_sort_by' => $diagnosticsSortBy,
+                                'diagnostics_sort_dir' => $diagnosticsSortDir,
                                 'upcoming_page' => $upcomingPage + 1,
                                 'jobs_page' => $jobsPage,
                                 'diagnostics_page' => $diagnosticsPage,
@@ -1999,6 +2093,10 @@ if ($diagnosticStmt) {
                 <div class="px-6 py-4 border-b border-slate-100 bg-slate-50/40">
                     <form method="get" class="flex flex-wrap items-center gap-3">
                         <input type="hidden" name="shop" value="<?php echo h($loginSlug); ?>">
+                        <input type="hidden" name="upcoming_sort_by" value="<?php echo h($upcomingSortBy); ?>">
+                        <input type="hidden" name="upcoming_sort_dir" value="<?php echo h($upcomingSortDir); ?>">
+                        <input type="hidden" name="diagnostics_sort_by" value="<?php echo h($diagnosticsSortBy); ?>">
+                        <input type="hidden" name="diagnostics_sort_dir" value="<?php echo h($diagnosticsSortDir); ?>">
                         <div class="relative flex-1 min-w-[240px]">
                             <span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">search</span>
                             <input type="text" name="q" value="<?php echo h($search); ?>" placeholder="Filter by job order, customer, vehicle..." class="w-full rounded-lg border-slate-300 pl-9 pr-3 py-2 text-sm" />
@@ -2020,6 +2118,19 @@ if ($diagnosticStmt) {
                             <?php foreach ($priorityOptions as $priority): ?>
                                 <option value="<?php echo h($priority); ?>" <?php echo $priorityFilter === $priority ? 'selected' : ''; ?>><?php echo h($priority); ?></option>
                             <?php endforeach; ?>
+                        </select>
+                        <select name="jobs_sort_by" class="rounded-lg border-slate-300 text-sm min-w-[170px]">
+                            <option value="repair_job_id" <?php echo $jobsSortBy === 'repair_job_id' ? 'selected' : ''; ?>>Sort: Repair Job ID</option>
+                            <option value="appointment_id" <?php echo $jobsSortBy === 'appointment_id' ? 'selected' : ''; ?>>Sort: Appointment ID</option>
+                            <option value="job_status" <?php echo $jobsSortBy === 'job_status' ? 'selected' : ''; ?>>Sort: Job Status</option>
+                            <option value="priority" <?php echo $jobsSortBy === 'priority' ? 'selected' : ''; ?>>Sort: Priority</option>
+                            <option value="grand_total" <?php echo $jobsSortBy === 'grand_total' ? 'selected' : ''; ?>>Sort: Grand Total</option>
+                            <option value="updated_at" <?php echo $jobsSortBy === 'updated_at' ? 'selected' : ''; ?>>Sort: Last Updated</option>
+                            <option value="completed_at" <?php echo $jobsSortBy === 'completed_at' ? 'selected' : ''; ?>>Sort: Completed Time</option>
+                        </select>
+                        <select name="jobs_sort_dir" class="rounded-lg border-slate-300 text-sm min-w-[120px]">
+                            <option value="DESC" <?php echo $jobsSortDir === 'DESC' ? 'selected' : ''; ?>>Descending</option>
+                            <option value="ASC" <?php echo $jobsSortDir === 'ASC' ? 'selected' : ''; ?>>Ascending</option>
                         </select>
                         <button type="submit" class="inline-flex items-center justify-center w-11 h-10 rounded-lg border border-slate-300 bg-white text-slate-600 hover:bg-slate-100" title="Apply Filters">
                             <span class="material-symbols-outlined text-lg">filter_list</span>
@@ -2135,6 +2246,12 @@ if ($diagnosticStmt) {
                                 'job_status' => $jobStatusFilter,
                                 'service_status' => $serviceStatusFilter,
                                 'priority' => $priorityFilter,
+                                'upcoming_sort_by' => $upcomingSortBy,
+                                'upcoming_sort_dir' => $upcomingSortDir,
+                                'jobs_sort_by' => $jobsSortBy,
+                                'jobs_sort_dir' => $jobsSortDir,
+                                'diagnostics_sort_by' => $diagnosticsSortBy,
+                                'diagnostics_sort_dir' => $diagnosticsSortDir,
                                 'upcoming_page' => $upcomingPage,
                                 'jobs_page' => $jobsPage - 1,
                                 'diagnostics_page' => $diagnosticsPage,
@@ -2150,6 +2267,12 @@ if ($diagnosticStmt) {
                                 'job_status' => $jobStatusFilter,
                                 'service_status' => $serviceStatusFilter,
                                 'priority' => $priorityFilter,
+                                'upcoming_sort_by' => $upcomingSortBy,
+                                'upcoming_sort_dir' => $upcomingSortDir,
+                                'jobs_sort_by' => $jobsSortBy,
+                                'jobs_sort_dir' => $jobsSortDir,
+                                'diagnostics_sort_by' => $diagnosticsSortBy,
+                                'diagnostics_sort_dir' => $diagnosticsSortDir,
                                 'upcoming_page' => $upcomingPage,
                                 'jobs_page' => $jobsPage + 1,
                                 'diagnostics_page' => $diagnosticsPage,
@@ -2165,7 +2288,36 @@ if ($diagnosticStmt) {
                         <h3 class="text-lg font-bold text-slate-900">Diagnostic Reports</h3>
                         <p class="text-xs text-slate-500 font-medium">Recommended sub-services waiting for customer approval.</p>
                     </div>
-                    <span class="text-xs font-bold text-slate-500"><?php echo number_format($diagnosticTotalRows); ?> report(s)</span>
+                    <div class="flex items-center gap-3">
+                        <form method="get" class="flex items-center gap-2">
+                            <input type="hidden" name="shop" value="<?php echo h($loginSlug); ?>">
+                            <input type="hidden" name="q" value="<?php echo h($search); ?>">
+                            <input type="hidden" name="job_status" value="<?php echo h($jobStatusFilter); ?>">
+                            <input type="hidden" name="service_status" value="<?php echo h($serviceStatusFilter); ?>">
+                            <input type="hidden" name="priority" value="<?php echo h($priorityFilter); ?>">
+                            <input type="hidden" name="upcoming_sort_by" value="<?php echo h($upcomingSortBy); ?>">
+                            <input type="hidden" name="upcoming_sort_dir" value="<?php echo h($upcomingSortDir); ?>">
+                            <input type="hidden" name="jobs_sort_by" value="<?php echo h($jobsSortBy); ?>">
+                            <input type="hidden" name="jobs_sort_dir" value="<?php echo h($jobsSortDir); ?>">
+                            <select name="diagnostics_sort_by" class="rounded-lg border-slate-300 text-xs min-w-[170px]">
+                                <option value="updated_at" <?php echo $diagnosticsSortBy === 'updated_at' ? 'selected' : ''; ?>>Sort: Last Updated</option>
+                                <option value="created_at" <?php echo $diagnosticsSortBy === 'created_at' ? 'selected' : ''; ?>>Sort: Created Time</option>
+                                <option value="diagnostic_id" <?php echo $diagnosticsSortBy === 'diagnostic_id' ? 'selected' : ''; ?>>Sort: Diagnostic ID</option>
+                                <option value="repair_job_id" <?php echo $diagnosticsSortBy === 'repair_job_id' ? 'selected' : ''; ?>>Sort: Repair Job ID</option>
+                                <option value="appointment_id" <?php echo $diagnosticsSortBy === 'appointment_id' ? 'selected' : ''; ?>>Sort: Appointment ID</option>
+                                <option value="mechanic_name" <?php echo $diagnosticsSortBy === 'mechanic_name' ? 'selected' : ''; ?>>Sort: Mechanic</option>
+                                <option value="estimated_total" <?php echo $diagnosticsSortBy === 'estimated_total' ? 'selected' : ''; ?>>Sort: Estimated Total</option>
+                                <option value="customer_approval" <?php echo $diagnosticsSortBy === 'customer_approval' ? 'selected' : ''; ?>>Sort: Approval</option>
+                                <option value="diagnosis_status" <?php echo $diagnosticsSortBy === 'diagnosis_status' ? 'selected' : ''; ?>>Sort: Status</option>
+                            </select>
+                            <select name="diagnostics_sort_dir" class="rounded-lg border-slate-300 text-xs min-w-[110px]">
+                                <option value="DESC" <?php echo $diagnosticsSortDir === 'DESC' ? 'selected' : ''; ?>>Descending</option>
+                                <option value="ASC" <?php echo $diagnosticsSortDir === 'ASC' ? 'selected' : ''; ?>>Ascending</option>
+                            </select>
+                            <button type="submit" class="px-3 py-2 rounded-lg border border-slate-300 bg-white text-xs font-semibold text-slate-700 hover:bg-slate-100">Apply</button>
+                        </form>
+                        <span class="text-xs font-bold text-slate-500"><?php echo number_format($diagnosticTotalRows); ?> report(s)</span>
+                    </div>
                 </div>
 
                 <div class="overflow-x-auto">
@@ -2226,6 +2378,12 @@ if ($diagnosticStmt) {
                                 'job_status' => $jobStatusFilter,
                                 'service_status' => $serviceStatusFilter,
                                 'priority' => $priorityFilter,
+                                'upcoming_sort_by' => $upcomingSortBy,
+                                'upcoming_sort_dir' => $upcomingSortDir,
+                                'jobs_sort_by' => $jobsSortBy,
+                                'jobs_sort_dir' => $jobsSortDir,
+                                'diagnostics_sort_by' => $diagnosticsSortBy,
+                                'diagnostics_sort_dir' => $diagnosticsSortDir,
                                 'upcoming_page' => $upcomingPage,
                                 'jobs_page' => $jobsPage,
                                 'diagnostics_page' => $diagnosticsPage - 1,
@@ -2241,6 +2399,12 @@ if ($diagnosticStmt) {
                                 'job_status' => $jobStatusFilter,
                                 'service_status' => $serviceStatusFilter,
                                 'priority' => $priorityFilter,
+                                'upcoming_sort_by' => $upcomingSortBy,
+                                'upcoming_sort_dir' => $upcomingSortDir,
+                                'jobs_sort_by' => $jobsSortBy,
+                                'jobs_sort_dir' => $jobsSortDir,
+                                'diagnostics_sort_by' => $diagnosticsSortBy,
+                                'diagnostics_sort_dir' => $diagnosticsSortDir,
                                 'upcoming_page' => $upcomingPage,
                                 'jobs_page' => $jobsPage,
                                 'diagnostics_page' => $diagnosticsPage + 1,
