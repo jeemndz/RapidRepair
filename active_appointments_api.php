@@ -9,7 +9,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     exit;
 }
 
-require_once __DIR__ . '/../db.php';
+require_once __DIR__ . '/db.php';
 
 function json_response($statusCode, $payload)
 {
