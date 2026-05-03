@@ -963,6 +963,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['complete_with_parts']
     $repairJobId = isset($_POST['repair_job_id']) ? (int) $_POST['repair_job_id'] : 0;
     $noPartsUsed = isset($_POST['no_parts_used']) && $_POST['no_parts_used'] === '1';
     $selectedParts = isset($_POST['selected_parts']) && is_array($_POST['selected_parts']) ? $_POST['selected_parts'] : [];
+    $sourcedPartsRaw = isset($_POST['sourced_parts']) && is_array($_POST['sourced_parts']) ? $_POST['sourced_parts'] : [];
 
     $redirectParams = getRedirectParams($loginSlug, $search, $jobStatusFilter, $serviceStatusFilter, $priorityFilter);
 
@@ -973,6 +974,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['complete_with_parts']
     }
 
     $partsDataForDelete = [];
+    $sourcedParts = [];
+
     if (!$noPartsUsed) {
         foreach ($selectedParts as $partData) {
             $partData = is_array($partData) ? $partData : json_decode($partData, true);
@@ -982,6 +985,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['complete_with_parts']
                 if ($itemId > 0 && $quantity > 0) {
                     $partsDataForDelete[] = ['item_id' => $itemId, 'quantity' => $quantity];
                 }
+            }
+        }
+
+        foreach ($sourcedPartsRaw as $sourcedPartRow) {
+            if (!is_array($sourcedPartRow)) {
+                continue;
+            }
+
+            $partName = trim((string) ($sourcedPartRow['part_name'] ?? ''));
+            $quantity = (int) ($sourcedPartRow['quantity'] ?? 0);
+            $unitCost = (float) ($sourcedPartRow['unit_cost'] ?? 0);
+            $supplier = trim((string) ($sourcedPartRow['supplier'] ?? ''));
+
+            if ($partName !== '' && $quantity > 0 && $unitCost >= 0) {
+                $sourcedParts[] = [
+                    'part_name' => $partName,
+                    'quantity' => $quantity,
+                    'unit_cost' => $unitCost,
+                    'supplier' => $supplier,
+                ];
             }
         }
     }
@@ -1055,6 +1078,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['complete_with_parts']
                 log_event($conn, 'CREATE StockMovement', 'stock_movement', (int) $partUsed['item_id'], 'Created StockMovement with details: OUT quantity ' . (int) $partUsed['quantity']);
             }
             mysqli_stmt_close($movementStmt);
+        }
+    }
+
+    if ($completeOk && count($sourcedParts) > 0) {
+        foreach ($sourcedParts as $sourcedPart) {
+            $totalPartsCost += (float) $sourcedPart['unit_cost'] * (int) $sourcedPart['quantity'];
+            log_event(
+                $conn,
+                'ADD SourcedPart',
+                'repair_job',
+                $repairJobId,
+                'Added sourced-out part: ' . $sourcedPart['part_name'] .
+                ' x' . (int) $sourcedPart['quantity'] .
+                ' @ ' . number_format((float) $sourcedPart['unit_cost'], 2) .
+                ($sourcedPart['supplier'] !== '' ? ' from ' . $sourcedPart['supplier'] : '')
+            );
         }
     }
 
@@ -1428,6 +1467,40 @@ if ($startDueJobsStmt) {
     mysqli_stmt_bind_param($startDueJobsStmt, 'i', $tenantID);
     mysqli_stmt_execute($startDueJobsStmt);
     mysqli_stmt_close($startDueJobsStmt);
+}
+
+/**
+ * Lightweight polling endpoint for auto-refresh.
+ * The page reloads only when the active repair-jobs signature changes.
+ */
+if (isset($_GET['ajax']) && $_GET['ajax'] === 'repair_job_count') {
+    header('Content-Type: application/json');
+
+    $signature = '0|0|';
+    $countStmt = mysqli_prepare(
+        $conn,
+        "SELECT COUNT(*) AS total_active,
+                COALESCE(MAX(repair_job_id), 0) AS latest_id,
+                COALESCE(MAX(updated_at), '') AS latest_update
+         FROM repair_jobs
+         WHERE tenantID = ?
+           AND job_status IN ('Queued', 'In Progress', 'Diagnostics', 'Waiting for Parts', 'Quality Check', 'Ready for Pickup')"
+    );
+
+    if ($countStmt) {
+        mysqli_stmt_bind_param($countStmt, 'i', $tenantID);
+        mysqli_stmt_execute($countStmt);
+        $countResult = mysqli_stmt_get_result($countStmt);
+        if ($countResult && $countRow = mysqli_fetch_assoc($countResult)) {
+            $signature = (int) ($countRow['total_active'] ?? 0) . '|' .
+                         (int) ($countRow['latest_id'] ?? 0) . '|' .
+                         (string) ($countRow['latest_update'] ?? '');
+        }
+        mysqli_stmt_close($countStmt);
+    }
+
+    echo json_encode(['signature' => $signature]);
+    exit;
 }
 
 /**
@@ -2052,105 +2125,6 @@ if ($jobsStmt) {
 }
 
 /**
- * Repair jobs history
- * Uses the existing repair_jobs table only. Completed and Cancelled jobs are shown here.
- */
-$historyRows = [];
-$historyTotalRows = 0;
-$historyTotalPages = 1;
-$historyPage = max(1, (int) ($_GET['history_page'] ?? 1));
-$historyRecordsPerPage = 5;
-$historyOffset = ($historyPage - 1) * $historyRecordsPerPage;
-
-$historyCountStmt = mysqli_prepare(
-    $conn,
-    "SELECT COUNT(*) AS total_rows
-     FROM repair_jobs rj
-     WHERE rj.tenantID = ?
-       AND rj.job_status IN ('Completed', 'Cancelled')"
-);
-if ($historyCountStmt) {
-    mysqli_stmt_bind_param($historyCountStmt, 'i', $tenantID);
-    mysqli_stmt_execute($historyCountStmt);
-    $historyCountResult = mysqli_stmt_get_result($historyCountStmt);
-    if ($historyCountResult && $historyCountRow = mysqli_fetch_assoc($historyCountResult)) {
-        $historyTotalRows = (int) ($historyCountRow['total_rows'] ?? 0);
-    }
-    mysqli_stmt_close($historyCountStmt);
-}
-
-$historyTotalPages = max(1, (int) ceil($historyTotalRows / $historyRecordsPerPage));
-if ($historyPage > $historyTotalPages) {
-    $historyPage = $historyTotalPages;
-}
-$historyOffset = ($historyPage - 1) * $historyRecordsPerPage;
-
-$historyStmt = mysqli_prepare(
-    $conn,
-    "SELECT
-        rj.repair_job_id,
-        rj.appointment_id,
-        a.appointment_date,
-        a.appointment_time,
-        rj.job_order_no,
-        rj.job_status,
-        rj.priority,
-        rj.assigned_technician,
-        rj.bay_no,
-        rj.labor_total,
-        rj.parts_total,
-        rj.grand_total,
-        rj.completed_at,
-        rj.released_at,
-        rj.updated_at,
-        COALESCE(u.fullName, CONCAT('User #', rj.user_id)) AS customer_name,
-        CONCAT(IFNULL(v.year_model, ''), ' ', IFNULL(v.brand, ''), ' ', IFNULL(v.model, '')) AS vehicle_name,
-        IFNULL(v.plate_number, '') AS plate_number,
-        COALESCE(GROUP_CONCAT(DISTINCT s.service_name ORDER BY s.service_name SEPARATOR ', '), 'No services linked') AS services
-     FROM repair_jobs rj
-     LEFT JOIN appointments a ON a.appointment_id = rj.appointment_id AND a.tenantID = rj.tenantID
-     LEFT JOIN users u ON u.user_id = rj.user_id
-     LEFT JOIN vehicleinformation v ON v.vehicle_id = rj.vehicle_id AND v.tenantID = rj.tenantID
-     LEFT JOIN repair_job_services rjs ON rjs.repair_job_id = rj.repair_job_id AND rjs.tenantID = rj.tenantID
-     LEFT JOIN services s ON s.service_id = rjs.service_id AND s.tenantID = rj.tenantID
-     WHERE rj.tenantID = ?
-       AND rj.job_status IN ('Completed', 'Cancelled')
-     GROUP BY
-        rj.repair_job_id,
-        rj.appointment_id,
-        a.appointment_date,
-        a.appointment_time,
-        rj.job_order_no,
-        rj.job_status,
-        rj.priority,
-        rj.assigned_technician,
-        rj.bay_no,
-        rj.labor_total,
-        rj.parts_total,
-        rj.grand_total,
-        rj.completed_at,
-        rj.released_at,
-        rj.updated_at,
-        u.fullName,
-        rj.user_id,
-        v.year_model,
-        v.brand,
-        v.model,
-        v.plate_number
-     ORDER BY COALESCE(rj.completed_at, rj.released_at, rj.updated_at) DESC, rj.repair_job_id DESC
-     LIMIT ?, ?"
-);
-if ($historyStmt) {
-    mysqli_stmt_bind_param($historyStmt, 'iii', $tenantID, $historyOffset, $historyRecordsPerPage);
-    mysqli_stmt_execute($historyStmt);
-    $historyResult = mysqli_stmt_get_result($historyStmt);
-    while ($historyResult && $historyRow = mysqli_fetch_assoc($historyResult)) {
-        $historyRows[] = $historyRow;
-    }
-    mysqli_stmt_close($historyStmt);
-}
-
-/**
  * Diagnostic reports table
  */
 $diagnosticRows = [];
@@ -2259,6 +2233,90 @@ if ($diagnosticStmt) {
         $diagnosticRows[] = $row;
     }
     mysqli_stmt_close($diagnosticStmt);
+}
+
+/**
+ * Repair Jobs History table
+ * Uses the existing repair_jobs table only.
+ */
+$historyRows = [];
+$historyStmt = mysqli_prepare(
+    $conn,
+    "SELECT
+        rj.repair_job_id,
+        rj.appointment_id,
+        rj.job_order_no,
+        rj.job_status,
+        rj.priority,
+        rj.assigned_technician,
+        rj.bay_no,
+        rj.labor_total,
+        rj.parts_total,
+        rj.grand_total,
+        rj.completed_at,
+        rj.updated_at,
+        COALESCE(u.fullName, CONCAT('User #', rj.user_id)) AS customer_name,
+        CONCAT(IFNULL(v.year_model, ''), ' ', IFNULL(v.brand, ''), ' ', IFNULL(v.model, '')) AS vehicle_name,
+        COALESCE(GROUP_CONCAT(DISTINCT s.service_name ORDER BY s.service_name SEPARATOR ', '), 'No services linked') AS services
+     FROM repair_jobs rj
+     LEFT JOIN users u ON u.user_id = rj.user_id
+     LEFT JOIN vehicleinformation v ON v.vehicle_id = rj.vehicle_id AND v.tenantID = rj.tenantID
+     LEFT JOIN repair_job_services rjs ON rjs.repair_job_id = rj.repair_job_id AND rjs.tenantID = rj.tenantID
+     LEFT JOIN services s ON s.service_id = rjs.service_id AND s.tenantID = rj.tenantID
+     WHERE rj.tenantID = ?
+       AND rj.job_status IN ('Completed', 'Cancelled')
+     GROUP BY
+        rj.repair_job_id,
+        rj.appointment_id,
+        rj.job_order_no,
+        rj.job_status,
+        rj.priority,
+        rj.assigned_technician,
+        rj.bay_no,
+        rj.labor_total,
+        rj.parts_total,
+        rj.grand_total,
+        rj.completed_at,
+        rj.updated_at,
+        u.fullName,
+        rj.user_id,
+        v.year_model,
+        v.brand,
+        v.model
+     ORDER BY COALESCE(rj.completed_at, rj.updated_at) DESC, rj.repair_job_id DESC
+     LIMIT 200"
+);
+
+if ($historyStmt) {
+    mysqli_stmt_bind_param($historyStmt, 'i', $tenantID);
+    mysqli_stmt_execute($historyResult = $historyStmt);
+    $historyResult = mysqli_stmt_get_result($historyStmt);
+    while ($historyResult && $historyRow = mysqli_fetch_assoc($historyResult)) {
+        $historyRows[] = $historyRow;
+    }
+    mysqli_stmt_close($historyStmt);
+}
+
+$activeJobsSignature = count($jobRows) . '|0|';
+$activeSignatureStmt = mysqli_prepare(
+    $conn,
+    "SELECT COUNT(*) AS total_active,
+            COALESCE(MAX(repair_job_id), 0) AS latest_id,
+            COALESCE(MAX(updated_at), '') AS latest_update
+     FROM repair_jobs
+     WHERE tenantID = ?
+       AND job_status IN ('Queued', 'In Progress', 'Diagnostics', 'Waiting for Parts', 'Quality Check', 'Ready for Pickup')"
+);
+if ($activeSignatureStmt) {
+    mysqli_stmt_bind_param($activeSignatureStmt, 'i', $tenantID);
+    mysqli_stmt_execute($activeSignatureStmt);
+    $activeSignatureResult = mysqli_stmt_get_result($activeSignatureStmt);
+    if ($activeSignatureResult && $activeSignatureRow = mysqli_fetch_assoc($activeSignatureResult)) {
+        $activeJobsSignature = (int) ($activeSignatureRow['total_active'] ?? 0) . '|' .
+                               (int) ($activeSignatureRow['latest_id'] ?? 0) . '|' .
+                               (string) ($activeSignatureRow['latest_update'] ?? '');
+    }
+    mysqli_stmt_close($activeSignatureStmt);
 }
 ?>
 <!DOCTYPE html>
@@ -2852,133 +2910,100 @@ if ($diagnosticStmt) {
                 </div>
             </section>
 
-            <section class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden mb-8" id="repairJobsHistorySection">
-                <div class="px-6 py-5 border-b border-slate-100 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+            <section class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden mb-8" id="repairHistorySection">
+                <div class="px-6 py-5 border-b border-slate-100 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                     <div>
                         <h3 class="text-lg font-bold text-slate-900">Repair Jobs History</h3>
                         <p class="text-xs text-slate-500 font-medium">Completed and cancelled repair jobs from the existing repair_jobs table.</p>
                     </div>
-                    <span class="text-xs font-bold text-slate-500"><span id="historyVisibleCount"><?php echo number_format(count($historyRows)); ?></span> shown / <?php echo number_format($historyTotalRows); ?> total</span>
+                    <span class="text-xs font-bold text-slate-500"><span id="historyVisibleCount"><?php echo number_format(count($historyRows)); ?></span> rows</span>
                 </div>
 
-                <div class="px-6 py-4 border-b border-slate-100 bg-slate-50/40 flex flex-col lg:flex-row lg:items-center gap-3">
-                    <div class="relative flex-1 min-w-[240px]">
+                <div class="px-6 py-4 border-b border-slate-100 bg-slate-50/40 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                    <div class="relative flex-1 min-w-[240px] max-w-xl">
                         <span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">search</span>
-                        <input type="text" id="historySearchInput" placeholder="Live search by job order, customer, vehicle, service..." class="w-full rounded-lg border-slate-300 pl-9 pr-3 py-2 text-sm" autocomplete="off" />
+                        <input type="text" id="historySearch" placeholder="Search job order, customer, vehicle, service, technician..." class="w-full rounded-lg border-slate-300 pl-9 pr-3 py-2 text-sm" autocomplete="off" />
                     </div>
-                    <div class="flex flex-wrap items-center gap-2" id="historyFilterButtons">
-                        <button type="button" data-history-filter="All" class="history-filter-btn rounded-lg bg-blue-600 px-3 py-2 text-xs font-bold text-white hover:bg-blue-700">All</button>
+                    <div class="flex flex-wrap gap-2" id="historyFilterButtons">
+                        <button type="button" data-history-filter="All" class="history-filter-btn rounded-lg bg-slate-900 px-3 py-2 text-xs font-bold text-white hover:bg-slate-800">All</button>
                         <button type="button" data-history-filter="Completed" class="history-filter-btn rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-100">Completed</button>
                         <button type="button" data-history-filter="Cancelled" class="history-filter-btn rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-100">Cancelled</button>
                     </div>
                 </div>
 
                 <div class="overflow-x-auto">
-                    <table class="w-full text-left" id="repairJobsHistoryTable">
+                    <table class="w-full text-left" id="historyTable">
                         <thead>
                         <tr class="bg-slate-50/50">
                             <th class="px-6 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">Order Details</th>
                             <th class="px-6 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">Services</th>
-                            <th class="px-6 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">Final Status</th>
+                            <th class="px-6 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">Technician / Bay</th>
                             <th class="px-6 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">Totals</th>
-                            <th class="px-6 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">Completed / Updated</th>
+                            <th class="px-6 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">Final Status</th>
+                            <th class="px-6 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">Date</th>
                         </tr>
                         </thead>
-                        <tbody class="divide-y divide-slate-100">
+                        <tbody>
                         <?php if (count($historyRows) === 0): ?>
                             <tr class="history-empty-row">
-                                <td colspan="5" class="px-6 py-10 text-center text-sm text-slate-500">No completed or cancelled repair jobs yet.</td>
+                                <td colspan="6" class="px-6 py-10 text-center text-sm font-semibold text-slate-500">No completed or cancelled repair jobs yet.</td>
                             </tr>
                         <?php else: ?>
                             <?php foreach ($historyRows as $history): ?>
                                 <?php
-                                $historyDateRaw = !empty($history['completed_at']) ? (string) $history['completed_at'] : (!empty($history['released_at']) ? (string) $history['released_at'] : (string) ($history['updated_at'] ?? ''));
-                                $historyDateLabel = $historyDateRaw !== '' && strtotime($historyDateRaw) !== false ? date('M d, Y h:i A', strtotime($historyDateRaw)) : 'No date recorded';
-                                $historySearchText = strtolower(trim(implode(' ', [
-                                    $history['job_order_no'] ?? '',
-                                    $history['customer_name'] ?? '',
-                                    $history['vehicle_name'] ?? '',
-                                    $history['plate_number'] ?? '',
-                                    $history['services'] ?? '',
-                                    $history['job_status'] ?? '',
-                                ])));
+                                    $historyVehicle = trim((string) ($history['vehicle_name'] ?? ''));
+                                    $historyDateValue = $history['job_status'] === 'Completed'
+                                        ? ($history['completed_at'] ?: $history['updated_at'])
+                                        : ($history['updated_at'] ?: $history['completed_at']);
+                                    $historySearchText = strtolower(trim(implode(' ', [
+                                        $history['job_order_no'] ?? '',
+                                        $history['customer_name'] ?? '',
+                                        $historyVehicle,
+                                        $history['services'] ?? '',
+                                        $history['assigned_technician'] ?? '',
+                                        $history['bay_no'] ?? '',
+                                        $history['job_status'] ?? '',
+                                    ])));
                                 ?>
-                                <tr class="history-row hover:bg-slate-50/50 transition-colors" data-status="<?php echo h($history['job_status']); ?>" data-search="<?php echo h($historySearchText); ?>">
-                                    <td class="px-6 py-4">
-                                        <div class="font-bold text-sm text-slate-900"><?php echo h(!empty($history['job_order_no']) ? $history['job_order_no'] : 'RJO-' . $history['repair_job_id']); ?></div>
-                                        <div class="text-xs text-slate-500"><?php echo h(trim((string) ($history['vehicle_name'] ?? '')) !== '' ? trim((string) $history['vehicle_name']) : 'Vehicle record'); ?></div>
-                                        <div class="text-[11px] text-slate-400 mt-1">
-                                            Customer: <?php echo h($history['customer_name']); ?>
-                                            <?php echo !empty($history['plate_number']) ? ' | Plate: ' . h($history['plate_number']) : ''; ?>
-                                        </div>
+                                <tr class="border-t border-slate-100 history-row" data-history-status="<?php echo h($history['job_status']); ?>" data-history-search="<?php echo h($historySearchText); ?>">
+                                    <td class="px-6 py-4 align-top">
+                                        <p class="text-sm font-bold text-slate-900"><?php echo h($history['job_order_no']); ?></p>
+                                        <p class="text-xs font-semibold text-slate-600 mt-1"><?php echo h($history['customer_name']); ?></p>
+                                        <p class="text-xs text-slate-500 mt-1"><?php echo h($historyVehicle !== '' ? $historyVehicle : 'Vehicle not set'); ?></p>
                                     </td>
-                                    <td class="px-6 py-4 text-sm text-slate-700 max-w-md"><?php echo h($history['services']); ?></td>
-                                    <td class="px-6 py-4">
-                                        <span class="inline-flex px-2 py-1 rounded-full text-xs font-bold <?php echo h(statusBadgeClass((string) $history['job_status'])); ?>">
+                                    <td class="px-6 py-4 align-top max-w-[280px]">
+                                        <p class="text-xs text-slate-600 leading-relaxed"><?php echo h($history['services']); ?></p>
+                                    </td>
+                                    <td class="px-6 py-4 align-top">
+                                        <p class="text-xs font-semibold text-slate-700"><?php echo h($history['assigned_technician'] ?: 'Unassigned'); ?></p>
+                                        <p class="text-xs text-slate-500 mt-1">Bay: <?php echo h($history['bay_no'] ?: 'N/A'); ?></p>
+                                    </td>
+                                    <td class="px-6 py-4 align-top">
+                                        <p class="text-sm font-black text-slate-900">₱<?php echo number_format((float) ($history['grand_total'] ?? 0), 2); ?></p>
+                                        <p class="text-[11px] text-slate-500 mt-1">Labor: ₱<?php echo number_format((float) ($history['labor_total'] ?? 0), 2); ?></p>
+                                        <p class="text-[11px] text-slate-500">Parts: ₱<?php echo number_format((float) ($history['parts_total'] ?? 0), 2); ?></p>
+                                    </td>
+                                    <td class="px-6 py-4 align-top">
+                                        <span class="inline-flex items-center rounded-full px-2.5 py-1 text-xs font-bold <?php echo h(statusBadgeClass((string) $history['job_status'])); ?>">
                                             <?php echo h($history['job_status']); ?>
                                         </span>
                                     </td>
-                                    <td class="px-6 py-4 text-sm text-slate-700">
-                                        <div class="font-black text-slate-900">₱<?php echo number_format((float) ($history['grand_total'] ?? 0), 2); ?></div>
-                                        <div class="text-[11px] text-slate-500 mt-1">Labor: ₱<?php echo number_format((float) ($history['labor_total'] ?? 0), 2); ?></div>
-                                        <div class="text-[11px] text-slate-500">Parts: ₱<?php echo number_format((float) ($history['parts_total'] ?? 0), 2); ?></div>
+                                    <td class="px-6 py-4 align-top">
+                                        <p class="text-xs font-semibold text-slate-700">
+                                            <?php echo !empty($historyDateValue) ? h(date('M d, Y', strtotime((string) $historyDateValue))) : '-'; ?>
+                                        </p>
+                                        <p class="text-[11px] text-slate-500 mt-1">
+                                            <?php echo !empty($historyDateValue) ? h(date('h:i A', strtotime((string) $historyDateValue))) : ''; ?>
+                                        </p>
                                     </td>
-                                    <td class="px-6 py-4 text-sm text-slate-700"><?php echo h($historyDateLabel); ?></td>
                                 </tr>
                             <?php endforeach; ?>
-                            <tr id="historyNoMatchRow" class="hidden">
-                                <td colspan="5" class="px-6 py-10 text-center text-sm text-slate-500">No history records match your search/filter.</td>
+                            <tr id="historyNoResultsRow" class="hidden">
+                                <td colspan="6" class="px-6 py-10 text-center text-sm font-semibold text-slate-500">No history records match your search/filter.</td>
                             </tr>
                         <?php endif; ?>
                         </tbody>
                     </table>
-                </div>
-
-                <div class="px-6 py-4 border-t border-slate-100 bg-slate-50/40 flex items-center justify-between">
-                    <p class="text-xs text-slate-500 font-medium">Showing <?php echo number_format(count($historyRows)); ?> of <?php echo number_format($historyTotalRows); ?> records</p>
-                    <div class="flex items-center gap-2">
-                        <?php if ($historyPage > 1): ?>
-                            <a href="repairjobsadmin.php?<?php echo h(http_build_query(array_filter([
-                                'shop' => $loginSlug,
-                                'q' => $search,
-                                'job_status' => $jobStatusFilter,
-                                'service_status' => $serviceStatusFilter,
-                                'priority' => $priorityFilter,
-                                'upcoming_sort_by' => $upcomingSortBy,
-                                'upcoming_sort_dir' => $upcomingSortDir,
-                                'jobs_sort_by' => $jobsSortBy,
-                                'jobs_sort_dir' => $jobsSortDir,
-                                'diagnostics_sort_by' => $diagnosticsSortBy,
-                                'diagnostics_sort_dir' => $diagnosticsSortDir,
-                                'upcoming_page' => $upcomingPage,
-                                'jobs_page' => $jobsPage,
-                                'diagnostics_page' => $diagnosticsPage,
-                                'history_page' => $historyPage - 1,
-                            ], static fn($v) => $v !== ''))); ?>" class="px-3 py-1.5 text-xs font-semibold rounded-lg border border-slate-300 bg-white hover:bg-slate-100">Previous</a>
-                        <?php endif; ?>
-
-                        <span class="px-2 py-1 text-xs font-semibold text-slate-600">Page <?php echo (int) $historyPage; ?> of <?php echo (int) $historyTotalPages; ?></span>
-
-                        <?php if ($historyPage < $historyTotalPages): ?>
-                            <a href="repairjobsadmin.php?<?php echo h(http_build_query(array_filter([
-                                'shop' => $loginSlug,
-                                'q' => $search,
-                                'job_status' => $jobStatusFilter,
-                                'service_status' => $serviceStatusFilter,
-                                'priority' => $priorityFilter,
-                                'upcoming_sort_by' => $upcomingSortBy,
-                                'upcoming_sort_dir' => $upcomingSortDir,
-                                'jobs_sort_by' => $jobsSortBy,
-                                'jobs_sort_dir' => $jobsSortDir,
-                                'diagnostics_sort_by' => $diagnosticsSortBy,
-                                'diagnostics_sort_dir' => $diagnosticsSortDir,
-                                'upcoming_page' => $upcomingPage,
-                                'jobs_page' => $jobsPage,
-                                'diagnostics_page' => $diagnosticsPage,
-                                'history_page' => $historyPage + 1,
-                            ], static fn($v) => $v !== ''))); ?>" class="px-3 py-1.5 text-xs font-semibold rounded-lg border border-slate-300 bg-white hover:bg-slate-100">Next</a>
-                        <?php endif; ?>
-                    </div>
                 </div>
             </section>
 
@@ -3028,7 +3053,7 @@ if ($diagnosticStmt) {
                             <th class="px-6 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">Customer / Vehicle</th>
                             <th class="px-6 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">Recommended Sub-Services</th>
                             <th class="px-6 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">Estimated Total</th>
-                            <th class="px-6 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">Customer Approval Status</th>
+                            <th class="px-6 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">Approval</th>
                             <th class="px-6 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">Status</th>
                         </tr>
                         </thead>
@@ -3273,13 +3298,19 @@ if ($diagnosticStmt) {
                 </a>
             </div>
 
-            <form method="post" class="p-6 space-y-6">
+            <form method="post" class="p-6 space-y-6" id="completePartsForm">
                 <input type="hidden" name="csrf_token" value="<?php echo h($csrfToken); ?>"/>
                 <input type="hidden" name="repair_job_id" value="<?php echo (int) $partsModalJobId; ?>"/>
                 <input type="hidden" name="complete_with_parts" value="1"/>
 
                 <div class="space-y-4">
-                    <p class="text-sm text-slate-600 font-medium">Select the parts/inventory items used in this repair:</p>
+                    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                        <p class="text-sm text-slate-600 font-medium">Select the parts/inventory items used in this repair:</p>
+                        <button type="button" id="add_sourced_part_btn" onclick="addSourcedPartRow()" class="inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-slate-900 text-white text-sm font-semibold hover:bg-slate-800 transition-colors">
+                            <span class="material-symbols-outlined text-base">add</span>
+                            Add Part
+                        </button>
+                    </div>
 
                     <div class="border rounded-lg p-4 transition-colors bg-blue-50 border-blue-200">
                         <div class="flex items-start gap-4">
@@ -3289,6 +3320,14 @@ if ($diagnosticStmt) {
                                 <p class="text-xs text-slate-600 mt-1">Complete this job without using inventory parts.</p>
                             </div>
                         </div>
+                    </div>
+
+                    <div id="sourced-parts-section" class="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4 space-y-3">
+                        <div>
+                            <p class="text-sm font-semibold text-slate-900">External / sourced-out parts</p>
+                            <p class="text-xs text-slate-500 mt-1">Use this for parts not available in shop inventory. These are added to parts total only and will not deduct stock.</p>
+                        </div>
+                        <div id="sourced-parts-list" class="space-y-3"></div>
                     </div>
 
                     <div id="parts-selection-container">
@@ -3361,15 +3400,27 @@ function handleJobStatusChange(selectElement, jobId) {
 function toggleNoPartsMode() {
     const noPartsCheckbox = document.getElementById('no_parts_checkbox');
     const partCheckboxes = document.querySelectorAll('.part-checkbox');
+    const noPartsChecked = noPartsCheckbox && noPartsCheckbox.checked;
 
     partCheckboxes.forEach((checkbox) => {
-        checkbox.disabled = noPartsCheckbox.checked;
+        checkbox.disabled = noPartsChecked;
         checkbox.checked = false;
 
         const quantityInput = document.querySelector('input[data-item-id="' + checkbox.value + '"]');
         if (quantityInput) {
             quantityInput.disabled = true;
         }
+    });
+
+    const addSourcedPartBtn = document.getElementById('add_sourced_part_btn');
+    if (addSourcedPartBtn) {
+        addSourcedPartBtn.disabled = noPartsChecked;
+        addSourcedPartBtn.classList.toggle('opacity-50', noPartsChecked);
+        addSourcedPartBtn.classList.toggle('cursor-not-allowed', noPartsChecked);
+    }
+
+    document.querySelectorAll('.sourced-part-input').forEach((input) => {
+        input.disabled = noPartsChecked;
     });
 }
 
@@ -3385,6 +3436,59 @@ function togglePartQuantity(itemId) {
     }
 }
 
+
+let sourcedPartIndex = 0;
+
+function addSourcedPartRow() {
+    const noPartsCheckbox = document.getElementById('no_parts_checkbox');
+    if (noPartsCheckbox && noPartsCheckbox.checked) {
+        alert('Uncheck No Parts Used before adding sourced-out parts.');
+        return;
+    }
+
+    const list = document.getElementById('sourced-parts-list');
+    if (!list) {
+        return;
+    }
+
+    const index = sourcedPartIndex++;
+    const row = document.createElement('div');
+    row.className = 'sourced-part-row rounded-lg border border-slate-200 bg-white p-3 space-y-3';
+    row.innerHTML = `
+        <div class="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
+            <div class="md:col-span-4">
+                <label class="text-[11px] font-bold uppercase text-slate-500">Part Name</label>
+                <input type="text" name="sourced_parts[${index}][part_name]" class="sourced-part-input mt-1 w-full rounded-lg border-slate-300 text-sm" placeholder="Example: Brake sensor" required>
+            </div>
+            <div class="md:col-span-2">
+                <label class="text-[11px] font-bold uppercase text-slate-500">Qty</label>
+                <input type="number" name="sourced_parts[${index}][quantity]" class="sourced-part-input mt-1 w-full rounded-lg border-slate-300 text-sm" min="1" value="1" required>
+            </div>
+            <div class="md:col-span-3">
+                <label class="text-[11px] font-bold uppercase text-slate-500">Unit Cost</label>
+                <input type="number" name="sourced_parts[${index}][unit_cost]" class="sourced-part-input mt-1 w-full rounded-lg border-slate-300 text-sm" min="0" step="0.01" placeholder="0.00" required>
+            </div>
+            <div class="md:col-span-2">
+                <label class="text-[11px] font-bold uppercase text-slate-500">Supplier</label>
+                <input type="text" name="sourced_parts[${index}][supplier]" class="sourced-part-input mt-1 w-full rounded-lg border-slate-300 text-sm" placeholder="Optional">
+            </div>
+            <div class="md:col-span-1 flex justify-end">
+                <button type="button" onclick="removeSourcedPartRow(this)" class="inline-flex items-center justify-center w-9 h-9 rounded-lg border border-red-200 text-red-600 hover:bg-red-50" title="Remove part">
+                    <span class="material-symbols-outlined text-base">delete</span>
+                </button>
+            </div>
+        </div>
+    `;
+    list.appendChild(row);
+}
+
+function removeSourcedPartRow(button) {
+    const row = button.closest('.sourced-part-row');
+    if (row) {
+        row.remove();
+    }
+}
+
 document.querySelectorAll('form[method="post"]').forEach((form) => {
     if (form.querySelector('input[name="complete_with_parts"]')) {
         form.addEventListener('submit', function () {
@@ -3392,10 +3496,11 @@ document.querySelectorAll('form[method="post"]').forEach((form) => {
 
             const noPartsCheckbox = form.querySelector('input[name="no_parts_used"]');
             if (noPartsCheckbox && noPartsCheckbox.checked) {
+                form.querySelectorAll('.sourced-part-row').forEach((row) => row.remove());
                 return;
             }
 
-            document.querySelectorAll('.part-checkbox:checked').forEach((checkbox) => {
+            form.querySelectorAll('.part-checkbox:checked').forEach((checkbox) => {
                 const itemId = checkbox.value;
                 const quantityInput = document.querySelector('input[data-item-id="' + itemId + '"]');
 
@@ -3492,6 +3597,131 @@ if (notificationBtn && notificationPanel) {
     });
 }
 
+
+let activeHistoryFilter = 'All';
+
+function applyHistoryFilters() {
+    const searchInput = document.getElementById('historySearch');
+    const rows = document.querySelectorAll('.history-row');
+    const noResultsRow = document.getElementById('historyNoResultsRow');
+    const visibleCountElement = document.getElementById('historyVisibleCount');
+    const searchValue = searchInput ? searchInput.value.trim().toLowerCase() : '';
+    let visibleCount = 0;
+
+    rows.forEach((row) => {
+        const rowStatus = row.getAttribute('data-history-status') || '';
+        const rowText = row.getAttribute('data-history-search') || row.textContent.toLowerCase();
+        const matchesStatus = activeHistoryFilter === 'All' || rowStatus === activeHistoryFilter;
+        const matchesSearch = searchValue === '' || rowText.includes(searchValue);
+        const isVisible = matchesStatus && matchesSearch;
+
+        row.classList.toggle('hidden', !isVisible);
+        if (isVisible) {
+            visibleCount += 1;
+        }
+    });
+
+    if (noResultsRow) {
+        noResultsRow.classList.toggle('hidden', visibleCount !== 0 || rows.length === 0);
+    }
+
+    if (visibleCountElement) {
+        visibleCountElement.textContent = visibleCount.toLocaleString();
+    }
+}
+
+const historySearchInput = document.getElementById('historySearch');
+if (historySearchInput) {
+    historySearchInput.addEventListener('input', applyHistoryFilters);
+}
+
+document.querySelectorAll('.history-filter-btn').forEach((button) => {
+    button.addEventListener('click', function () {
+        activeHistoryFilter = button.getAttribute('data-history-filter') || 'All';
+
+        document.querySelectorAll('.history-filter-btn').forEach((btn) => {
+            btn.classList.remove('bg-slate-900', 'text-white', 'hover:bg-slate-800');
+            btn.classList.add('border', 'border-slate-300', 'bg-white', 'text-slate-700', 'hover:bg-slate-100');
+        });
+
+        button.classList.add('bg-slate-900', 'text-white', 'hover:bg-slate-800');
+        button.classList.remove('border', 'border-slate-300', 'bg-white', 'text-slate-700', 'hover:bg-slate-100');
+
+        applyHistoryFilters();
+    });
+});
+applyHistoryFilters();
+
+const initialRepairJobsSignature = '<?php echo h($activeJobsSignature ?? ''); ?>';
+let latestRepairJobsSignature = initialRepairJobsSignature;
+let autoRefreshNoticeShown = false;
+
+function hasOpenRepairModal() {
+    return Boolean(
+        document.getElementById('diagnosticForm') ||
+        document.getElementById('partsCompletionForm') ||
+        document.querySelector('[data-modal-open="true"]') ||
+        window.location.search.includes('diagnostic_job=') ||
+        window.location.search.includes('show_parts_modal=')
+    );
+}
+
+function userIsTypingOrEditing() {
+    const active = document.activeElement;
+    if (!active) {
+        return false;
+    }
+
+    const tagName = active.tagName ? active.tagName.toLowerCase() : '';
+    return tagName === 'input' || tagName === 'textarea' || tagName === 'select' || active.isContentEditable;
+}
+
+async function checkForRepairJobUpdates() {
+    if (hasOpenRepairModal() || userIsTypingOrEditing()) {
+        return;
+    }
+
+    try {
+        const url = new URL(window.location.href);
+        url.searchParams.set('ajax', 'repair_job_count');
+        url.searchParams.set('_', Date.now().toString());
+
+        const response = await fetch(url.toString(), {
+            cache: 'no-store',
+            headers: { 'X-Requested-With': 'XMLHttpRequest' }
+        });
+
+        if (!response.ok) {
+            return;
+        }
+
+        const data = await response.json();
+        if (!data || typeof data.signature !== 'string') {
+            return;
+        }
+
+        if (latestRepairJobsSignature && data.signature !== latestRepairJobsSignature) {
+            if (!autoRefreshNoticeShown) {
+                autoRefreshNoticeShown = true;
+                const notice = document.createElement('div');
+                notice.className = 'fixed bottom-5 right-5 z-50 rounded-xl bg-slate-900 px-4 py-3 text-sm font-bold text-white shadow-lg';
+                notice.textContent = 'New repair job update detected. Refreshing...';
+                document.body.appendChild(notice);
+            }
+
+            window.setTimeout(() => {
+                window.location.reload();
+            }, 700);
+        } else {
+            latestRepairJobsSignature = data.signature;
+        }
+    } catch (error) {
+        // Keep the page usable even if polling fails.
+    }
+}
+
+window.setInterval(checkForRepairJobUpdates, 10000);
+
 const diagnosticMainServiceTotal = Number('<?php echo isset($diagnosticMainServiceTotal) ? (float) $diagnosticMainServiceTotal : 0; ?>');
 
 function updateDiagnosticTotal() {
@@ -3524,62 +3754,6 @@ if (diagnosticForm) {
         }
     });
 }
-
-const historySearchInput = document.getElementById('historySearchInput');
-const historyFilterButtons = document.querySelectorAll('.history-filter-btn');
-const historyRows = document.querySelectorAll('#repairJobsHistoryTable .history-row');
-const historyNoMatchRow = document.getElementById('historyNoMatchRow');
-const historyVisibleCount = document.getElementById('historyVisibleCount');
-let currentHistoryFilter = 'All';
-
-function applyHistoryFilter() {
-    const searchValue = (historySearchInput ? historySearchInput.value : '').trim().toLowerCase();
-    let visibleCount = 0;
-
-    historyRows.forEach((row) => {
-        const rowStatus = row.getAttribute('data-status') || '';
-        const rowSearch = row.getAttribute('data-search') || row.innerText.toLowerCase();
-        const matchesStatus = currentHistoryFilter === 'All' || rowStatus === currentHistoryFilter;
-        const matchesSearch = searchValue === '' || rowSearch.includes(searchValue);
-        const shouldShow = matchesStatus && matchesSearch;
-
-        row.classList.toggle('hidden', !shouldShow);
-        if (shouldShow) {
-            visibleCount += 1;
-        }
-    });
-
-    if (historyVisibleCount) {
-        historyVisibleCount.textContent = visibleCount.toLocaleString();
-    }
-
-    if (historyNoMatchRow) {
-        historyNoMatchRow.classList.toggle('hidden', visibleCount !== 0);
-    }
-}
-
-if (historySearchInput) {
-    historySearchInput.addEventListener('input', applyHistoryFilter);
-}
-
-historyFilterButtons.forEach((button) => {
-    button.addEventListener('click', function () {
-        currentHistoryFilter = this.getAttribute('data-history-filter') || 'All';
-
-        historyFilterButtons.forEach((btn) => {
-            btn.classList.remove('bg-blue-600', 'text-white', 'hover:bg-blue-700');
-            btn.classList.add('border', 'border-slate-300', 'bg-white', 'text-slate-700', 'hover:bg-slate-100');
-        });
-
-        this.classList.remove('border', 'border-slate-300', 'bg-white', 'text-slate-700', 'hover:bg-slate-100');
-        this.classList.add('bg-blue-600', 'text-white', 'hover:bg-blue-700');
-
-        applyHistoryFilter();
-    });
-});
-
-applyHistoryFilter();
-
 </script>
 </body>
 </html>
