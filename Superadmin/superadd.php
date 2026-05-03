@@ -36,6 +36,23 @@ if ($superadminStmt) {
     $superadminStmt->close();
 }
 
+// Load current branding settings
+$brandingSettings = [
+    'system_name' => 'RapidRepair',
+    'primary_color' => '#b91c1c',
+    'logo_path' => ''
+];
+
+$brandingStmt = $conn->prepare("SELECT system_name, primary_color, logo_path FROM branding_settings WHERE id = 1");
+if ($brandingStmt) {
+    $brandingStmt->execute();
+    $brandingRes = $brandingStmt->get_result();
+    if ($brandingRes && $brandingRes->num_rows > 0) {
+        $brandingSettings = $brandingRes->fetch_assoc();
+    }
+    $brandingStmt->close();
+}
+
 // ===== METRICS FOR KPI CARDS =====
 
 // Total Tenants - Current Month
@@ -300,11 +317,11 @@ function initials($name)
             class="w-72 flex flex-col bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 shrink-0">
             <!-- Brand Header -->
             <div class="p-6 flex items-center gap-3">
-                <div class="size-12 rounded-lg bg-white p-1 shadow-md dark:bg-slate-900">
-                    <img src="../pictures/RRlogo3.png" alt="Rapid Repair logo" class="h-full w-full object-contain drop-shadow-sm">
+                <div class="h-10 w-10 rounded-lg overflow-hidden">
+                    <img src="../pictures/RRlogo3.png" alt="Rapid Repair logo" class="h-full w-full object-contain">
                 </div>
                 <h2 class="text-xl font-bold tracking-tight text-slate-900 dark:text-white leading-none">
-                    RapidRepair <span class="text-primary">SuperAdmin</span>
+                    <?= htmlspecialchars($brandingSettings['system_name']) ?> <span class="text-primary">SuperAdmin</span>
                 </h2>
             </div>
             <!-- Navigation Links -->
@@ -387,27 +404,14 @@ function initials($name)
             <header
                 class="sticky top-0 z-10 flex h-16 items-center justify-between border-b border-slate-200 bg-white/80 dark:bg-slate-900/80 px-8 backdrop-blur-md dark:border-slate-800">
                 <div class="flex items-center gap-4 text-slate-900 dark:text-white">
-                    <span class="material-symbols-outlined text-primary">auto_awesome</span>
                     <h2 class="text-lg font-bold tracking-tight">Superadmin Dashboard</h2>
                 </div>
                 <div class="flex items-center gap-4">
                     <div class="relative w-64">
-                        <span
-                            class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xl">search</span>
                         <input
-                            class="w-full rounded-lg border-slate-200 bg-slate-50 py-1.5 pl-10 text-sm focus:border-primary focus:ring-1 focus:ring-primary dark:border-slate-800 dark:bg-slate-800 dark:text-slate-200"
+                            class="w-full rounded-lg border-slate-200 bg-slate-50 py-1.5 pl-4 my-2 text-sm focus:border-primary focus:ring-1 focus:ring-primary dark:border-slate-800 dark:bg-slate-800 dark:text-slate-200"
                             placeholder="Search insights..." type="text" />
                     </div>
-                    <button
-                        class="relative rounded-lg p-2 text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800">
-                        <span class="material-symbols-outlined">notifications</span>
-                        <span
-                            class="absolute right-2 top-2 h-2 w-2 rounded-full bg-red-500 ring-2 ring-white dark:ring-slate-900"></span>
-                    </button>
-                    <button
-                        class="rounded-lg p-2 text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800">
-                        <span class="material-symbols-outlined">chat_bubble</span>
-                    </button>
                 </div>
             </header>
             <div class="p-8 space-y-8">

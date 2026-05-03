@@ -47,6 +47,23 @@ if ($superadminStmt) {
     $superadminStmt->close();
 }
 
+// Load current branding settings
+$brandingSettings = [
+    'system_name' => 'RapidRepair',
+    'primary_color' => '#b91c1c',
+    'logo_path' => ''
+];
+
+$brandingStmt = $conn->prepare("SELECT system_name, primary_color, logo_path FROM branding_settings WHERE id = 1");
+if ($brandingStmt) {
+    $brandingStmt->execute();
+    $brandingRes = $brandingStmt->get_result();
+    if ($brandingRes && $brandingRes->num_rows > 0) {
+        $brandingSettings = $brandingRes->fetch_assoc();
+    }
+    $brandingStmt->close();
+}
+
 function initials($name)
 {
     $name = trim((string)$name);
@@ -1091,11 +1108,11 @@ if ($mrrResult) {
         class="flex flex-col fixed left-0 top-0 h-full z-40 h-screen w-64 border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 font-['Inter'] antialiased tracking-tight shadow-sm dark:shadow-none">
         <!-- Brand Header -->
             <div class="p-6 flex items-center gap-3">
-                <div class="size-12 rounded-lg bg-white p-1 shadow-md dark:bg-slate-900">
-                    <img src="../pictures/RRlogo3.png" alt="Rapid Repair logo" class="h-full w-full object-contain drop-shadow-sm">
+                <div class="h-10 w-10 rounded-lg overflow-hidden">
+                    <img src="../pictures/RRlogo3.png" alt="Rapid Repair logo" class="h-full w-full object-contain">
                 </div>
                 <h2 class="text-xl font-bold tracking-tight text-slate-900 dark:text-white leading-none">
-                    RapidRepair <span class="text-primary">SuperAdmin</span>
+                    <?= htmlspecialchars($brandingSettings['system_name']) ?> <span class="text-primary">SuperAdmin</span>
                 </h2>
             </div>
         <!-- Navigation Links -->
@@ -1168,11 +1185,8 @@ if ($mrrResult) {
         class="flex items-center justify-between px-8 sticky top-0 z-30 ml-64 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md w-full h-16 border-b border-slate-200 dark:border-slate-800">
         <div class="flex items-center gap-4">
             <div class="relative">
-                <span class="absolute inset-y-0 left-0 flex items-center pl-3 text-on-surface-variant">
-                    <span class="material-symbols-outlined text-lg" data-icon="search">search</span>
-                </span>
                 <input id="globalSearchInput"
-                    class="pl-10 pr-4 py-1.5 bg-surface-variant border-none text-sm rounded-lg focus:ring-2 focus:ring-primary w-64 transition-all"
+                    class="pl-4 pr-4 py-1.5 bg-surface-variant border-none text-sm rounded-lg focus:ring-2 focus:ring-primary w-64 transition-all"
                     placeholder="Search tenants or plans..." type="text" />
             </div>
             <div class="flex items-center gap-2" id="searchScopeFilters">
@@ -1185,15 +1199,7 @@ if ($mrrResult) {
                     Subs</button>
             </div>
         </div>
-        <div class="flex items-center gap-4">
-            <button class="relative text-slate-500 hover:text-red-700 transition-all duration-200">
-                <span class="material-symbols-outlined" data-icon="notifications">notifications</span>
-                <span class="absolute right-0.5 top-0.5 h-2 w-2 rounded-full bg-red-500 ring-2 ring-white dark:ring-slate-900"></span>
-            </button>
-            <button class="text-slate-500 hover:text-red-700 transition-all duration-200">
-                <span class="material-symbols-outlined" data-icon="help_outline">help_outline</span>
-            </button>
-        </div>
+        <div class="flex items-center gap-4"></div>
     </header>
     <!-- Main Content Area -->
     <main class="ml-64 p-8 overflow-x-hidden">
@@ -1570,11 +1576,14 @@ if ($mrrResult) {
                         </thead>
                         <tbody id="activeSubscriptionsBody">
                             <?php
-                            $subscriptionsQuery = "SELECT tenantID, shopName, subscription_plan, billing_cycle, plan_price, 
-                                                 subscription_start, next_billing_date, status
-                                                 FROM owners 
-                                                 WHERE status = 'Active' AND subscription_plan IS NOT NULL 
-                                                 ORDER BY next_billing_date ASC";
+                            $subscriptionsQuery = "SELECT o.tenantID, o.ownerName, o.shopName, o.email, o.contactNumber, o.shopAddress, 
+                                                 o.subscription_plan, o.billing_cycle, o.plan_price, 
+                                                 o.subscription_start, o.subscription_end, o.next_billing_date, o.status,
+                                                 s.subscription_id, s.start_date, s.end_date, s.amount
+                                                 FROM owners o
+                                                 LEFT JOIN subscriptions s ON o.tenantID = s.tenantID
+                                                 WHERE o.status = 'Active' AND o.subscription_plan IS NOT NULL 
+                                                 ORDER BY o.next_billing_date ASC";
                             $subResult = mysqli_query($conn, $subscriptionsQuery);
 
                             if (mysqli_num_rows($subResult) > 0) {
@@ -1597,20 +1606,44 @@ if ($mrrResult) {
                                         $totalBillingAmount = $monthlyRate * $billingDivisor;
                                     }
 
+                                    // Fetch recent payment history
+                                    $paymentsQuery = "SELECT payment_id, amount, payment_status, payment_method, paid_at, transaction_reference
+                                                   FROM subscription_payments 
+                                                   WHERE tenantID = " . (int)$sub['tenantID'] . "
+                                                   ORDER BY paid_at DESC 
+                                                   LIMIT 3";
+                                    $paymentsResult = mysqli_query($conn, $paymentsQuery);
+                                    $paymentHistory = [];
+                                    if ($paymentsResult && mysqli_num_rows($paymentsResult) > 0) {
+                                        while ($payment = mysqli_fetch_assoc($paymentsResult)) {
+                                            $paymentHistory[] = $payment;
+                                        }
+                                    }
+
                                     $startDate = date('M d, Y', strtotime($sub['subscription_start']));
                                     $nextBilling = date('M d, Y', strtotime($sub['next_billing_date']));
                                     $billingCycle = ucfirst($sub['billing_cycle']);
                                     $subscriptionSearchHaystack = strtolower(trim((string) ($sub['shopName'] ?? '') . ' ' . $planName . ' ' . $billingCycle . ' ' . $nextBilling));
+                                    
+                                    // Encode payment history as JSON for data attribute
+                                    $paymentHistoryJson = htmlspecialchars(json_encode($paymentHistory), ENT_QUOTES, 'UTF-8');
                                     ?>
                                     <tr class="searchable-subscription border-b border-slate-100 hover:bg-slate-50 transition-colors"
                                         data-search="<?php echo htmlspecialchars($subscriptionSearchHaystack, ENT_QUOTES, 'UTF-8'); ?>"
                                         data-billing-cycle="<?php echo htmlspecialchars(strtolower($sub['billing_cycle']), ENT_QUOTES, 'UTF-8'); ?>"
                                         data-tenant="<?php echo htmlspecialchars(strtolower($sub['shopName']), ENT_QUOTES, 'UTF-8'); ?>"
                                         data-tenant-id="<?php echo htmlspecialchars((string)$sub['tenantID'], ENT_QUOTES, 'UTF-8'); ?>"
+                                        data-owner-name="<?php echo htmlspecialchars($sub['ownerName'], ENT_QUOTES, 'UTF-8'); ?>"
+                                        data-owner-email="<?php echo htmlspecialchars($sub['email'], ENT_QUOTES, 'UTF-8'); ?>"
+                                        data-contact-number="<?php echo htmlspecialchars($sub['contactNumber'], ENT_QUOTES, 'UTF-8'); ?>"
+                                        data-shop-address="<?php echo htmlspecialchars($sub['shopAddress'], ENT_QUOTES, 'UTF-8'); ?>"
                                         data-monthly-rate="<?php echo htmlspecialchars((string)$monthlyRate, ENT_QUOTES, 'UTF-8'); ?>"
                                         data-next-billing="<?php echo htmlspecialchars($sub['next_billing_date'], ENT_QUOTES, 'UTF-8'); ?>"
                                         data-status="<?php echo htmlspecialchars($sub['status'], ENT_QUOTES, 'UTF-8'); ?>"
-                                        data-subscription-start="<?php echo htmlspecialchars($sub['subscription_start'], ENT_QUOTES, 'UTF-8'); ?>">
+                                        data-subscription-start="<?php echo htmlspecialchars($sub['subscription_start'], ENT_QUOTES, 'UTF-8'); ?>"
+                                        data-subscription-id="<?php echo htmlspecialchars((string)($sub['subscription_id'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>"
+                                        data-payment-history="<?php echo $paymentHistoryJson; ?>"
+                                        data-total-amount="<?php echo htmlspecialchars((string)$totalBillingAmount, ENT_QUOTES, 'UTF-8'); ?>">
                                         <td class="px-6 py-4 font-medium text-slate-900">
                                             <?php echo htmlspecialchars($sub['shopName']); ?>
                                         </td>
@@ -2303,72 +2336,166 @@ if ($mrrResult) {
         // Setup PDF Export
         (function setupPdfExport() {
             const exportBtn = document.getElementById('exportPdfBtn');
-            const table = document.querySelector('table');
+            const table = document.getElementById('subscriptionsTable');
             
             if (!exportBtn || !table) {
+                console.error('PDF Export: Missing elements');
                 return;
             }
             
             exportBtn.addEventListener('click', function() {
-                const element = document.createElement('div');
                 const now = new Date();
-                const timestamp = now.toLocaleDateString('en-US', { 
-                    year: 'numeric', 
-                    month: '2-digit', 
-                    day: '2-digit',
-                    hour: '2-digit',
-                    minute: '2-digit'
+                const dateStr = now.toLocaleDateString('en-US', {year: 'numeric', month: '2-digit', day: '2-digit'});
+                const timeStr = now.toLocaleTimeString('en-US', {hour: '2-digit', minute: '2-digit'});
+                
+                // Clone the entire document to prepare PDF content
+                const wrapper = document.createElement('div');
+                wrapper.style.position = 'absolute';
+                wrapper.style.left = '-9999px';
+                wrapper.style.top = '-9999px';
+                wrapper.style.width = '1400px';
+                wrapper.style.backgroundColor = 'white';
+                wrapper.style.padding = '20px';
+                wrapper.style.fontFamily = 'Arial, sans-serif';
+                
+                // Build content
+                let html = '<div style="width: 100%; color: #000;">';
+                
+                // Title
+                html += '<h1 style="font-size: 28px; font-weight: bold; text-align: center; margin: 0 0 10px 0; color: #000;">Active Subscriptions Report</h1>';
+                html += '<p style="text-align: center; margin: 0 0 5px 0; font-size: 12px; color: #666;">RapidRepair Subscription Management System</p>';
+                html += '<p style="text-align: center; margin: 0 0 20px 0; font-size: 11px; color: #999;">Generated on ' + dateStr + ' at ' + timeStr + '</p>';
+                
+                // Summary
+                let rowCount = 0;
+                const tbody = table.querySelector('tbody');
+                const rows = tbody.querySelectorAll('tr');
+                
+                rows.forEach(function(row) {
+                    if (row.style.display !== 'none' && row.id !== 'subscriptionsSearchEmpty') {
+                        const cells = row.querySelectorAll('td');
+                        if (cells.length >= 6) {
+                            rowCount++;
+                        }
+                    }
                 });
                 
-                // Create header
-                const header = '<div style="margin-bottom: 20px; text-align: center;">';
-                const headerContent = '<h1 style="margin: 0; font-size: 24px; font-weight: bold; color: #000;">Active Subscriptions Report</h1>' +
-                    '<p style="margin: 5px 0 0 0; font-size: 12px; color: #666;">Generated on ' + timestamp + '</p></div>';
+                if (rowCount > 0) {
+                    html += '<div style="background-color: #e0f2fe; border-left: 4px solid #0284c7; padding: 12px; margin-bottom: 20px; font-size: 12px;">';
+                    html += '<strong>Total Active Subscriptions:</strong> ' + rowCount;
+                    html += '</div>';
+                }
                 
-                // Clone the visible table rows
-                const tableClone = table.cloneNode(true);
+                // Detailed Subscriptions Table
+                html += '<table style="width: 100%; border-collapse: collapse; margin-top: 10px;">';
+                html += '<thead>';
+                html += '<tr style="background-color: #1e293b; color: white; border: 2px solid #333;">';
+                html += '<th style="padding: 10px; text-align: left; font-weight: bold; border: 1px solid #333; font-size: 11px;">Shop Name</th>';
+                html += '<th style="padding: 10px; text-align: left; font-weight: bold; border: 1px solid #333; font-size: 11px;">Owner</th>';
+                html += '<th style="padding: 10px; text-align: left; font-weight: bold; border: 1px solid #333; font-size: 11px;">Email</th>';
+                html += '<th style="padding: 10px; text-align: left; font-weight: bold; border: 1px solid #333; font-size: 11px;">Plan</th>';
+                html += '<th style="padding: 10px; text-align: left; font-weight: bold; border: 1px solid #333; font-size: 11px;">Billing Cycle</th>';
+                html += '<th style="padding: 10px; text-align: right; font-weight: bold; border: 1px solid #333; font-size: 11px;">Amount</th>';
+                html += '<th style="padding: 10px; text-align: left; font-weight: bold; border: 1px solid #333; font-size: 11px;">Start Date</th>';
+                html += '<th style="padding: 10px; text-align: left; font-weight: bold; border: 1px solid #333; font-size: 11px;">Next Billing</th>';
+                html += '</tr>';
+                html += '</thead>';
+                html += '<tbody>';
                 
-                // Remove hidden rows
-                const allRows = tableClone.querySelectorAll('tbody tr');
-                allRows.forEach(function(row) {
+                let count = 0;
+                let totalMRR = 0;
+                
+                rows.forEach(function(row) {
                     if (row.style.display === 'none' || row.id === 'subscriptionsSearchEmpty') {
-                        row.remove();
+                        return;
                     }
+                    
+                    const cells = row.querySelectorAll('td');
+                    if (cells.length < 6) {
+                        return;
+                    }
+                    
+                    // Extract data from row
+                    const shopName = row.getAttribute('data-tenant') ? 
+                        (cells[0].innerText || cells[0].textContent).trim() : '';
+                    const ownerName = row.getAttribute('data-owner-name') || '';
+                    const ownerEmail = row.getAttribute('data-owner-email') || '';
+                    const planName = (cells[1].innerText || cells[1].textContent).trim();
+                    const billingCycle = (cells[2].innerText || cells[2].textContent).trim();
+                    const monthlyRate = parseFloat(row.getAttribute('data-monthly-rate')) || 0;
+                    const totalAmount = parseFloat(row.getAttribute('data-total-amount')) || 0;
+                    const startDate = row.getAttribute('data-subscription-start') ? 
+                        new Date(row.getAttribute('data-subscription-start')).toLocaleDateString('en-US', {month: 'short', day: '2-digit', year: 'numeric'}) : '';
+                    const nextBilling = row.getAttribute('data-next-billing') ? 
+                        new Date(row.getAttribute('data-next-billing')).toLocaleDateString('en-US', {month: 'short', day: '2-digit', year: 'numeric'}) : '';
+                    
+                    const bgColor = count % 2 === 0 ? '#ffffff' : '#f9fafb';
+                    html += '<tr style="background-color: ' + bgColor + '; border: 1px solid #d1d5db;">';
+                    html += '<td style="padding: 10px; border: 1px solid #d1d5db; font-size: 10px; color: #000; font-weight: 600;">' + shopName + '</td>';
+                    html += '<td style="padding: 10px; border: 1px solid #d1d5db; font-size: 10px; color: #000;">' + ownerName + '</td>';
+                    html += '<td style="padding: 10px; border: 1px solid #d1d5db; font-size: 10px; color: #000;">' + ownerEmail + '</td>';
+                    html += '<td style="padding: 10px; border: 1px solid #d1d5db; font-size: 10px; color: #000;">' + planName + '</td>';
+                    html += '<td style="padding: 10px; border: 1px solid #d1d5db; font-size: 10px; color: #000;">' + billingCycle + '</td>';
+                    html += '<td style="padding: 10px; border: 1px solid #d1d5db; font-size: 10px; color: #000; text-align: right; font-weight: bold;">₱' + totalAmount.toLocaleString('en-PH', {minimumFractionDigits: 2, maximumFractionDigits: 2}) + '</td>';
+                    html += '<td style="padding: 10px; border: 1px solid #d1d5db; font-size: 10px; color: #000;">' + startDate + '</td>';
+                    html += '<td style="padding: 10px; border: 1px solid #d1d5db; font-size: 10px; color: #000;">' + nextBilling + '</td>';
+                    html += '</tr>';
+                    
+                    totalMRR += monthlyRate;
+                    count++;
                 });
                 
-                // Replace empty cells with N/A
-                const allCells = tableClone.querySelectorAll('td, th');
-                allCells.forEach(function(cell) {
-                    const cellText = cell.textContent.trim();
-                    if (cellText === '' || cellText === '-' || cellText === 'undefined' || cellText === 'null') {
-                        cell.textContent = 'N/A';
-                        cell.style.color = '#999';
-                        cell.style.fontStyle = 'italic';
-                    }
-                });
+                if (count === 0) {
+                    html += '<tr>';
+                    html += '<td colspan="8" style="padding: 20px; text-align: center; color: #999; font-size: 12px;">No subscriptions to display</td>';
+                    html += '</tr>';
+                }
                 
-                // Add CSS for better PDF styling
-                const styles = '<style>' +
-                    'table { width: 100%; border-collapse: collapse; margin-top: 10px; }' +
-                    'th, td { padding: 10px; border: 1px solid #ddd; text-align: left; font-size: 12px; }' +
-                    'th { background-color: #f3f4f6; font-weight: bold; color: #333; }' +
-                    'tr:nth-child(even) { background-color: #f9fafb; }' +
-                    'tr:nth-child(odd) { background-color: #ffffff; }' +
-                    'td { color: #333; }' +
-                    'td[style*="color: rgb(153, 153, 153)"] { color: #999 !important; }' +
-                    '</style>';
+                html += '</tbody>';
+                html += '</table>';
                 
-                element.innerHTML = styles + header + headerContent + '<div>' + tableClone.outerHTML + '</div>';
+                // Summary Footer
+                if (count > 0) {
+                    html += '<div style="margin-top: 20px; border-top: 2px solid #e5e7eb; padding-top: 15px;">';
+                    html += '<div style="display: flex; justify-content: flex-end; gap: 40px; margin-top: 10px;">';
+                    html += '<div style="text-align: right;">';
+                    html += '<p style="margin: 0; font-size: 11px; color: #666;">Total Active Subscriptions</p>';
+                    html += '<p style="margin: 5px 0 0 0; font-size: 16px; font-weight: bold; color: #000;">' + count + '</p>';
+                    html += '</div>';
+                    html += '<div style="text-align: right;">';
+                    html += '<p style="margin: 0; font-size: 11px; color: #666;">Monthly Recurring Revenue (MRR)</p>';
+                    html += '<p style="margin: 5px 0 0 0; font-size: 16px; font-weight: bold; color: #059669;">₱' + totalMRR.toLocaleString('en-PH', {minimumFractionDigits: 2, maximumFractionDigits: 2}) + '</p>';
+                    html += '</div>';
+                    html += '</div>';
+                    html += '</div>';
+                }
                 
-                const opt = {
+                html += '</div>';
+                
+                wrapper.innerHTML = html;
+                document.body.appendChild(wrapper);
+                
+                const element = wrapper.querySelector('div');
+                
+                const options = {
                     margin: 10,
-                    filename: 'subscriptions-report-' + now.getTime() + '.pdf',
-                    image: { type: 'jpeg', quality: 0.98 },
-                    html2canvas: { scale: 2 },
-                    jsPDF: { orientation: 'landscape', unit: 'mm', format: 'a4' }
+                    filename: 'subscription-report-' + now.toISOString().split('T')[0] + '.pdf',
+                    image: {type: 'jpeg', quality: 0.98},
+                    html2canvas: {scale: 2},
+                    jsPDF: {orientation: 'landscape', unit: 'mm', format: 'a4'}
                 };
                 
-                html2pdf().set(opt).from(element).save();
+                html2pdf()
+                    .set(options)
+                    .from(element)
+                    .save()
+                    .then(function() {
+                        document.body.removeChild(wrapper);
+                    })
+                    .catch(function(err) {
+                        console.error('PDF Error:', err);
+                        document.body.removeChild(wrapper);
+                    });
             });
         })();
 

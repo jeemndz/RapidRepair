@@ -41,6 +41,23 @@ if ($superadminStmt) {
     $superadminStmt->close();
 }
 
+// Load current branding settings
+$brandingSettings = [
+    'system_name' => 'RapidRepair',
+    'primary_color' => '#b91c1c',
+    'logo_path' => ''
+];
+
+$brandingStmt = $conn->prepare("SELECT system_name, primary_color, logo_path FROM branding_settings WHERE id = 1");
+if ($brandingStmt) {
+    $brandingStmt->execute();
+    $brandingRes = $brandingStmt->get_result();
+    if ($brandingRes && $brandingRes->num_rows > 0) {
+        $brandingSettings = $brandingRes->fetch_assoc();
+    }
+    $brandingStmt->close();
+}
+
 $q = trim($_GET['q'] ?? '');
 $dateRange = trim($_GET['date_range'] ?? '30d');
 $action = trim($_GET['action'] ?? '');
@@ -355,11 +372,11 @@ $nextPage = min($totalPages, $page + 1);
         class="flex flex-col fixed left-0 top-0 h-full z-40 h-screen w-64 border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 font-['Inter'] antialiased tracking-tight shadow-sm dark:shadow-none">
         <!-- Brand Header -->
             <div class="p-6 flex items-center gap-3">
-                <div class="size-12 rounded-lg bg-white p-1 shadow-md dark:bg-slate-900">
-                    <img src="../pictures/RRlogo3.png" alt="Rapid Repair logo" class="h-full w-full object-contain drop-shadow-sm">
+                <div class="h-10 w-10 rounded-lg overflow-hidden">
+                    <img src="../pictures/RRlogo3.png" alt="Rapid Repair logo" class="h-full w-full object-contain">
                 </div>
                 <h2 class="text-xl font-bold tracking-tight text-slate-900 dark:text-white leading-none">
-                    RapidRepair <span class="text-primary">SuperAdmin</span>
+                    <?= htmlspecialchars($brandingSettings['system_name']) ?> <span class="text-primary">SuperAdmin</span>
                 </h2>
             </div>
            <!-- Navigation Links -->

@@ -30,6 +30,7 @@ if (!isset($_SESSION['superadmin_id'])) {
 }
 
 if (isset($conn) && $conn instanceof mysqli) {
+    // Ensure superadmin table columns exist
     $columnsToEnsure = [
         'role' => "VARCHAR(100) NOT NULL DEFAULT 'Superadmin' AFTER `password`",
         'access_scope' => "VARCHAR(255) NOT NULL DEFAULT 'Global Root' AFTER `role`",
@@ -54,6 +55,28 @@ if (isset($conn) && $conn instanceof mysqli) {
 
         $checkColumnStmt->close();
     }
+
+    // Create branding_settings table if it doesn't exist
+    $conn->query("
+        CREATE TABLE IF NOT EXISTS branding_settings (
+            id INT PRIMARY KEY DEFAULT 1,
+            system_name VARCHAR(255) NOT NULL DEFAULT 'RapidRepair',
+            primary_color VARCHAR(7) NOT NULL DEFAULT '#b91c1c',
+            logo_path VARCHAR(500),
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            updated_by INT
+        )
+    ");
+
+    // Ensure default branding settings exist
+    $checkBrandingStmt = $conn->prepare("SELECT id FROM branding_settings WHERE id = 1");
+    if ($checkBrandingStmt) {
+        $checkBrandingStmt->execute();
+        if ($checkBrandingStmt->get_result()->num_rows === 0) {
+            $conn->query("INSERT INTO branding_settings (id, system_name, primary_color) VALUES (1, 'RapidRepair', '#b91c1c')");
+        }
+        $checkBrandingStmt->close();
+    }
 }
 
 $superadminName = "Superadmin";
@@ -67,6 +90,23 @@ if ($superadminStmt) {
         $superadminName = $superadminRow['fullName'] ?: $superadminName;
     }
     $superadminStmt->close();
+}
+
+// Load current branding settings
+$brandingSettings = [
+    'system_name' => 'RapidRepair',
+    'primary_color' => '#b91c1c',
+    'logo_path' => ''
+];
+
+$brandingStmt = $conn->prepare("SELECT system_name, primary_color, logo_path FROM branding_settings WHERE id = 1");
+if ($brandingStmt) {
+    $brandingStmt->execute();
+    $brandingRes = $brandingStmt->get_result();
+    if ($brandingRes && $brandingRes->num_rows > 0) {
+        $brandingSettings = $brandingRes->fetch_assoc();
+    }
+    $brandingStmt->close();
 }
 
 function initials($name)
@@ -255,6 +295,56 @@ if (isset($_POST['deleteSuperadmin'])) {
     exit();
 }
 
+// Handle Save Global Settings (Branding)
+if (isset($_POST['saveBrandingSettings'])) {
+    $systemName = trim($_POST['system_name'] ?? '');
+    $primaryColor = trim($_POST['primary_color'] ?? '#b91c1c');
+    
+    $errors = [];
+    
+    if ($systemName === '') {
+        $errors[] = 'System Name is required';
+    }
+    
+    if (empty($errors)) {
+        $updateStmt = $conn->prepare("
+            UPDATE branding_settings 
+            SET system_name = ?, primary_color = ?, updated_by = ?
+            WHERE id = 1
+        ");
+        
+        if ($updateStmt) {
+            $superadminId = (int)$_SESSION['superadmin_id'];
+            $updateStmt->bind_param("ssi", $systemName, $primaryColor, $superadminId);
+            if ($updateStmt->execute()) {
+                $logDetails = "Updated branding settings: System Name: $systemName, Primary Color: $primaryColor";
+                log_event($conn, "Update Branding Settings", "Superadmin", $superadminId, $logDetails);
+                
+                $_SESSION['admin_notice'] = 'Branding settings updated successfully';
+                
+                // Reload branding settings
+                $brandingStmt = $conn->prepare("SELECT system_name, primary_color, logo_path FROM branding_settings WHERE id = 1");
+                if ($brandingStmt) {
+                    $brandingStmt->execute();
+                    $brandingRes = $brandingStmt->get_result();
+                    if ($brandingRes && $brandingRes->num_rows > 0) {
+                        $brandingSettings = $brandingRes->fetch_assoc();
+                    }
+                    $brandingStmt->close();
+                }
+            } else {
+                $_SESSION['admin_notice'] = 'Error: Failed to update branding settings';
+            }
+            $updateStmt->close();
+        }
+    } else {
+        $_SESSION['admin_error'] = implode(', ', $errors);
+    }
+    
+    header("Location: supersettings.php");
+    exit();
+}
+
 // Fetch all superadmin accounts
 $allAdmins = [];
 $adminsStmt = $conn->prepare("
@@ -380,11 +470,11 @@ if ($editingAdminId) {
         <aside
             class="flex flex-col fixed left-0 top-0 h-full z-50 w-64 border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 font-['Inter'] antialiased tracking-tight shadow-sm dark:shadow-none">
             <div class="p-6 flex items-center gap-3">
-                <div class="bg-primary rounded-lg p-2 text-white">
-                    <span class="material-symbols-outlined block text-2xl">directions_car</span>
+                <div class="h-10 w-10 rounded-lg overflow-hidden">
+                    <img src="../pictures/RRlogo3.png" alt="Rapid Repair logo" class="h-full w-full object-contain">
                 </div>
                 <h2 class="text-xl font-bold tracking-tight text-slate-900 dark:text-white leading-none">
-                    RapidRepair <span class="text-primary">SuperAdmin</span>
+                    <?= htmlspecialchars($brandingSettings['system_name']) ?> <span class="text-primary">SuperAdmin</span>
                 </h2>
             </div>
            <!-- Navigation Links -->
@@ -458,22 +548,12 @@ if ($editingAdminId) {
         class="flex items-center justify-between px-8 sticky top-0 z-30 ml-64 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md h-16 border-b border-slate-200 dark:border-slate-800">
         <div class="flex items-center gap-4">
             <div class="relative">
-                <span class="absolute inset-y-0 left-0 flex items-center pl-3 text-on-surface-variant">
-                    <span class="material-symbols-outlined text-lg" data-icon="search">search</span>
-                </span>
                 <input
-                    class="pl-10 pr-4 py-1.5 bg-surface-variant border-none text-sm rounded-lg focus:ring-2 focus:ring-primary w-64 transition-all"
+                    class="pl-4 pr-4 py-1.5 bg-surface-variant border-none text-sm rounded-lg focus:ring-2 focus:ring-primary w-64 transition-all"
                     placeholder="Search parameters..." type="text" />
             </div>
         </div>
-        <div class="flex items-center gap-4">
-            <button class="p-2 text-slate-500 hover:text-primary transition-colors">
-                <span class="material-symbols-outlined" data-icon="notifications">notifications</span>
-            </button>
-            <button class="p-2 text-slate-500 hover:text-primary transition-colors">
-                <span class="material-symbols-outlined" data-icon="help_outline">help_outline</span>
-            </button>
-        </div>
+        <div class="flex items-center gap-4"></div>
     </header>
     <!-- Main Content Canvas -->
     <main class="ml-64 p-8 min-h-screen">
@@ -507,7 +587,8 @@ if ($editingAdminId) {
                         </div>
                         <h3 class="text-xl font-bold text-slate-900">System Branding</h3>
                     </div>
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+                    <form id="brandingForm" method="POST" class="grid grid-cols-1 md:grid-cols-2 gap-8">
+                        <input type="hidden" name="saveBrandingSettings" value="1">
                         <div class="space-y-4">
                             <div>
                                 <label
@@ -515,7 +596,7 @@ if ($editingAdminId) {
                                     Name</label>
                                 <input
                                     class="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-primary/20 outline-none"
-                                    type="text" value="Cobalt Precision" />
+                                    type="text" name="system_name" value="<?= htmlspecialchars($brandingSettings['system_name']) ?>" required />
                             </div>
                             <div>
                                 <label
@@ -523,9 +604,9 @@ if ($editingAdminId) {
                                     Branding Color</label>
                                 <div class="flex items-center gap-3">
                                     <input class="h-10 w-10 p-0 border-0 rounded cursor-pointer overflow-hidden"
-                                        type="color" value="#b91c1c" />
+                                        type="color" name="primary_color" value="<?= htmlspecialchars($brandingSettings['primary_color']) ?>" />
                                     <input class="flex-1 px-3 py-2 border border-slate-200 rounded-lg text-sm font-mono"
-                                        type="text" value="#B91C1C" />
+                                        type="text" id="colorDisplay" value="<?= htmlspecialchars(strtoupper($brandingSettings['primary_color'])) ?>" readonly />
                                 </div>
                             </div>
                         </div>
@@ -537,56 +618,11 @@ if ($editingAdminId) {
                             <p class="text-sm font-bold text-slate-700">System Logo</p>
                             <p class="text-xs text-slate-400 mt-1 mb-4">SVG, PNG or JPG. Max 2MB.</p>
                             <button
+                                type="button"
                                 class="px-4 py-2 bg-white border border-slate-200 text-slate-700 text-xs font-bold rounded-lg hover:bg-slate-50 transition-colors shadow-sm">Replace
                                 Logo</button>
                         </div>
-                    </div>
-                </section>
-                <!-- Section 2: Tenant Limits (Compact Sidebar Card) -->
-                <section class="col-span-12 lg:col-span-4 bg-white border border-slate-200 rounded-lg shadow-sm p-6">
-                    <div class="flex items-center gap-3 mb-6">
-                        <div class="w-10 h-10 bg-primary-container flex items-center justify-center rounded-lg">
-                            <span class="material-symbols-outlined text-primary">analytics</span>
-                        </div>
-                        <h3 class="text-xl font-bold text-slate-900">Tenant Limits</h3>
-                    </div>
-                    <div class="space-y-5">
-                        <div class="flex justify-between items-end">
-                            <div class="flex-1">
-                                <label
-                                    class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Max
-                                    Tenants</label>
-                                <input
-                                    class="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-primary/20 outline-none"
-                                    type="number" value="250" />
-                            </div>
-                        </div>
-                        <div>
-                            <label
-                                class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Storage
-                                Limit (Per Tenant)</label>
-                            <div class="flex items-center gap-2">
-                                <input
-                                    class="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-primary/20 outline-none"
-                                    type="number" value="50" />
-                                <span class="text-xs font-bold text-slate-400">GB</span>
-                            </div>
-                        </div>
-                        <div class="pt-4 border-t border-slate-50">
-                            <div class="flex items-center justify-between">
-                                <div>
-                                    <p class="text-sm font-bold text-slate-700">Auto-approval</p>
-                                    <p class="text-xs text-slate-400">Instant activation for new tenants</p>
-                                </div>
-                                <label class="relative inline-flex items-center cursor-pointer">
-                                    <input class="sr-only peer" type="checkbox" value="" />
-                                    <div
-                                        class="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary">
-                                    </div>
-                                </label>
-                            </div>
-                        </div>
-                    </div>
+                    </form>
                 </section>
                 <!-- Section 3: User Roles & Permissions (Full Width Table) -->
                 <section class="col-span-12 bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden">
@@ -674,9 +710,13 @@ if ($editingAdminId) {
                 </section>
                 <div class="col-span-12 flex justify-end gap-3 mt-4 mb-12">
                     <button
+                        type="button"
+                        onclick="document.getElementById('brandingForm').reset()"
                         class="px-6 py-2.5 bg-white border border-slate-300 text-slate-600 text-sm font-bold rounded-lg hover:bg-slate-50 transition-all">Discard
                         Changes</button>
                     <button
+                        type="button"
+                        onclick="document.getElementById('brandingForm').submit()"
                         class="px-8 py-2.5 bg-primary text-white text-sm font-bold rounded-lg hover:shadow-lg active:scale-95 transition-all">Save
                         Global Settings</button>
                 </div>
@@ -786,6 +826,20 @@ if ($editingAdminId) {
     </div>
     
     <script>
+        // Sync color display with color picker
+        const colorInput = document.querySelector('input[name="primary_color"]');
+        const colorDisplay = document.getElementById('colorDisplay');
+        
+        if (colorInput && colorDisplay) {
+            colorInput.addEventListener('change', function() {
+                colorDisplay.value = this.value.toUpperCase();
+            });
+            
+            colorInput.addEventListener('input', function() {
+                colorDisplay.value = this.value.toUpperCase();
+            });
+        }
+        
         function openCreateModal() {
             document.getElementById('modalTitle').textContent = 'Create New Superadmin';
             document.getElementById('adminForm').reset();

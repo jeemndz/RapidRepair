@@ -42,6 +42,23 @@ if ($superadminStmt) {
     $superadminStmt->close();
 }
 
+// Load current branding settings
+$brandingSettings = [
+    'system_name' => 'RapidRepair',
+    'primary_color' => '#b91c1c',
+    'logo_path' => ''
+];
+
+$brandingStmt = $conn->prepare("SELECT system_name, primary_color, logo_path FROM branding_settings WHERE id = 1");
+if ($brandingStmt) {
+    $brandingStmt->execute();
+    $brandingRes = $brandingStmt->get_result();
+    if ($brandingRes && $brandingRes->num_rows > 0) {
+        $brandingSettings = $brandingRes->fetch_assoc();
+    }
+    $brandingStmt->close();
+}
+
 function initials($name)
 {
     $name = trim((string)$name);
@@ -394,11 +411,11 @@ $displayBackups = array_slice($backups, 0, $maxDisplay);
         <aside
             class="flex flex-col fixed left-0 top-0 h-full z-50 w-64 border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 font-['Inter'] antialiased tracking-tight shadow-sm dark:shadow-none">
             <div class="p-6 flex items-center gap-3">
-                <div class="bg-primary rounded-lg p-2 text-white">
-                    <span class="material-symbols-outlined block text-2xl">directions_car</span>
+                <div class="h-10 w-10 rounded-lg overflow-hidden">
+                    <img src="../pictures/RRlogo3.png" alt="Rapid Repair logo" class="h-full w-full object-contain">
                 </div>
                 <h2 class="text-xl font-bold tracking-tight text-slate-900 dark:text-white leading-none">
-                    RapidRepair <span class="text-primary">SuperAdmin</span>
+                    <?= htmlspecialchars($brandingSettings['system_name']) ?> <span class="text-primary">SuperAdmin</span>
                 </h2>
             </div>
          <!-- Navigation Links -->
@@ -472,12 +489,10 @@ $displayBackups = array_slice($backups, 0, $maxDisplay);
             <div class="flex items-center gap-8">
                 <span class="text-lg font-black text-primary tracking-tight">System Backup &amp; Recovery</span>
                 <form method="GET" class="relative group">
-                    <span
-                        class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-[20px]">search</span>
                     <input
                         name="q"
                         value="<?php echo h($search); ?>"
-                        class="pl-10 pr-4 py-1.5 bg-slate-100 border-none rounded-lg text-sm w-64 focus:ring-2 focus:ring-primary/20 transition-all"
+                        class="pl-4 pr-4 py-1.5 bg-slate-100 border-none rounded-lg text-sm w-64 focus:ring-2 focus:ring-primary/20 transition-all"
                         placeholder="Search backup file..." type="text" />
                 </form>
             </div>
@@ -491,16 +506,6 @@ $displayBackups = array_slice($backups, 0, $maxDisplay);
                         class="px-4 py-2 text-sm font-bold text-white bg-primary rounded-lg shadow-sm hover:opacity-90 active:opacity-80 transition-all">Create
                         Backup</button>
                 </form>
-                <div class="h-6 w-[1px] bg-slate-200 mx-2"></div>
-                <div class="flex items-center gap-2">
-                    <button class="p-2 hover:bg-slate-100 rounded-md transition-colors relative">
-                        <span class="material-symbols-outlined text-slate-600">notifications</span>
-                        <span class="absolute top-2 right-2 w-2 h-2 bg-error rounded-full border-2 border-white"></span>
-                    </button>
-                    <button class="p-2 hover:bg-slate-100 rounded-md transition-colors">
-                        <span class="material-symbols-outlined text-slate-600">help_outline</span>
-                    </button>
-                </div>
             </div>
         </div>
     </header>

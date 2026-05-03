@@ -42,6 +42,23 @@ if ($superadminStmt) {
     $superadminStmt->close();
 }
 
+// Load current branding settings
+$brandingSettings = [
+    'system_name' => 'RapidRepair',
+    'primary_color' => '#b91c1c',
+    'logo_path' => ''
+];
+
+$brandingStmt = $conn->prepare("SELECT system_name, primary_color, logo_path FROM branding_settings WHERE id = 1");
+if ($brandingStmt) {
+    $brandingStmt->execute();
+    $brandingRes = $brandingStmt->get_result();
+    if ($brandingRes && $brandingRes->num_rows > 0) {
+        $brandingSettings = $brandingRes->fetch_assoc();
+    }
+    $brandingStmt->close();
+}
+
 function initials($name)
 {
     $name = trim((string) $name);
@@ -724,12 +741,12 @@ $barChartJson = json_encode([
     <aside
         class="flex flex-col fixed left-0 top-0 h-full z-50 w-64 border-r border-slate-200 bg-white font-['Inter'] antialiased tracking-tight shadow-sm">
         <div class="p-6 flex items-center gap-3">
-            <div class="size-12 rounded-lg bg-white p-1 shadow-md">
+            <div class="h-10 w-10 rounded-lg overflow-hidden">
                 <img src="../pictures/RRlogo3.png" alt="Rapid Repair logo"
-                    class="h-full w-full object-contain drop-shadow-sm">
+                    class="h-full w-full object-contain">
             </div>
             <h2 class="text-xl font-bold tracking-tight text-slate-900 leading-none">
-                RapidRepair <span class="text-primary">SuperAdmin</span>
+                <?= htmlspecialchars($brandingSettings['system_name']) ?> <span class="text-primary">SuperAdmin</span>
             </h2>
         </div>
         <nav class="flex-1 px-4 space-y-1 mt-4">
@@ -802,27 +819,12 @@ $barChartJson = json_encode([
             class="flex items-center justify-between px-8 sticky top-0 z-40 bg-white/80 backdrop-blur-md w-full h-16 border-b border-slate-200">
             <div class="flex items-center gap-4">
                 <div class="relative">
-                    <span class="absolute inset-y-0 left-0 flex items-center pl-3 text-on-surface-variant">
-                        <span class="material-symbols-outlined text-lg" data-icon="search">search</span>
-                    </span>
                     <input id="tenantSearchInput"
-                        class="pl-10 pr-4 py-1.5 bg-slate-100/80 border border-outline text-sm rounded-lg focus:ring-2 focus:ring-primary w-72 transition-all"
+                        class="pl-4 pr-4 py-1.5 bg-slate-100/80 border border-outline text-sm rounded-lg focus:ring-2 focus:ring-primary w-72 transition-all"
                         placeholder="Search tenant rows in table..." type="text" />
                 </div>
             </div>
-            <div class="flex items-center gap-4">
-                <div class="flex items-center gap-4">
-                    <button class="text-slate-500 hover:text-red-700 transition-all duration-200">
-                        <span class="material-symbols-outlined" data-icon="notifications">notifications</span>
-                    </button>
-                    <button class="text-slate-500 hover:text-red-700 transition-all duration-200">
-                        <span class="material-symbols-outlined" data-icon="dns">dns</span>
-                    </button>
-                    <button class="text-slate-500 hover:text-red-700 transition-all duration-200">
-                        <span class="material-symbols-outlined" data-icon="cloud_done">cloud_done</span>
-                    </button>
-                </div>
-            </div>
+            <div class="flex items-center gap-4"></div>
         </header>
 
         <div class="p-8 max-w-7xl mx-auto space-y-8">

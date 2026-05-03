@@ -42,6 +42,23 @@ if ($superadminStmt) {
     $superadminStmt->close();
 }
 
+// Load current branding settings
+$brandingSettings = [
+    'system_name' => 'RapidRepair',
+    'primary_color' => '#531cb9',
+    'logo_path' => ''
+];
+
+$brandingStmt = $conn->prepare("SELECT system_name, primary_color, logo_path FROM branding_settings WHERE id = 1");
+if ($brandingStmt) {
+    $brandingStmt->execute();
+    $brandingRes = $brandingStmt->get_result();
+    if ($brandingRes && $brandingRes->num_rows > 0) {
+        $brandingSettings = $brandingRes->fetch_assoc();
+    }
+    $brandingStmt->close();
+}
+
 // Helper functions
 function tableExists($conn, $tableName)
 {
@@ -492,11 +509,11 @@ $dateStart = match ($dateRange) {
         <aside
             class="flex flex-col fixed left-0 top-0 h-full z-50 w-64 border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 font-['Inter'] antialiased tracking-tight shadow-sm dark:shadow-none">
             <div class="p-6 flex items-center gap-3">
-                <div class="bg-primary rounded-lg p-2 text-white">
-                    <span class="material-symbols-outlined block text-2xl">directions_car</span>
+                <div class="h-10 w-10 rounded-lg overflow-hidden">
+                    <img src="../pictures/RRlogo3.png" alt="Rapid Repair logo" class="h-full w-full object-contain">
                 </div>
                 <h2 class="text-xl font-bold tracking-tight text-slate-900 dark:text-white leading-none">
-                    RapidRepair <span class="text-primary">SuperAdmin</span>
+                    <?= htmlspecialchars($brandingSettings['system_name']) ?> <span class="text-primary">SuperAdmin</span>
                 </h2>
             </div>
             <!-- Navigation Links -->
@@ -573,21 +590,12 @@ $dateStart = match ($dateRange) {
                 class="flex items-center justify-between px-8 w-full h-16 border-b border-slate-200 bg-[#f6f6f8] sticky top-0 z-10">
                 <div class="flex items-center gap-6">
                     <div class="relative">
-                        <span
-                            class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-lg">search</span>
                         <input
-                            class="pl-10 pr-4 py-1.5 bg-white border border-slate-200 rounded-lg text-sm focus:ring-1 focus:ring-primary focus:border-primary w-64 transition-all"
+                            class="pl-4 pr-4 py-1.5 my-2 bg-white border border-slate-200 rounded-lg text-sm focus:ring-1 focus:ring-primary focus:border-primary w-64 transition-all"
                             placeholder="Search analytics..." type="text" />
                     </div>
                 </div>
-                <div class="flex items-center gap-4">
-                    <button class="p-2 text-slate-500 hover:text-primary transition-colors">
-                        <span class="material-symbols-outlined">notifications</span>
-                    </button>
-                    <button class="p-2 text-slate-500 hover:text-primary transition-colors">
-                        <span class="material-symbols-outlined">help_outline</span>
-                    </button>
-                </div>
+                <div class="flex items-center gap-4"></div>
             </header>
             <!-- Scrollable Content Section -->
             <div class="p-8 space-y-8 max-w-7xl mx-auto w-full">
