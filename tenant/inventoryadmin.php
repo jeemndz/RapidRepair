@@ -861,7 +861,7 @@ $lastRow = min($offset + $perPage, $filteredTotal);
                     <?php endif; ?>
                     <?php if (canAccessModule('inventoryadmin.php', $accessibleModules)): ?>
                     <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-primary/10 text-primary font-medium"
-                        href="inventoryadmin.php?shop=<?php echo $shopQuery; ?>"><span
+                        href="/tenant/inventoryadmin.php?shop=<?php echo $shopQuery; ?>"><span
                             class="material-symbols-outlined text-[22px]">inventory_2</span>Inventory</a>
                     <?php endif; ?>
                     <?php if (canAccessModule('customeradmin.php', $accessibleModules)): ?>
@@ -996,11 +996,11 @@ $lastRow = min($offset + $perPage, $filteredTotal);
                                         stock for the current tenant.</p>
                                 </div>
                                 <?php if ($formData['item_id'] > 0): ?><a
-                                        href="inventoryadmin.php?shop=<?php echo $shopQuery; ?>"
+                                        href="/tenant/inventoryadmin.php?shop=<?php echo $shopQuery; ?>"
                                         class="text-sm font-semibold text-primary hover:underline">Cancel
                                         edit</a><?php endif; ?>
                             </div>
-                           <form method="post" action="/tenant/inventoryadmin.php?shop=<?php echo urlencode($loginSlug); ?>#item-form" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                            <form method="post" action="/tenant/inventoryadmin.php?shop=<?php echo $shopQuery; ?>#item-form" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                                 <input type="hidden" name="inventory_action" value="save_item" />
                                 <input type="hidden" name="item_id" value="<?php echo (int) $formData['item_id']; ?>" />
                                 <div><label
@@ -1066,7 +1066,7 @@ $lastRow = min($offset + $perPage, $filteredTotal);
 
                         <div
                             class="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800 flex flex-wrap items-center gap-4">
-                            <form method="get" action="inventoryadmin.php" class="flex-1 min-w-[220px] relative">
+                            <form method="get" action="/tenant/inventoryadmin.php" class="flex-1 min-w-[220px] relative">
                                 <input type="hidden" name="shop"
                                     value="<?php echo htmlspecialchars($loginSlug, ENT_QUOTES, 'UTF-8'); ?>" />
                                 <span
@@ -1075,7 +1075,7 @@ $lastRow = min($offset + $perPage, $filteredTotal);
                                     class="w-full text-sm bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 rounded-lg pl-9 pr-3 py-2 focus:ring-primary"
                                     placeholder="Filter by part name or code..." type="text" />
                             </form>
-                            <form method="get" action="inventoryadmin.php" class="contents">
+                            <form method="get" action="/tenant/inventoryadmin.php" class="contents">
                                 <input type="hidden" name="shop"
                                     value="<?php echo htmlspecialchars($loginSlug, ENT_QUOTES, 'UTF-8'); ?>" />
                                 <input type="hidden" name="q"
@@ -1178,12 +1178,12 @@ $lastRow = min($offset + $perPage, $filteredTotal);
                                                     <?php echo htmlspecialchars((string) (!empty($item['supplier_name']) ? $item['supplier_name'] : 'Not set'), ENT_QUOTES, 'UTF-8'); ?>
                                                 </td>
                                                 <td class="px-6 py-4 text-right space-x-2">
-                                                    <a href="inventoryadmin.php?shop=<?php echo $shopQuery; ?>&edit=<?php echo (int) $item['item_id']; ?>"
+                                                    <a href="/tenant/inventoryadmin.php?shop=<?php echo $shopQuery; ?>&edit=<?php echo (int) $item['item_id']; ?>"
                                                         class="inline-flex items-center justify-center p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-slate-400 hover:text-primary transition-colors"
                                                         title="Edit item"><span
                                                             class="material-symbols-outlined text-lg">edit</span></a>
                                                     <form method="post"
-                                                        action="inventoryadmin.php?shop=<?php echo $shopQuery; ?>"
+                                                        action="/tenant/inventoryadmin.php?shop=<?php echo $shopQuery; ?>"
                                                         class="inline">
                                                         <input type="hidden" name="inventory_action"
                                                             value="toggle_status" />
@@ -1208,13 +1208,13 @@ $lastRow = min($offset + $perPage, $filteredTotal);
                                     <?php echo $firstRow; ?>-<?php echo $lastRow; ?> of
                                     <?php echo number_format($filteredTotal); ?> results</span>
                                 <div class="flex gap-2">
-                                    <a href="inventoryadmin.php?<?php echo htmlspecialchars($queryStringBase . '&page=' . max(1, $page - 1), ENT_QUOTES, 'UTF-8'); ?>"
+                                    <a href="/tenant/inventoryadmin.php?<?php echo htmlspecialchars($queryStringBase . '&page=' . max(1, $page - 1), ENT_QUOTES, 'UTF-8'); ?>"
                                         class="px-3 py-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded text-xs font-bold hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors <?php echo $page <= 1 ? 'pointer-events-none opacity-50' : ''; ?>">Previous</a>
                                     <?php for ($i = max(1, $page - 1); $i <= min($totalPages, $page + 1); $i++): ?>
-                                        <a href="inventoryadmin.php?<?php echo htmlspecialchars($queryStringBase . '&page=' . $i, ENT_QUOTES, 'UTF-8'); ?>"
+                                        <a href="/tenant/inventoryadmin.php?<?php echo htmlspecialchars($queryStringBase . '&page=' . $i, ENT_QUOTES, 'UTF-8'); ?>"
                                             class="px-3 py-1 rounded text-xs font-bold transition-colors <?php echo $i === $page ? 'bg-primary text-white' : 'bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800'; ?>"><?php echo $i; ?></a>
                                     <?php endfor; ?>
-                                    <a href="inventoryadmin.php?<?php echo htmlspecialchars($queryStringBase . '&page=' . min($totalPages, $page + 1), ENT_QUOTES, 'UTF-8'); ?>"
+                                    <a href="/tenant/inventoryadmin.php?<?php echo htmlspecialchars($queryStringBase . '&page=' . min($totalPages, $page + 1), ENT_QUOTES, 'UTF-8'); ?>"
                                         class="px-3 py-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded text-xs font-bold hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors <?php echo $page >= $totalPages ? 'pointer-events-none opacity-50' : ''; ?>">Next</a>
                                 </div>
                             </div>
@@ -1247,7 +1247,7 @@ $lastRow = min($offset + $perPage, $filteredTotal);
                                             <?php echo LOW_STOCK_THRESHOLD; ?>
                                             units<?php echo !empty($alert['supplier_name']) ? ' • Supplier: ' . htmlspecialchars($alert['supplier_name'], ENT_QUOTES, 'UTF-8') : ''; ?>.
                                         </p>
-                                        <a href="inventoryadmin.php?shop=<?php echo $shopQuery; ?>&edit=<?php echo (int) $alert['item_id']; ?>"
+                                        <a href="/tenant/inventoryadmin.php?shop=<?php echo $shopQuery; ?>&edit=<?php echo (int) $alert['item_id']; ?>"
                                             class="text-xs font-bold text-primary hover:underline flex items-center gap-1">Review
                                             item <span class="material-symbols-outlined text-sm">chevron_right</span></a>
                                     </div>
@@ -1262,7 +1262,7 @@ $lastRow = min($offset + $perPage, $filteredTotal);
                                         class="material-symbols-outlined text-blue-500">swap_vert</span>Record Movement
                                 </h3>
                             </div>
-                            <form method="post" class="space-y-4">
+                            <form method="post" action="/tenant/inventoryadmin.php?shop=<?php echo $shopQuery; ?>" class="space-y-4">
                                 <input type="hidden" name="inventory_action" value="record_movement" />
                                 <div><label
                                         class="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Item</label><select
