@@ -354,6 +354,8 @@ $messageType = 'success';
 if (isset($_GET['msg'])) {
     if ($_GET['msg'] === 'job_updated') {
         $message = 'Repair job status updated successfully.';
+    } elseif ($_GET['msg'] === 'repair_started') {
+        $message = 'Repair job started successfully.';
     } elseif ($_GET['msg'] === 'service_updated') {
         $message = 'Service status updated successfully.';
     } elseif ($_GET['msg'] === 'diagnostic_saved') {
@@ -362,6 +364,134 @@ if (isset($_GET['msg'])) {
         $message = 'Unable to process your request. Please try again.';
         $messageType = 'error';
     }
+}
+
+/**
+ * POST: Start repair now
+ * Allows the tenant to manually start a queued repair job even before the appointment date/time.
+ * This sets work_started_at so the automatic schedule sync will not move it back to Queued.
+ */
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['start_repair_now'])) {
+    $postedToken = isset($_POST['csrf_token']) ? (string) $_POST['csrf_token'] : '';
+    $repairJobId = isset($_POST['repair_job_id']) ? (int) $_POST['repair_job_id'] : 0;
+
+    $redirectParams = getRedirectParams($loginSlug, $search, $jobStatusFilter, $serviceStatusFilter, $priorityFilter);
+
+    if (!hash_equals($csrfToken, $postedToken) || $repairJobId <= 0) {
+        $redirectParams['msg'] = 'error';
+        header('Location: repairjobsadmin.php?' . http_build_query(array_filter($redirectParams, static fn($v) => $v !== '')));
+        exit;
+    }
+
+    $jobCheckStmt = mysqli_prepare(
+        $conn,
+        "SELECT rj.repair_job_id, rj.appointment_id, rj.job_status,
+                CASE WHEN EXISTS (
+                    SELECT 1
+                    FROM repair_job_services rjs
+                    INNER JOIN services s ON s.service_id = rjs.service_id AND s.tenantID = rjs.tenantID
+                    WHERE rjs.repair_job_id = rj.repair_job_id
+                      AND rjs.tenantID = rj.tenantID
+                      AND (s.category = 'Diagnostics' OR LOWER(s.service_name) LIKE '%diagnostic%')
+                ) THEN 1 ELSE 0 END AS has_diagnostic_service
+         FROM repair_jobs rj
+         WHERE rj.repair_job_id = ?
+           AND rj.tenantID = ?
+           AND rj.job_status = 'Queued'
+         LIMIT 1"
+    );
+
+    $jobStartRow = null;
+    if ($jobCheckStmt) {
+        mysqli_stmt_bind_param($jobCheckStmt, 'ii', $repairJobId, $tenantID);
+        mysqli_stmt_execute($jobCheckStmt);
+        $jobCheckResult = mysqli_stmt_get_result($jobCheckStmt);
+        $jobStartRow = $jobCheckResult ? mysqli_fetch_assoc($jobCheckResult) : null;
+        mysqli_stmt_close($jobCheckStmt);
+    }
+
+    if (!$jobStartRow) {
+        $redirectParams['msg'] = 'error';
+        header('Location: repairjobsadmin.php?' . http_build_query(array_filter($redirectParams, static fn($v) => $v !== '')));
+        exit;
+    }
+
+    $newJobStatus = ((int) ($jobStartRow['has_diagnostic_service'] ?? 0)) > 0 ? 'Diagnostics' : 'In Progress';
+    $newAppointmentStatus = $newJobStatus === 'Diagnostics' ? 'Diagnosing' : 'In Progress';
+    $appointmentId = (int) ($jobStartRow['appointment_id'] ?? 0);
+
+    mysqli_begin_transaction($conn);
+    $startOk = true;
+
+    $startJobStmt = mysqli_prepare(
+        $conn,
+        'UPDATE repair_jobs
+         SET job_status = ?,
+             work_started_at = COALESCE(work_started_at, NOW()),
+             updated_at = CURRENT_TIMESTAMP
+         WHERE repair_job_id = ?
+           AND tenantID = ?
+           AND job_status = "Queued"
+         LIMIT 1'
+    );
+
+    if (!$startJobStmt) {
+        $startOk = false;
+    } else {
+        mysqli_stmt_bind_param($startJobStmt, 'sii', $newJobStatus, $repairJobId, $tenantID);
+        if (!mysqli_stmt_execute($startJobStmt) || mysqli_stmt_affected_rows($startJobStmt) <= 0) {
+            $startOk = false;
+        } else {
+            log_event($conn, 'START RepairJob', 'repair_job', $repairJobId, 'Manually started repair job as ' . $newJobStatus);
+        }
+        mysqli_stmt_close($startJobStmt);
+    }
+
+    if ($startOk) {
+        $startServicesStmt = mysqli_prepare(
+            $conn,
+            'UPDATE repair_job_services
+             SET service_status = "In Progress",
+                 updated_at = CURRENT_TIMESTAMP
+             WHERE repair_job_id = ?
+               AND tenantID = ?
+               AND service_status = "Pending"'
+        );
+        if ($startServicesStmt) {
+            mysqli_stmt_bind_param($startServicesStmt, 'ii', $repairJobId, $tenantID);
+            mysqli_stmt_execute($startServicesStmt);
+            mysqli_stmt_close($startServicesStmt);
+        }
+    }
+
+    if ($startOk && $appointmentId > 0) {
+        $startAppointmentStmt = mysqli_prepare(
+            $conn,
+            'UPDATE appointments
+             SET status = ?,
+                 updated_at = NOW()
+             WHERE appointment_id = ?
+               AND tenantID = ?
+               AND status NOT IN ("Completed", "Cancelled")
+             LIMIT 1'
+        );
+        if ($startAppointmentStmt) {
+            mysqli_stmt_bind_param($startAppointmentStmt, 'sii', $newAppointmentStatus, $appointmentId, $tenantID);
+            mysqli_stmt_execute($startAppointmentStmt);
+            mysqli_stmt_close($startAppointmentStmt);
+        }
+    }
+
+    if ($startOk) {
+        mysqli_commit($conn);
+        $redirectParams['msg'] = 'repair_started';
+    } else {
+        mysqli_rollback($conn);
+        $redirectParams['msg'] = 'error';
+    }
+
+    header('Location: repairjobsadmin.php?' . http_build_query(array_filter($redirectParams, static fn($v) => $v !== '')));
+    exit;
 }
 
 /**
@@ -1264,6 +1394,7 @@ $queueFutureJobsStmt = mysqli_prepare(
          rj.updated_at = NOW()
      WHERE rj.tenantID = ?
        AND rj.job_status IN ('In Progress', 'Diagnostics')
+       AND rj.work_started_at IS NULL
        AND TIMESTAMP(a.appointment_date, COALESCE(a.appointment_time, '00:00:00')) > NOW()"
 );
 if ($queueFutureJobsStmt) {
@@ -1791,6 +1922,7 @@ $jobsCountSql = "SELECT COUNT(DISTINCT rj.repair_job_id) AS total_rows
     LEFT JOIN vehicleinformation v ON v.vehicle_id = rj.vehicle_id AND v.tenantID = rj.tenantID
     LEFT JOIN repair_job_services rjs ON rjs.repair_job_id = rj.repair_job_id AND rjs.tenantID = rj.tenantID
     WHERE rj.tenantID = ?
+      AND rj.job_status IN ('Queued', 'In Progress', 'Diagnostics', 'Waiting for Parts', 'Quality Check', 'Ready for Pickup')
       AND (? = 'All' OR rj.job_status = ?)
       AND (? = 'All' OR rj.priority = ?)
       AND (? = 'All' OR rjs.service_status = ?)
@@ -1861,6 +1993,7 @@ $jobsSql = "SELECT
     LEFT JOIN services s ON s.service_id = rjs.service_id AND s.tenantID = rj.tenantID
     LEFT JOIN diagnostic_reports dr ON dr.repair_job_id = rj.repair_job_id AND dr.tenantID = rj.tenantID
     WHERE rj.tenantID = ?
+      AND rj.job_status IN ('Queued', 'In Progress', 'Diagnostics', 'Waiting for Parts', 'Quality Check', 'Ready for Pickup')
       AND (? = 'All' OR rj.job_status = ?)
       AND (? = 'All' OR rj.priority = ?)
       AND (? = 'All' OR rjs.service_status = ?)
@@ -2532,6 +2665,18 @@ if ($diagnosticStmt) {
                                                         <?php endforeach; ?>
                                                     </select>
                                                 </form>
+
+                                                <?php if ($job['job_status'] === 'Queued'): ?>
+                                                    <form method="post" onsubmit="return confirm('Start this repair job now even before the scheduled appointment time?');">
+                                                        <input type="hidden" name="csrf_token" value="<?php echo h($csrfToken); ?>">
+                                                        <input type="hidden" name="repair_job_id" value="<?php echo (int) $job['repair_job_id']; ?>">
+                                                        <input type="hidden" name="start_repair_now" value="1">
+                                                        <button type="submit" class="inline-flex items-center justify-center gap-1 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-blue-700">
+                                                            <span class="material-symbols-outlined text-sm">play_arrow</span>
+                                                            Start Repair Now
+                                                        </button>
+                                                    </form>
+                                                <?php endif; ?>
 
                                                 <?php if ($job['job_status'] === 'Diagnostics' || ($job['job_status'] === 'In Progress' && !$hasDiagnosticMainService)): ?>
                                                     <a href="repairjobsadmin.php?<?php echo h(http_build_query(array_filter([

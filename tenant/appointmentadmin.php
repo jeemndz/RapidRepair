@@ -105,6 +105,19 @@ if ($_SESSION['userType'] === 'owner') {
 
 $allowedStatuses = ['Pending', 'Confirmed', 'In Progress', 'Completed', 'Cancelled'];
 $allowedJobStatuses = ['Queued', 'In Progress', 'Diagnostics', 'Waiting for Parts', 'Quality Check', 'Ready for Pickup', 'Completed', 'Cancelled'];
+
+// Sync repair job status to appointment status.
+// When the job status changes, the appointment status follows this mapping.
+$jobToAppointmentStatusMap = [
+    'Queued' => 'Confirmed',
+    'In Progress' => 'In Progress',
+    'Diagnostics' => 'In Progress',
+    'Waiting for Parts' => 'In Progress',
+    'Quality Check' => 'In Progress',
+    'Ready for Pickup' => 'In Progress',
+    'Completed' => 'Completed',
+    'Cancelled' => 'Cancelled',
+];
 $timeSlots = ['09:00', '10:30', '13:00', '14:30', '16:00', '17:30'];
 $actionMessage = '';
 $actionError = '';
@@ -149,14 +162,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_review'])) {
         $selectedBayNo = $reviewForm['bay_no_custom'];
     }
 
+    // Appointment status is automatically synced from repair job status.
+    // This prevents mismatches like repair_jobs.job_status = Completed while appointments.status is still Confirmed.
+    if (in_array($reviewForm['job_status'], $allowedJobStatuses, true) && isset($jobToAppointmentStatusMap[$reviewForm['job_status']])) {
+        $appointmentStatus = $jobToAppointmentStatusMap[$reviewForm['job_status']];
+    }
+
     $reviewAppointmentId = $reviewForm['appointment_id'];
 
     if (!hash_equals($csrfToken, $postedToken)) {
         $actionError = 'Invalid request token. Please refresh and try again.';
     } elseif ($reviewForm['appointment_id'] <= 0) {
         $actionError = 'Invalid appointment selected for review.';
-    } elseif (!in_array($appointmentStatus, ['Pending', 'Confirmed', 'Cancelled'], true)) {
-        $actionError = 'Invalid appointment status selected.';
+    } elseif (!in_array($appointmentStatus, $allowedStatuses, true)) {
+        $actionError = 'Invalid synced appointment status selected.';
     } elseif (!in_array($reviewForm['job_status'], $allowedJobStatuses, true)) {
         $actionError = 'Invalid repair job status selected.';
     } elseif ($reviewForm['assigned_technician'] === '') {
@@ -240,7 +259,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_review'])) {
                         $saveOk = false;
                         $actionError = 'Appointment status update failed: ' . mysqli_stmt_error($updateApptStmt);
                     } else {
-                        log_event($conn, 'UPDATE Appointment', 'appointment', (int) $reviewForm['appointment_id'], 'Updated status to ' . $appointmentStatus);
+                        log_event($conn, 'UPDATE Appointment', 'appointment', (int) $reviewForm['appointment_id'], 'Synced appointment status to ' . $appointmentStatus . ' from job status ' . $reviewForm['job_status']);
                     }
                     mysqli_stmt_close($updateApptStmt);
                 }
@@ -628,7 +647,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_status'])) {
 
 $search = isset($_GET['search']) ? trim((string) $_GET['search']) : '';
 $statusFilter = isset($_GET['status']) ? trim((string) $_GET['status']) : 'Pending';
-if (!in_array($statusFilter, array_merge(['All'], $allowedStatuses), true)) {
+
+// Appointment list table should only show active/non-cancelled appointments.
+// Cancelled appointments are shown in Appointment History instead.
+$listStatuses = ['Pending', 'Confirmed', 'In Progress', 'Completed', 'Cancelled'];
+if (!in_array($statusFilter, array_merge(['All'], $listStatuses), true)) {
     $statusFilter = 'Pending';
 }
 
@@ -1045,7 +1068,7 @@ $countHistoryStmt = mysqli_prepare(
      LEFT JOIN appointment_services aps ON aps.appointment_id = a.appointment_id AND aps.tenantID = a.tenantID
      LEFT JOIN services s ON s.service_id = aps.service_id AND s.tenantID = a.tenantID
      WHERE a.tenantID = ?
-             AND rj.job_status = 'Completed'
+             AND (rj.job_status IN ('Completed', 'Cancelled') OR a.status IN ('Completed', 'Cancelled'))
        AND (
             ? = ''
             OR u.fullName LIKE CONCAT('%', ?, '%')
@@ -1113,7 +1136,7 @@ $historyStmt = mysqli_prepare(
      LEFT JOIN appointment_services aps ON aps.appointment_id = a.appointment_id AND aps.tenantID = a.tenantID
      LEFT JOIN services s ON s.service_id = aps.service_id AND s.tenantID = a.tenantID
      WHERE a.tenantID = ?
-             AND rj.job_status = 'Completed'
+             AND (rj.job_status IN ('Completed', 'Cancelled') OR a.status IN ('Completed', 'Cancelled'))
        AND (
             ? = ''
             OR u.fullName LIKE CONCAT('%', ?, '%')
@@ -1594,11 +1617,12 @@ if ($historyStmt) {
 
                             <div>
                                 <label class="text-xs font-bold uppercase text-slate-500">Appointment Status</label>
-                                <select name="appointment_status" class="mt-1 w-full rounded-lg border-slate-300 text-sm" required>
-                                    <option value="Pending" <?php echo $reviewDetails['appt_status'] === 'Pending' ? 'selected' : ''; ?>>Pending</option>
-                                    <option value="Confirmed" <?php echo $reviewDetails['appt_status'] === 'Confirmed' ? 'selected' : ''; ?>>Confirmed</option>
-                                    <option value="Cancelled" <?php echo $reviewDetails['appt_status'] === 'Cancelled' ? 'selected' : ''; ?>>Cancelled</option>
+                                <select name="appointment_status" class="mt-1 w-full rounded-lg border-slate-300 text-sm bg-slate-50" required>
+                                    <?php foreach ($allowedStatuses as $statusOption): ?>
+                                        <option value="<?php echo h($statusOption); ?>" <?php echo $reviewDetails['appt_status'] === $statusOption ? 'selected' : ''; ?>><?php echo h($statusOption); ?></option>
+                                    <?php endforeach; ?>
                                 </select>
+                                <p class="mt-1 text-[11px] text-slate-500">This will auto-sync based on the selected job status after saving.</p>
                             </div>
 
                             <div>
@@ -1723,7 +1747,7 @@ if ($historyStmt) {
                         <div>
                             <label class="text-xs font-bold uppercase text-slate-500">Status</label>
                             <select name="status" class="mt-1 w-full rounded-lg border-slate-300 text-sm">
-                                <?php foreach (array_merge(['All'], $allowedStatuses) as $status): ?>
+                                <?php foreach (array_merge(['All'], $listStatuses) as $status): ?>
                                     <option value="<?php echo h($status); ?>" <?php echo $statusFilter === $status ? 'selected' : ''; ?>><?php echo h($status); ?></option>
                                 <?php endforeach; ?>
                             </select>
@@ -1859,7 +1883,7 @@ if ($historyStmt) {
 
             <section class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
                 <div class="p-5 border-b border-slate-100 flex flex-wrap items-center justify-between gap-3">
-                    <h3 class="font-bold text-slate-900">Appointment History (Completed)</h3>
+                    <h3 class="font-bold text-slate-900">Appointment History (Completed & Cancelled)</h3>
                     <span class="text-xs text-slate-500"><?php echo number_format($totalHistoryRecords); ?> total record(s) - Page <?php echo $currentPage; ?> of <?php echo max(1, $totalHistoryPages); ?></span>
                 </div>
 
@@ -1873,7 +1897,7 @@ if ($historyStmt) {
                                 'history_search' => $historySearch,
                             ];
                             $historyLabels = [
-                                'all' => 'All Completed',
+                                'all' => 'All History',
                                 'today' => 'Today',
                                 'week' => 'This Week',
                                 'month' => 'This Month',
@@ -1901,7 +1925,7 @@ if ($historyStmt) {
                             type="text"
                             name="history_search"
                             value="<?php echo h($historySearch); ?>"
-                            placeholder="Search completed history..."
+                            placeholder="Search completed or cancelled history..."
                             class="w-full md:w-96 rounded-lg border-slate-300 text-sm">
                         <div class="flex items-center gap-2">
                             <label class="text-xs text-slate-600">From</label>
@@ -1936,7 +1960,7 @@ if ($historyStmt) {
                         <tbody class="divide-y divide-slate-100">
                             <?php if (count($completedHistory) === 0): ?>
                                 <tr>
-                                    <td colspan="6" class="px-5 py-10 text-center text-slate-500">No completed appointments found for this history filter.</td>
+                                    <td colspan="6" class="px-5 py-10 text-center text-slate-500">No completed or cancelled appointments found for this history filter.</td>
                                 </tr>
                             <?php else: ?>
                                 <?php foreach ($completedHistory as $historyItem): ?>
@@ -1945,11 +1969,15 @@ if ($historyStmt) {
                                         if ($historyVehicle === '') {
                                             $historyVehicle = 'Vehicle record';
                                         }
+                                        $historyAppointmentStatus = (string) ($historyItem['status'] ?? '');
+                                        $historyJobStatus = (string) ($historyItem['job_status'] ?? '');
+                                        $historyDisplayStatus = ($historyAppointmentStatus === 'Cancelled' || $historyJobStatus === 'Cancelled') ? 'Cancelled' : 'Completed';
+                                        $historyStatusClass = $historyDisplayStatus === 'Cancelled' ? 'text-red-600' : 'text-emerald-600';
                                     ?>
                                     <tr class="hover:bg-slate-50">
                                         <td class="px-5 py-4">
                                             <div class="font-semibold text-slate-900">#<?php echo (int) $historyItem['appointment_id']; ?></div>
-                                            <div class="text-xs text-emerald-600 font-semibold">Completed</div>
+                                            <div class="text-xs font-semibold <?php echo h($historyStatusClass); ?>"><?php echo h($historyDisplayStatus); ?></div>
                                         </td>
                                         <td class="px-5 py-4 text-slate-700"><?php echo h($historyItem['customer_name']); ?></td>
                                         <td class="px-5 py-4">
