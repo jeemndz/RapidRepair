@@ -91,6 +91,15 @@ function rrAssetUrl($path) {
     return $path;
 }
 
+$logoPath = '';
+if (isset($customization['logoPath']) && trim((string)$customization['logoPath']) !== '') {
+    $logoPath = rrAssetUrl($customization['logoPath']);
+} elseif (isset($customization['logo_path']) && trim((string)$customization['logo_path']) !== '') {
+    $logoPath = rrAssetUrl($customization['logo_path']);
+} elseif (isset($customization['shopLogo']) && trim((string)$customization['shopLogo']) !== '') {
+    $logoPath = rrAssetUrl($customization['shopLogo']);
+}
+
 $carouselImages = array();
 if (isset($customization['carouselImages']) && $customization['carouselImages'] !== '') {
     $decodedCarousel = json_decode($customization['carouselImages'], true);
@@ -104,26 +113,68 @@ if (isset($customization['carouselImages']) && $customization['carouselImages'] 
     }
 }
 
-$apkFileName = 'My-Portfolion-Mobile-App.apk';
-$apkSourcePath = __DIR__ . '/application-8f4b4ec1-dcd9-4910-9902-bbd476535bb3.apk';
+$apkFileName = 'RapidRepair-Mobile-App.apk';
+$apkDownloadUrl = 'https://www.dropbox.com/scl/fi/ki59xqiga0orqlakipn5o/application-ad6e2d00-034a-4118-b6dd-58dbcffe4375.apk?rlkey=q6zj5j9rtfrna13hx72pez41b&st=xfpc13ge&dl=1';
 
-if (isset($_GET['download']) && $_GET['download'] === 'app') {
-    if (!is_file($apkSourcePath)) {
-        http_response_code(404);
-        echo 'Application file not found.';
-        exit;
+function rrCurrentUrlForDownload($login_slug, $downloadType) {
+    $scheme = 'http';
+    if ((!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ||
+        (isset($_SERVER['SERVER_PORT']) && (int)$_SERVER['SERVER_PORT'] === 443)) {
+        $scheme = 'https';
+    }
+
+    $host = isset($_SERVER['HTTP_HOST']) ? $_SERVER['HTTP_HOST'] : 'localhost';
+    $script = isset($_SERVER['PHP_SELF']) ? $_SERVER['PHP_SELF'] : 'tenantwebsite.php';
+
+    return $scheme . '://' . $host . $script . '?shop=' . urlencode($login_slug) . '&download=' . urlencode($downloadType);
+}
+
+if (isset($_GET['download']) && $_GET['download'] === 'guide') {
+    $inviteCode = isset($owner['invite_code']) && trim((string)$owner['invite_code']) !== ''
+        ? trim((string)$owner['invite_code'])
+        : 'No invite code available';
+
+    $apkDownloadLink = $apkDownloadUrl;
+    $guideFileName = preg_replace('/[^A-Za-z0-9_-]+/', '-', $shopName);
+    $guideFileName = trim($guideFileName, '-');
+    if ($guideFileName === '') {
+        $guideFileName = 'shop';
+    }
+    $guideFileName .= '-mobile-app-instructions.txt';
+
+    $content  = "MOBILE APP INSTALLATION GUIDE\r\n";
+    $content .= "================================\r\n\r\n";
+    $content .= "Shop Name: " . $shopName . "\r\n";
+    $content .= "Invite Code: " . $inviteCode . "\r\n\r\n";
+    $content .= "APK Download Link:\r\n";
+    $content .= $apkDownloadLink . "\r\n\r\n";
+    $content .= "Instructions:\r\n";
+    $content .= "1. Click the APK Download Link above or go back to the website and click Download Here.\r\n";
+    $content .= "2. After downloading, open the APK file on your Android phone.\r\n";
+    $content .= "3. If your phone asks for permission, allow Install Unknown Apps for your browser or file manager.\r\n";
+    $content .= "4. Finish the installation.\r\n";
+    $content .= "5. Open the app and register/login using the shop invite code above.\r\n\r\n";
+    $content .= "Important:\r\n";
+    $content .= "- Keep the invite code private and use only the code for this shop.\r\n";
+    $content .= "- If installation is blocked, check Android security settings and enable installation from your browser/file manager.\r\n\r\n";
+    $content .= "Powered by RapidRepair System\r\n";
+
+    while (ob_get_level()) {
+        ob_end_clean();
     }
 
     header('Content-Description: File Transfer');
-    header('Content-Type: application/vnd.android.package-archive');
-    header('Content-Disposition: attachment; filename="' . $apkFileName . '"');
-    header('Content-Length: ' . filesize($apkSourcePath));
+    header('Content-Type: text/plain; charset=utf-8');
+    header('Content-Disposition: attachment; filename="' . $guideFileName . '"');
+    header('Content-Length: ' . strlen($content));
     header('Cache-Control: no-store, no-cache, must-revalidate');
     header('Pragma: public');
     header('Expires: 0');
-    readfile($apkSourcePath);
+    echo $content;
     exit;
 }
+
+$qrCodeUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=' . urlencode($apkDownloadUrl);
 ?>
 <!DOCTYPE html>
 
@@ -226,9 +277,22 @@ if (isset($_GET['download']) && $_GET['download'] === 'app') {
 <body class="bg-surface text-on-surface selection:bg-primary selection:text-white">
     <header class="fixed top-0 w-full z-50 bg-white/90 backdrop-blur-md border-b border-slate-200 shadow-sm">
         <nav class="flex justify-between items-center h-16 px-6 md:px-12 max-w-7xl mx-auto">
-            <div class="text-xl font-black tracking-tighter text-[#0F4B3C]">
-                <?php echo htmlspecialchars($shopName); ?>
-            </div>
+            <a href="#home" class="flex items-center gap-3 min-w-0 group" aria-label="<?php echo htmlspecialchars($shopName); ?> home">
+                <?php if (!empty($logoPath)): ?>
+                    <img
+                        src="<?php echo htmlspecialchars($logoPath); ?>"
+                        alt="<?php echo htmlspecialchars($shopName); ?> Logo"
+                        class="h-10 w-10 object-contain rounded-lg border border-slate-200 bg-white shadow-sm group-hover:scale-105 transition-transform"
+                    />
+                <?php else: ?>
+                    <div class="h-10 w-10 rounded-lg bg-primary text-white flex items-center justify-center font-black text-lg shadow-sm group-hover:scale-105 transition-transform">
+                        <?php echo htmlspecialchars(strtoupper(substr($shopName, 0, 1))); ?>
+                    </div>
+                <?php endif; ?>
+                <div class="text-xl font-black tracking-tighter text-[#0F4B3C] truncate max-w-[220px] md:max-w-[280px]">
+                    <?php echo htmlspecialchars($shopName); ?>
+                </div>
+            </a>
             <div class="hidden md:flex items-center space-x-8 font-['Inter'] tracking-tight text-sm font-medium">
                 <a class="text-[#0F4B3C] border-b-2 border-[#0F4B3C] pb-1" href="#home">Home</a>
                 <a class="text-slate-600 hover:text-[#0F4B3C] transition-colors" href="#services">Services</a>
@@ -506,14 +570,32 @@ if (isset($_GET['download']) && $_GET['download'] === 'app') {
                     </p>
                     <div class="flex flex-wrap gap-4">
                         <a class="bg-primary text-white border border-primary rounded-xl px-6 py-3 flex items-center gap-3 hover:opacity-90 transition-opacity"
-                            href="?shop=<?php echo urlencode($login_slug); ?>&download=app" download="<?php echo htmlspecialchars($apkFileName); ?>">
-                            <span class="material-symbols-outlined" data-icon="folder">folder</span>
+                            href="<?php echo htmlspecialchars($apkDownloadUrl); ?>" target="_blank" rel="noopener">
+                            <span class="material-symbols-outlined" data-icon="android">android</span>
                             <div class="text-left">
-                                <div class="text-[10px] uppercase font-bold opacity-90 leading-none">Get the Mobile App
-                                </div>
+                                <div class="text-[10px] uppercase font-bold opacity-90 leading-none">Get the Mobile App</div>
                                 <div class="text-xl font-bold leading-none">Download Here</div>
                             </div>
                         </a>
+
+                        <a class="bg-white text-primary border border-primary rounded-xl px-6 py-3 flex items-center gap-3 hover:bg-primary hover:text-white transition-all"
+                            href="?shop=<?php echo urlencode($login_slug); ?>&download=guide" download>
+                            <span class="material-symbols-outlined" data-icon="description">description</span>
+                            <div class="text-left">
+                                <div class="text-[10px] uppercase font-bold opacity-90 leading-none">Setup Guide</div>
+                                <div class="text-xl font-bold leading-none">Read Instructions</div>
+                            </div>
+                        </a>
+                    </div>
+
+                    <div class="mt-8 inline-block bg-white rounded-2xl p-5 shadow-lg text-center">
+                        <img
+                            src="<?php echo htmlspecialchars($qrCodeUrl); ?>"
+                            alt="QR code to download <?php echo htmlspecialchars($shopName); ?> mobile app"
+                            class="w-[220px] h-[220px] mx-auto"
+                        />
+                        <p class="text-slate-900 text-sm font-bold mt-3">Scan to Download App</p>
+                        <p class="text-slate-500 text-xs mt-1">APK download via Dropbox</p>
                     </div>
                 </div>
                 <div class="md:w-1/2 flex justify-center">
