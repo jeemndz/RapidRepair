@@ -103,6 +103,7 @@ function normalize_image_url($path)
 
 $tenantID = isset($_GET['tenantID']) ? (int) $_GET['tenantID'] : 0;
 $userID = isset($_GET['user_id']) ? (int) $_GET['user_id'] : 0;
+$debugMode = isset($_GET['debug']) && (string) $_GET['debug'] === '1';
 
 if ($tenantID <= 0 || $userID <= 0) {
     json_response(400, [
@@ -124,10 +125,10 @@ $requestedStatuses = isset($_GET['statuses'])
     ? explode(',', (string) $_GET['statuses'])
     : $defaultStatuses;
 
-$allowedStatuses = array_values(array_intersect(
-    $defaultStatuses,
-    array_map('trim', $requestedStatuses)
-));
+$requestedStatuses = array_map('trim', $requestedStatuses);
+$requestedStatuses = array_filter($requestedStatuses, fn($status) => $status !== '');
+
+$allowedStatuses = array_values(array_intersect($defaultStatuses, $requestedStatuses));
 
 if (empty($allowedStatuses)) {
     $allowedStatuses = $defaultStatuses;
@@ -135,8 +136,14 @@ if (empty($allowedStatuses)) {
 
 $placeholders = implode(',', array_fill(0, count($allowedStatuses), '?'));
 
-$typeString = 'ii' . str_repeat('s', count($allowedStatuses));
-$params = array_merge([$tenantID, $userID], $allowedStatuses);
+/*
+  IMPORTANT:
+  This uses LEFT JOIN and filters by either repair_jobs.user_id OR vehicleinformation.user_id.
+  This prevents active repair jobs from disappearing when the repair job row has a user_id mismatch
+  but the vehicle row belongs to the logged-in customer.
+*/
+$typeString = 'iii' . str_repeat('s', count($allowedStatuses));
+$params = array_merge([$tenantID, $userID, $userID], $allowedStatuses);
 
 $sql = "
     SELECT
@@ -173,6 +180,7 @@ $sql = "
         vi.plate_number,
         vi.color,
         vi.vehicle_image,
+        vi.user_id AS vehicle_user_id,
 
         COALESCE(COUNT(rjs.repair_job_service_id), 0) AS service_count,
         COALESCE(SUM(CASE WHEN rjs.service_status = 'Completed' THEN 1 ELSE 0 END), 0) AS completed_service_count,
@@ -190,15 +198,14 @@ $sql = "
             SEPARATOR ', '
         ) AS service_summary
     FROM repair_jobs rj
-    INNER JOIN vehicleinformation vi
+    LEFT JOIN vehicleinformation vi
         ON vi.vehicle_id = rj.vehicle_id
         AND vi.tenantID = rj.tenantID
-        AND vi.user_id = rj.user_id
     LEFT JOIN repair_job_services rjs
         ON rjs.repair_job_id = rj.repair_job_id
         AND rjs.tenantID = rj.tenantID
     WHERE rj.tenantID = ?
-      AND rj.user_id = ?
+      AND (rj.user_id = ? OR vi.user_id = ?)
       AND rj.job_status IN ($placeholders)
     GROUP BY
         rj.repair_job_id,
@@ -232,7 +239,8 @@ $sql = "
         vi.vin_number,
         vi.plate_number,
         vi.color,
-        vi.vehicle_image
+        vi.vehicle_image,
+        vi.user_id
     ORDER BY
         CASE rj.job_status
             WHEN 'In Progress' THEN 1
@@ -392,7 +400,7 @@ $heroCaption = $latestEstimate
     ? 'Latest estimated completion: ' . date('h:i A, M d', $latestEstimate)
     : 'Estimated completion will appear once set by the shop.';
 
-json_response(200, [
+$response = [
     'status' => 'success',
     'summary' => [
         ['label' => 'Active', 'value' => (string) $activeCount],
@@ -410,4 +418,15 @@ json_response(200, [
         'text' => 'Track your vehicle, repair status, services, and estimated completion in real time.',
         'imageUrl' => 'https://images.unsplash.com/photo-1486262715619-67b85e0b08d3?auto=format&fit=crop&w=800&q=80',
     ],
-]);
+];
+
+if ($debugMode) {
+    $response['debug'] = [
+        'tenantID' => $tenantID,
+        'user_id' => $userID,
+        'statuses' => $allowedStatuses,
+        'appointments_count' => count($appointments),
+    ];
+}
+
+json_response(200, $response);
