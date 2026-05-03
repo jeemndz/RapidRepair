@@ -963,6 +963,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['complete_with_parts']
     $repairJobId = isset($_POST['repair_job_id']) ? (int) $_POST['repair_job_id'] : 0;
     $noPartsUsed = isset($_POST['no_parts_used']) && $_POST['no_parts_used'] === '1';
     $selectedParts = isset($_POST['selected_parts']) && is_array($_POST['selected_parts']) ? $_POST['selected_parts'] : [];
+    $sourcedPartsRaw = isset($_POST['sourced_parts']) && is_array($_POST['sourced_parts']) ? $_POST['sourced_parts'] : [];
 
     $redirectParams = getRedirectParams($loginSlug, $search, $jobStatusFilter, $serviceStatusFilter, $priorityFilter);
 
@@ -973,6 +974,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['complete_with_parts']
     }
 
     $partsDataForDelete = [];
+    $sourcedParts = [];
+
     if (!$noPartsUsed) {
         foreach ($selectedParts as $partData) {
             $partData = is_array($partData) ? $partData : json_decode($partData, true);
@@ -982,6 +985,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['complete_with_parts']
                 if ($itemId > 0 && $quantity > 0) {
                     $partsDataForDelete[] = ['item_id' => $itemId, 'quantity' => $quantity];
                 }
+            }
+        }
+
+        foreach ($sourcedPartsRaw as $sourcedPartRow) {
+            if (!is_array($sourcedPartRow)) {
+                continue;
+            }
+
+            $partName = trim((string) ($sourcedPartRow['part_name'] ?? ''));
+            $quantity = (int) ($sourcedPartRow['quantity'] ?? 0);
+            $unitCost = (float) ($sourcedPartRow['unit_cost'] ?? 0);
+            $supplier = trim((string) ($sourcedPartRow['supplier'] ?? ''));
+
+            if ($partName !== '' && $quantity > 0 && $unitCost >= 0) {
+                $sourcedParts[] = [
+                    'part_name' => $partName,
+                    'quantity' => $quantity,
+                    'unit_cost' => $unitCost,
+                    'supplier' => $supplier,
+                ];
             }
         }
     }
@@ -1055,6 +1078,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['complete_with_parts']
                 log_event($conn, 'CREATE StockMovement', 'stock_movement', (int) $partUsed['item_id'], 'Created StockMovement with details: OUT quantity ' . (int) $partUsed['quantity']);
             }
             mysqli_stmt_close($movementStmt);
+        }
+    }
+
+    if ($completeOk && count($sourcedParts) > 0) {
+        foreach ($sourcedParts as $sourcedPart) {
+            $totalPartsCost += (float) $sourcedPart['unit_cost'] * (int) $sourcedPart['quantity'];
+            log_event(
+                $conn,
+                'ADD SourcedPart',
+                'repair_job',
+                $repairJobId,
+                'Added sourced-out part: ' . $sourcedPart['part_name'] .
+                ' x' . (int) $sourcedPart['quantity'] .
+                ' @ ' . number_format((float) $sourcedPart['unit_cost'], 2) .
+                ($sourcedPart['supplier'] !== '' ? ' from ' . $sourcedPart['supplier'] : '')
+            );
         }
     }
 
@@ -3044,13 +3083,19 @@ if ($diagnosticStmt) {
                 </a>
             </div>
 
-            <form method="post" class="p-6 space-y-6">
+            <form method="post" class="p-6 space-y-6" id="completePartsForm">
                 <input type="hidden" name="csrf_token" value="<?php echo h($csrfToken); ?>"/>
                 <input type="hidden" name="repair_job_id" value="<?php echo (int) $partsModalJobId; ?>"/>
                 <input type="hidden" name="complete_with_parts" value="1"/>
 
                 <div class="space-y-4">
-                    <p class="text-sm text-slate-600 font-medium">Select the parts/inventory items used in this repair:</p>
+                    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                        <p class="text-sm text-slate-600 font-medium">Select the parts/inventory items used in this repair:</p>
+                        <button type="button" id="add_sourced_part_btn" onclick="addSourcedPartRow()" class="inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-slate-900 text-white text-sm font-semibold hover:bg-slate-800 transition-colors">
+                            <span class="material-symbols-outlined text-base">add</span>
+                            Add Part
+                        </button>
+                    </div>
 
                     <div class="border rounded-lg p-4 transition-colors bg-blue-50 border-blue-200">
                         <div class="flex items-start gap-4">
@@ -3060,6 +3105,14 @@ if ($diagnosticStmt) {
                                 <p class="text-xs text-slate-600 mt-1">Complete this job without using inventory parts.</p>
                             </div>
                         </div>
+                    </div>
+
+                    <div id="sourced-parts-section" class="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4 space-y-3">
+                        <div>
+                            <p class="text-sm font-semibold text-slate-900">External / sourced-out parts</p>
+                            <p class="text-xs text-slate-500 mt-1">Use this for parts not available in shop inventory. These are added to parts total only and will not deduct stock.</p>
+                        </div>
+                        <div id="sourced-parts-list" class="space-y-3"></div>
                     </div>
 
                     <div id="parts-selection-container">
@@ -3132,15 +3185,27 @@ function handleJobStatusChange(selectElement, jobId) {
 function toggleNoPartsMode() {
     const noPartsCheckbox = document.getElementById('no_parts_checkbox');
     const partCheckboxes = document.querySelectorAll('.part-checkbox');
+    const noPartsChecked = noPartsCheckbox && noPartsCheckbox.checked;
 
     partCheckboxes.forEach((checkbox) => {
-        checkbox.disabled = noPartsCheckbox.checked;
+        checkbox.disabled = noPartsChecked;
         checkbox.checked = false;
 
         const quantityInput = document.querySelector('input[data-item-id="' + checkbox.value + '"]');
         if (quantityInput) {
             quantityInput.disabled = true;
         }
+    });
+
+    const addSourcedPartBtn = document.getElementById('add_sourced_part_btn');
+    if (addSourcedPartBtn) {
+        addSourcedPartBtn.disabled = noPartsChecked;
+        addSourcedPartBtn.classList.toggle('opacity-50', noPartsChecked);
+        addSourcedPartBtn.classList.toggle('cursor-not-allowed', noPartsChecked);
+    }
+
+    document.querySelectorAll('.sourced-part-input').forEach((input) => {
+        input.disabled = noPartsChecked;
     });
 }
 
@@ -3156,6 +3221,59 @@ function togglePartQuantity(itemId) {
     }
 }
 
+
+let sourcedPartIndex = 0;
+
+function addSourcedPartRow() {
+    const noPartsCheckbox = document.getElementById('no_parts_checkbox');
+    if (noPartsCheckbox && noPartsCheckbox.checked) {
+        alert('Uncheck No Parts Used before adding sourced-out parts.');
+        return;
+    }
+
+    const list = document.getElementById('sourced-parts-list');
+    if (!list) {
+        return;
+    }
+
+    const index = sourcedPartIndex++;
+    const row = document.createElement('div');
+    row.className = 'sourced-part-row rounded-lg border border-slate-200 bg-white p-3 space-y-3';
+    row.innerHTML = `
+        <div class="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
+            <div class="md:col-span-4">
+                <label class="text-[11px] font-bold uppercase text-slate-500">Part Name</label>
+                <input type="text" name="sourced_parts[${index}][part_name]" class="sourced-part-input mt-1 w-full rounded-lg border-slate-300 text-sm" placeholder="Example: Brake sensor" required>
+            </div>
+            <div class="md:col-span-2">
+                <label class="text-[11px] font-bold uppercase text-slate-500">Qty</label>
+                <input type="number" name="sourced_parts[${index}][quantity]" class="sourced-part-input mt-1 w-full rounded-lg border-slate-300 text-sm" min="1" value="1" required>
+            </div>
+            <div class="md:col-span-3">
+                <label class="text-[11px] font-bold uppercase text-slate-500">Unit Cost</label>
+                <input type="number" name="sourced_parts[${index}][unit_cost]" class="sourced-part-input mt-1 w-full rounded-lg border-slate-300 text-sm" min="0" step="0.01" placeholder="0.00" required>
+            </div>
+            <div class="md:col-span-2">
+                <label class="text-[11px] font-bold uppercase text-slate-500">Supplier</label>
+                <input type="text" name="sourced_parts[${index}][supplier]" class="sourced-part-input mt-1 w-full rounded-lg border-slate-300 text-sm" placeholder="Optional">
+            </div>
+            <div class="md:col-span-1 flex justify-end">
+                <button type="button" onclick="removeSourcedPartRow(this)" class="inline-flex items-center justify-center w-9 h-9 rounded-lg border border-red-200 text-red-600 hover:bg-red-50" title="Remove part">
+                    <span class="material-symbols-outlined text-base">delete</span>
+                </button>
+            </div>
+        </div>
+    `;
+    list.appendChild(row);
+}
+
+function removeSourcedPartRow(button) {
+    const row = button.closest('.sourced-part-row');
+    if (row) {
+        row.remove();
+    }
+}
+
 document.querySelectorAll('form[method="post"]').forEach((form) => {
     if (form.querySelector('input[name="complete_with_parts"]')) {
         form.addEventListener('submit', function () {
@@ -3163,10 +3281,11 @@ document.querySelectorAll('form[method="post"]').forEach((form) => {
 
             const noPartsCheckbox = form.querySelector('input[name="no_parts_used"]');
             if (noPartsCheckbox && noPartsCheckbox.checked) {
+                form.querySelectorAll('.sourced-part-row').forEach((row) => row.remove());
                 return;
             }
 
-            document.querySelectorAll('.part-checkbox:checked').forEach((checkbox) => {
+            form.querySelectorAll('.part-checkbox:checked').forEach((checkbox) => {
                 const itemId = checkbox.value;
                 const quantityInput = document.querySelector('input[data-item-id="' + itemId + '"]');
 
