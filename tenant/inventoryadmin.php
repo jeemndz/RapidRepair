@@ -76,9 +76,10 @@ if (!$owner) {
 $_SESSION['login_slug'] = $loginSlug;
 $shopName = !empty($owner['shopName']) ? $owner['shopName'] : 'AutoFix Pro';
 $shopQuery = urlencode($loginSlug);
+$inventoryPage = '/tenant/inventoryadmin.php';
 $currentScript = basename($_SERVER['PHP_SELF']);
 if (!isset($_GET['shop']) || trim((string) $_GET['shop']) !== $loginSlug) {
-    header('Location: /tenant/inventoryadmin.php?shop=' . $shopQuery);
+    header('Location: ' . $inventoryPage . '?shop=' . $shopQuery);
     exit;
 }
 
@@ -213,7 +214,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $previousStock = 0;
             $existingItem = null;
 
-            if ($formData['item_id'] > 0) {
+            if ($formData['part_code'] !== '') {
+                $duplicateStmt = mysqli_prepare(
+                    $conn,
+                    'SELECT item_id FROM inventory_items WHERE tenantID = ? AND part_code = ? AND item_id <> ? LIMIT 1'
+                );
+                if (!$duplicateStmt) {
+                    $message = 'Unable to validate part code.';
+                    $messageType = 'error';
+                } else {
+                    $duplicateParams = [$tenantID, $formData['part_code'], $formData['item_id']];
+                    if (!bindParams($duplicateStmt, 'isi', $duplicateParams)) {
+                        $message = 'Unable to bind part code validation.';
+                        $messageType = 'error';
+                    } elseif (!mysqli_stmt_execute($duplicateStmt)) {
+                        $message = 'Unable to check part code.';
+                        $messageType = 'error';
+                    } else {
+                        $duplicateResult = mysqli_stmt_get_result($duplicateStmt);
+                        if ($duplicateResult && mysqli_fetch_assoc($duplicateResult)) {
+                            $message = 'Part code already exists. Please use a different part code.';
+                            $messageType = 'error';
+                        }
+                    }
+                    mysqli_stmt_close($duplicateStmt);
+                }
+            }
+
+            if ($message === '' && $formData['item_id'] > 0) {
                 $verifyStmt = mysqli_prepare($conn, 'SELECT item_id, stock_quantity FROM inventory_items WHERE item_id = ? AND tenantID = ? LIMIT 1');
                 if ($verifyStmt) {
                     mysqli_stmt_bind_param($verifyStmt, 'ii', $formData['item_id'], $tenantID);
