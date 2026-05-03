@@ -30,21 +30,23 @@ function format_datetime_label($value)
     }
 
     $timestamp = strtotime($value);
+
     if (!$timestamp) {
         return 'No schedule yet';
     }
 
     $today = date('Y-m-d');
     $date = date('Y-m-d', $timestamp);
-    $prefix = date('M d, Y', $timestamp);
 
     if ($date === $today) {
-        $prefix = 'Today, ' . date('M d', $timestamp);
-    } elseif ($date === date('Y-m-d', strtotime('+1 day'))) {
-        $prefix = 'Tomorrow, ' . date('M d', $timestamp);
+        return 'Today, ' . date('M d', $timestamp) . ' • ' . date('h:i A', $timestamp);
     }
 
-    return $prefix . ' • ' . date('h:i A', $timestamp);
+    if ($date === date('Y-m-d', strtotime('+1 day'))) {
+        return 'Tomorrow, ' . date('M d', $timestamp) . ' • ' . date('h:i A', $timestamp);
+    }
+
+    return date('M d, Y', $timestamp) . ' • ' . date('h:i A', $timestamp);
 }
 
 function estimated_ready_label($value, $status)
@@ -58,11 +60,13 @@ function estimated_ready_label($value, $status)
     }
 
     $finish = strtotime($value);
+
     if (!$finish) {
         return 'Estimated finish not set';
     }
 
     $diff = $finish - time();
+
     if ($diff <= 0) {
         return 'Estimated finish time reached';
     }
@@ -89,9 +93,12 @@ function normalize_image_url($path)
 
     $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
     $host = $_SERVER['HTTP_HOST'] ?? '';
-    $base = $host ? ($scheme . '://' . $host) : '';
 
-    return $base . '/' . ltrim($path, '/');
+    if (!$host) {
+        return ltrim($path, '/');
+    }
+
+    return $scheme . '://' . $host . '/' . ltrim($path, '/');
 }
 
 $tenantID = isset($_GET['tenantID']) ? (int) $_GET['tenantID'] : 0;
@@ -104,20 +111,96 @@ if ($tenantID <= 0 || $userID <= 0) {
     ]);
 }
 
-$defaultStatuses = ['Queued', 'In Progress', 'Diagnostics', 'Waiting for Parts', 'Quality Check', 'Ready for Pickup'];
-$requestedStatuses = isset($_GET['statuses']) ? explode(',', (string) $_GET['statuses']) : $defaultStatuses;
-$allowedStatuses = array_values(array_intersect($defaultStatuses, array_map('trim', $requestedStatuses)));
+$defaultStatuses = [
+    'Queued',
+    'In Progress',
+    'Diagnostics',
+    'Waiting for Parts',
+    'Quality Check',
+    'Ready for Pickup',
+];
+
+$requestedStatuses = isset($_GET['statuses'])
+    ? explode(',', (string) $_GET['statuses'])
+    : $defaultStatuses;
+
+$allowedStatuses = array_values(array_intersect(
+    $defaultStatuses,
+    array_map('trim', $requestedStatuses)
+));
 
 if (empty($allowedStatuses)) {
     $allowedStatuses = $defaultStatuses;
 }
 
 $placeholders = implode(',', array_fill(0, count($allowedStatuses), '?'));
+
 $typeString = 'ii' . str_repeat('s', count($allowedStatuses));
 $params = array_merge([$tenantID, $userID], $allowedStatuses);
 
 $sql = "
     SELECT
+        rj.repair_job_id,
+        rj.tenantID,
+        rj.appointment_id,
+        rj.user_id,
+        rj.vehicle_id,
+        rj.job_order_no,
+        rj.bay_no,
+        rj.assigned_technician,
+        rj.job_status,
+        rj.priority,
+        rj.concern,
+        rj.diagnosis_notes,
+        rj.progress_notes,
+        rj.check_in_time,
+        rj.work_started_at,
+        rj.estimated_finish_at,
+        rj.labor_total,
+        rj.parts_total,
+        rj.grand_total,
+        rj.created_at,
+        rj.updated_at,
+
+        vi.brand,
+        vi.model,
+        vi.year_model,
+        vi.fuel_type,
+        vi.transmission_type,
+        vi.engine_number,
+        vi.mileage_km,
+        vi.vin_number,
+        vi.plate_number,
+        vi.color,
+        vi.vehicle_image,
+
+        COALESCE(COUNT(rjs.repair_job_service_id), 0) AS service_count,
+        COALESCE(SUM(CASE WHEN rjs.service_status = 'Completed' THEN 1 ELSE 0 END), 0) AS completed_service_count,
+        COALESCE(SUM(rjs.service_price), 0) AS services_total,
+        COALESCE(SUM(rjs.estimated_duration_minutes), 0) AS estimated_minutes,
+
+        GROUP_CONCAT(
+            DISTINCT CONCAT(
+                'Service #',
+                COALESCE(rjs.service_id, ''),
+                ' - ',
+                COALESCE(rjs.service_status, 'Pending')
+            )
+            ORDER BY rjs.repair_job_service_id
+            SEPARATOR ', '
+        ) AS service_summary
+    FROM repair_jobs rj
+    INNER JOIN vehicleinformation vi
+        ON vi.vehicle_id = rj.vehicle_id
+        AND vi.tenantID = rj.tenantID
+        AND vi.user_id = rj.user_id
+    LEFT JOIN repair_job_services rjs
+        ON rjs.repair_job_id = rj.repair_job_id
+        AND rjs.tenantID = rj.tenantID
+    WHERE rj.tenantID = ?
+      AND rj.user_id = ?
+      AND rj.job_status IN ($placeholders)
+    GROUP BY
         rj.repair_job_id,
         rj.tenantID,
         rj.appointment_id,
@@ -149,28 +232,7 @@ $sql = "
         vi.vin_number,
         vi.plate_number,
         vi.color,
-        vi.vehicle_image,
-        COALESCE(COUNT(rjs.repair_job_service_id), 0) AS service_count,
-        COALESCE(SUM(CASE WHEN rjs.service_status = 'Completed' THEN 1 ELSE 0 END), 0) AS completed_service_count,
-        COALESCE(SUM(rjs.service_price), 0) AS services_total,
-        COALESCE(SUM(rjs.estimated_duration_minutes), 0) AS estimated_minutes,
-        GROUP_CONCAT(
-            DISTINCT CONCAT('Service #', rjs.service_id, ' - ', rjs.service_status)
-            ORDER BY rjs.repair_job_service_id
-            SEPARATOR ', '
-        ) AS service_summary
-    FROM repair_jobs rj
-    INNER JOIN vehicleinformation vi
-        ON vi.vehicle_id = rj.vehicle_id
-        AND vi.tenantID = rj.tenantID
-        AND vi.user_id = rj.user_id
-    LEFT JOIN repair_job_services rjs
-        ON rjs.repair_job_id = rj.repair_job_id
-        AND rjs.tenantID = rj.tenantID
-    WHERE rj.tenantID = ?
-      AND rj.user_id = ?
-      AND rj.job_status IN ($placeholders)
-    GROUP BY rj.repair_job_id
+        vi.vehicle_image
     ORDER BY
         CASE rj.job_status
             WHEN 'In Progress' THEN 1
@@ -185,6 +247,7 @@ $sql = "
 ";
 
 $stmt = mysqli_prepare($conn, $sql);
+
 if (!$stmt) {
     json_response(500, [
         'status' => 'error',
@@ -193,7 +256,14 @@ if (!$stmt) {
 }
 
 mysqli_stmt_bind_param($stmt, $typeString, ...$params);
-mysqli_stmt_execute($stmt);
+
+if (!mysqli_stmt_execute($stmt)) {
+    json_response(500, [
+        'status' => 'error',
+        'message' => 'Failed to execute active appointments query: ' . mysqli_stmt_error($stmt),
+    ]);
+}
+
 $result = mysqli_stmt_get_result($stmt);
 
 $appointments = [];
@@ -206,27 +276,32 @@ $latestEstimate = null;
 while ($row = mysqli_fetch_assoc($result)) {
     $status = $row['job_status'];
 
-    if (!in_array($status, ['Completed', 'Cancelled'], true)) {
-        $activeCount++;
-    }
+    $activeCount++;
 
     if (in_array($status, ['Queued', 'Waiting for Parts'], true)) {
         $waitingCount++;
     }
 
     $scheduleSource = $row['work_started_at'] ?: ($row['check_in_time'] ?: $row['created_at']);
+
     if (!empty($scheduleSource) && date('Y-m-d', strtotime($scheduleSource)) === date('Y-m-d')) {
         $todayCount++;
     }
 
     if (!empty($row['estimated_finish_at']) && $row['estimated_finish_at'] !== '0000-00-00 00:00:00') {
         $finishTime = strtotime($row['estimated_finish_at']);
+
         if ($finishTime && ($latestEstimate === null || $finishTime > $latestEstimate)) {
             $latestEstimate = $finishTime;
         }
     }
 
-    $vehicleTitle = trim(($row['year_model'] ?: '') . ' ' . ($row['brand'] ?: '') . ' ' . ($row['model'] ?: ''));
+    $vehicleTitle = trim(
+        ($row['year_model'] ?: '') . ' ' .
+        ($row['brand'] ?: '') . ' ' .
+        ($row['model'] ?: '')
+    );
+
     if ($vehicleTitle === '') {
         $vehicleTitle = 'Vehicle #' . $row['vehicle_id'];
     }
@@ -240,12 +315,15 @@ while ($row = mysqli_fetch_assoc($result)) {
         : 'Repair Job';
 
     $serviceDetailParts = [];
+
     if (!empty($row['concern'])) {
         $serviceDetailParts[] = 'Concern: ' . $row['concern'];
     }
+
     if (!empty($row['assigned_technician'])) {
         $serviceDetailParts[] = 'Technician: ' . $row['assigned_technician'];
     }
+
     if (!empty($row['bay_no'])) {
         $serviceDetailParts[] = 'Bay: ' . $row['bay_no'];
     }
@@ -254,7 +332,7 @@ while ($row = mysqli_fetch_assoc($result)) {
         ? implode(' • ', $serviceDetailParts)
         : ($row['service_summary'] ?: 'No service details added yet');
 
-    $appointments[] = [
+    $appointment = [
         'id' => 'repair-job-' . $row['repair_job_id'],
         'repairJobId' => (int) $row['repair_job_id'],
         'appointmentId' => (int) $row['appointment_id'],
@@ -294,8 +372,10 @@ while ($row = mysqli_fetch_assoc($result)) {
         'diagnosisNotes' => $row['diagnosis_notes'],
     ];
 
+    $appointments[] = $appointment;
+
     if ($nextItem === null) {
-        $nextItem = end($appointments);
+        $nextItem = $appointment;
     }
 }
 
@@ -303,7 +383,9 @@ mysqli_stmt_close($stmt);
 
 $next = [
     'title' => $nextItem ? ($nextItem['rawStatus'] ?: 'Next') : 'No Active Repairs',
-    'subtitle' => $nextItem ? ($nextItem['vehicle'] . ' • ' . $nextItem['schedule']) : 'Your repair queue is empty',
+    'subtitle' => $nextItem
+        ? ($nextItem['vehicle'] . ' • ' . $nextItem['schedule'])
+        : 'Your repair queue is empty',
 ];
 
 $heroCaption = $latestEstimate
