@@ -76,10 +76,9 @@ if (!$owner) {
 $_SESSION['login_slug'] = $loginSlug;
 $shopName = !empty($owner['shopName']) ? $owner['shopName'] : 'AutoFix Pro';
 $shopQuery = urlencode($loginSlug);
-$inventoryPage = '/tenant/inventoryadmin.php';
 $currentScript = basename($_SERVER['PHP_SELF']);
 if (!isset($_GET['shop']) || trim((string) $_GET['shop']) !== $loginSlug) {
-    header('Location: ' . $inventoryPage . '?shop=' . $shopQuery);
+    header('Location: /tenant/inventoryadmin.php?shop=' . $shopQuery);
     exit;
 }
 
@@ -163,7 +162,6 @@ $messageType = 'success';
 $formData = [
     'item_id' => 0,
     'part_name' => '',
-    'part_code' => '',
     'category' => 'Other',
     'stock_quantity' => '0',
     'reorder_level' => '10',
@@ -214,34 +212,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $previousStock = 0;
             $existingItem = null;
 
-            if ($formData['part_code'] !== '') {
-                $duplicateStmt = mysqli_prepare(
-                    $conn,
-                    'SELECT item_id FROM inventory_items WHERE tenantID = ? AND part_code = ? AND item_id <> ? LIMIT 1'
-                );
-                if (!$duplicateStmt) {
-                    $message = 'Unable to validate part code.';
-                    $messageType = 'error';
-                } else {
-                    $duplicateParams = [$tenantID, $formData['part_code'], $formData['item_id']];
-                    if (!bindParams($duplicateStmt, 'isi', $duplicateParams)) {
-                        $message = 'Unable to bind part code validation.';
-                        $messageType = 'error';
-                    } elseif (!mysqli_stmt_execute($duplicateStmt)) {
-                        $message = 'Unable to check part code.';
-                        $messageType = 'error';
-                    } else {
-                        $duplicateResult = mysqli_stmt_get_result($duplicateStmt);
-                        if ($duplicateResult && mysqli_fetch_assoc($duplicateResult)) {
-                            $message = 'Part code already exists. Please use a different part code.';
-                            $messageType = 'error';
-                        }
-                    }
-                    mysqli_stmt_close($duplicateStmt);
-                }
-            }
-
-            if ($message === '' && $formData['item_id'] > 0) {
+            if ($formData['item_id'] > 0) {
                 $verifyStmt = mysqli_prepare($conn, 'SELECT item_id, stock_quantity FROM inventory_items WHERE item_id = ? AND tenantID = ? LIMIT 1');
                 if ($verifyStmt) {
                     mysqli_stmt_bind_param($verifyStmt, 'ii', $formData['item_id'], $tenantID);
@@ -264,7 +235,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $updateStmt = mysqli_prepare(
                         $conn,
                         'UPDATE inventory_items
-                         SET part_name = ?, part_code = ?, category = ?, stock_quantity = ?, reorder_level = ?, unit_price = ?, supplier_name = ?, status = ?
+                         SET part_name = ?, category = ?, stock_quantity = ?, reorder_level = ?, unit_price = ?, supplier_name = ?, status = ?
                          WHERE item_id = ? AND tenantID = ?'
                     );
 
@@ -272,11 +243,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $message = 'Unable to prepare update query.';
                         $messageType = 'error';
                     } else {
-                        $partCode = $formData['part_code'] !== '' ? $formData['part_code'] : null;
                         $supplierName = $formData['supplier_name'] !== '' ? $formData['supplier_name'] : null;
                         $params = [
                             $formData['part_name'],
-                            $partCode,
                             $formData['category'],
                             $formData['stock_quantity'],
                             $formData['reorder_level'],
@@ -287,7 +256,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             $tenantID,
                         ];
 
-                        if (!bindParams($updateStmt, 'sssiidssii', $params)) {
+                        if (!bindParams($updateStmt, 'ssiidssii', $params)) {
                             $message = 'Unable to bind update values.';
                             $messageType = 'error';
                         } elseif (!mysqli_stmt_execute($updateStmt)) {
@@ -325,8 +294,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             $formData = [
                                 'item_id' => 0,
                                 'part_name' => '',
-                                'part_code' => '',
-                                'category' => 'Other',
+                                                            'category' => 'Other',
                                 'stock_quantity' => '0',
                                 'reorder_level' => '10',
                                 'unit_price' => '',
@@ -340,20 +308,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 } else {
                     $insertStmt = mysqli_prepare(
                         $conn,
-                        'INSERT INTO inventory_items (tenantID, part_name, part_code, category, stock_quantity, reorder_level, unit_price, supplier_name, status)
-                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+                        'INSERT INTO inventory_items (tenantID, part_name, category, stock_quantity, reorder_level, unit_price, supplier_name, status)
+                         VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
                     );
 
                     if (!$insertStmt) {
                         $message = 'Unable to prepare insert query.';
                         $messageType = 'error';
                     } else {
-                        $partCode = $formData['part_code'] !== '' ? $formData['part_code'] : null;
                         $supplierName = $formData['supplier_name'] !== '' ? $formData['supplier_name'] : null;
                         $params = [
                             $tenantID,
                             $formData['part_name'],
-                            $partCode,
                             $formData['category'],
                             $formData['stock_quantity'],
                             $formData['reorder_level'],
@@ -362,12 +328,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             $formData['status'],
                         ];
 
-                        if (!bindParams($insertStmt, 'isssiidss', $params)) {
+                        if (!bindParams($insertStmt, 'issiidss', $params)) {
                             $message = 'Unable to bind insert values.';
                             $messageType = 'error';
                         } elseif (!mysqli_stmt_execute($insertStmt)) {
                             $errorText = mysqli_stmt_error($insertStmt);
-                            $message = strpos($errorText, 'Duplicate entry') !== false ? 'Part code already exists.' : 'Unable to add item.';
+                            $message = 'Unable to add item: ' . $errorText;
                             $messageType = 'error';
                         } else {
                             $newItemId = (int) mysqli_insert_id($conn);
@@ -399,8 +365,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             $formData = [
                                 'item_id' => 0,
                                 'part_name' => '',
-                                'part_code' => '',
-                                'category' => 'Other',
+                                                            'category' => 'Other',
                                 'stock_quantity' => '0',
                                 'reorder_level' => '10',
                                 'unit_price' => '',
@@ -575,7 +540,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 if ($editingItemId > 0 && $_SERVER['REQUEST_METHOD'] !== 'POST') {
     $editStmt = mysqli_prepare(
         $conn,
-        'SELECT item_id, part_name, part_code, category, stock_quantity, reorder_level, unit_price, supplier_name, status
+        'SELECT item_id, part_name, category, stock_quantity, reorder_level, unit_price, supplier_name, status
          FROM inventory_items
          WHERE item_id = ? AND tenantID = ? LIMIT 1'
     );
@@ -590,7 +555,6 @@ if ($editingItemId > 0 && $_SERVER['REQUEST_METHOD'] !== 'POST') {
             $formData = [
                 'item_id' => (int) $editRow['item_id'],
                 'part_name' => (string) $editRow['part_name'],
-                'part_code' => (string) ($editRow['part_code'] ?? ''),
                 'category' => (string) $editRow['category'],
                 'stock_quantity' => (string) $editRow['stock_quantity'],
                 'reorder_level' => (string) $editRow['reorder_level'],
@@ -628,11 +592,10 @@ $whereParams = [$tenantID];
 $whereTypes = 'i';
 
 if ($search !== '') {
-    $whereSql .= ' AND (part_name LIKE CONCAT("%", ?, "%") OR part_code LIKE CONCAT("%", ?, "%") OR supplier_name LIKE CONCAT("%", ?, "%")) ';
+    $whereSql .= ' AND (part_name LIKE CONCAT("%", ?, "%") OR supplier_name LIKE CONCAT("%", ?, "%")) ';
     $whereParams[] = $search;
     $whereParams[] = $search;
-    $whereParams[] = $search;
-    $whereTypes .= 'sss';
+    $whereTypes .= 'ss';
 }
 if ($categoryFilter !== '') {
     $whereSql .= ' AND category = ? ';
@@ -705,7 +668,7 @@ if ($statsStmt) {
 $items = [];
 $itemsStmt = mysqli_prepare(
     $conn,
-    'SELECT item_id, part_name, part_code, category, stock_quantity, reorder_level, unit_price, supplier_name, status, updated_at
+    'SELECT item_id, part_name, category, stock_quantity, reorder_level, unit_price, supplier_name, status, updated_at
      FROM inventory_items
      ' . $whereSql . '
      ORDER BY updated_at DESC, item_id DESC
@@ -726,7 +689,7 @@ if ($itemsStmt) {
 }
 
 $itemOptions = [];
-$itemOptionsStmt = mysqli_prepare($conn, 'SELECT item_id, part_name, part_code FROM inventory_items WHERE tenantID = ? ORDER BY part_name ASC');
+$itemOptionsStmt = mysqli_prepare($conn, 'SELECT item_id, part_name FROM inventory_items WHERE tenantID = ? ORDER BY part_name ASC');
 if ($itemOptionsStmt) {
     mysqli_stmt_bind_param($itemOptionsStmt, 'i', $tenantID);
     mysqli_stmt_execute($itemOptionsStmt);
@@ -741,7 +704,7 @@ $recentMovements = [];
 $recentStmt = mysqli_prepare(
     $conn,
     'SELECT sm.movement_id, sm.movement_type, sm.quantity, sm.reference_type, sm.reference_id, sm.notes, sm.created_at,
-            ii.part_name, ii.part_code
+            ii.part_name
      FROM stock_movements sm
      INNER JOIN inventory_items ii ON ii.item_id = sm.item_id AND ii.tenantID = sm.tenantID
      WHERE sm.tenantID = ?
@@ -761,7 +724,7 @@ if ($recentStmt) {
 $lowStockAlerts = [];
 $alertStmt = mysqli_prepare(
     $conn,
-    'SELECT item_id, part_name, part_code, stock_quantity, reorder_level, supplier_name
+    'SELECT item_id, part_name, stock_quantity, reorder_level, supplier_name
      FROM inventory_items
     WHERE tenantID = ? AND stock_quantity < ' . LOW_STOCK_THRESHOLD . '
      ORDER BY stock_quantity ASC, part_name ASC
@@ -1038,12 +1001,6 @@ $lastRow = min($offset + $perPage, $filteredTotal);
                                         class="w-full rounded-lg border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 focus:ring-primary"
                                         required /></div>
                                 <div><label
-                                        class="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Part
-                                        Code</label><input name="part_code"
-                                        value="<?php echo htmlspecialchars($formData['part_code'], ENT_QUOTES, 'UTF-8'); ?>"
-                                        class="w-full rounded-lg border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 focus:ring-primary"
-                                        placeholder="Optional unique code" /></div>
-                                <div><label
                                         class="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Category</label><select
                                         name="category"
                                         class="w-full rounded-lg border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 focus:ring-primary"><?php foreach ($categories as $category): ?>
@@ -1101,7 +1058,7 @@ $lastRow = min($offset + $perPage, $filteredTotal);
                                     class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">search</span>
                                 <input name="q" value="<?php echo htmlspecialchars($search, ENT_QUOTES, 'UTF-8'); ?>"
                                     class="w-full text-sm bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 rounded-lg pl-9 pr-3 py-2 focus:ring-primary"
-                                    placeholder="Filter by part name or code..." type="text" />
+                                    placeholder="Filter by part name or supplier..." type="text" />
                             </form>
                             <form method="get" action="/tenant/inventoryadmin.php" class="contents">
                                 <input type="hidden" name="shop"
@@ -1180,7 +1137,7 @@ $lastRow = min($offset + $perPage, $filteredTotal);
                                                     <div class="flex flex-col"><span
                                                             class="text-sm font-bold text-slate-900 dark:text-white"><?php echo htmlspecialchars($item['part_name'], ENT_QUOTES, 'UTF-8'); ?></span><span
                                                             class="text-xs text-slate-500">ID:
-                                                            #<?php echo htmlspecialchars((string) $item['item_id'], ENT_QUOTES, 'UTF-8'); ?><?php echo !empty($item['part_code']) ? ' • Code: ' . htmlspecialchars((string) $item['part_code'], ENT_QUOTES, 'UTF-8') : ''; ?></span>
+                                                            #<?php echo htmlspecialchars((string) $item['item_id'], ENT_QUOTES, 'UTF-8'); ?></span>
                                                     </div>
                                                 </td>
                                                 <td class="px-6 py-4"><span
@@ -1298,7 +1255,7 @@ $lastRow = min($offset + $perPage, $filteredTotal);
                                         class="w-full rounded-lg border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 focus:ring-primary">
                                         <option value="">Select item</option><?php foreach ($itemOptions as $option): ?>
                                             <option value="<?php echo (int) $option['item_id']; ?>" <?php echo (int) $movementData['item_id'] === (int) $option['item_id'] ? 'selected' : ''; ?>>
-                                                <?php echo htmlspecialchars($option['part_name'] . (!empty($option['part_code']) ? ' (' . $option['part_code'] . ')' : ''), ENT_QUOTES, 'UTF-8'); ?>
+                                                <?php echo htmlspecialchars($option['part_name'], ENT_QUOTES, 'UTF-8'); ?>
                                             </option><?php endforeach; ?>
                                     </select></div>
                                 <div class="grid grid-cols-2 gap-3">
