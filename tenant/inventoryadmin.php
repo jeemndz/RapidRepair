@@ -78,7 +78,7 @@ $shopName = !empty($owner['shopName']) ? $owner['shopName'] : 'AutoFix Pro';
 $shopQuery = urlencode($loginSlug);
 $currentScript = basename($_SERVER['PHP_SELF']);
 if (!isset($_GET['shop']) || trim((string) $_GET['shop']) !== $loginSlug) {
-    header('Location: ' . $currentScript . '?shop=' . $shopQuery);
+    header('Location: /tenant/inventoryadmin.php?shop=' . $shopQuery);
     exit;
 }
 
@@ -1000,7 +1000,7 @@ $lastRow = min($offset + $perPage, $filteredTotal);
                                         class="text-sm font-semibold text-primary hover:underline">Cancel
                                         edit</a><?php endif; ?>
                             </div>
-                            <form method="post" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                           <form method="post" action="/tenant/inventoryadmin.php?shop=<?php echo urlencode($loginSlug); ?>#item-form" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                                 <input type="hidden" name="inventory_action" value="save_item" />
                                 <input type="hidden" name="item_id" value="<?php echo (int) $formData['item_id']; ?>" />
                                 <div><label
