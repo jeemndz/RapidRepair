@@ -80,8 +80,8 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
             <!-- Left Branding Container -->
             <section class="bg-gradient-to-br from-black via-zinc-900 to-red-900 text-white p-10 lg:p-14 flex flex-col justify-center items-center text-center">
                 <img src="../pictures/RRlogo2.png" alt="Rapid Repair logo" class="w-44 md:w-56 h-auto object-contain mb-8 mx-auto">
-                <h1 class="text-3xl md:text-4xl font-bold leading-tight">Rapid Repair Super Admin Portal</h1>
-                <p class="mt-3 text-slate-200 text-base md:text-lg max-w-md mx-auto">Car Repair Shop Management System</p>
+                <h1 class="text-3xl md:text-4xl font-bold leading-tight">RapidRepair Super Admin Portal</h1>
+                <p class="mt-3 text-slate-200 text-base md:text-lg max-w-md mx-auto">Car Repair Shop System</p>
                 <p class="mt-8 text-sm text-red-100/90 max-w-md mx-auto">Welcome back. Sign in to manage tenants, reports, and subscriptions.</p>
             </section>
 
@@ -154,7 +154,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
 
                 <div class="mt-8 pt-6 border-t border-slate-200 flex items-center justify-between text-xs text-slate-400">
                     <span>Encrypted Connection</span>
-                    <span>Multi-factor Enabled</span>
+                    <span>Secure Connection</span>
                 </div>
             </section>
         </div>
