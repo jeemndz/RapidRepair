@@ -114,7 +114,7 @@ if (isset($customization['carouselImages']) && $customization['carouselImages'] 
 }
 
 $apkFileName = 'RapidRepair-Mobile-App.apk';
-$apkDownloadUrl = 'https://www.dropbox.com/scl/fi/ki59xqiga0orqlakipn5o/application-ad6e2d00-034a-4118-b6dd-58dbcffe4375.apk?rlkey=q6zj5j9rtfrna13hx72pez41b&st=xfpc13ge&dl=1';
+$apkDownloadUrl = 'https://www.dropbox.com/scl/fi/zdd8jpohdbhot4tqiryx7/application-7752e345-e721-493c-919e-93e34e01026f.apk?rlkey=xwyu1a5ngfykl1zer6a7go3ou&st=49827vzc&dl=0';
 
 function rrCurrentUrlForDownload($login_slug, $downloadType) {
     $scheme = 'http';
