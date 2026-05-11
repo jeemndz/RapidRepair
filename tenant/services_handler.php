@@ -696,72 +696,106 @@ function deleteService($conn, $tenantID) {
     $service = $verify_result->fetch_assoc();
     $verify_stmt->close();
 
-    if ($service['service_type'] === 'Main') {
-        $check_query = "
-            SELECT COUNT(*) AS total 
-            FROM services 
-            WHERE parent_service_id = ? 
+    $conn->begin_transaction();
+
+    try {
+        $deleted_sub_services = 0;
+
+        // If deleting a Main service, delete all linked Sub services first.
+        // If deleting a Sub service, only that specific sub-service will be deleted.
+        if ($service['service_type'] === 'Main') {
+            $count_query = "
+                SELECT COUNT(*) AS total
+                FROM services
+                WHERE parent_service_id = ?
+                AND tenantID = ?
+                AND service_type = 'Sub'
+            ";
+
+            $count_stmt = $conn->prepare($count_query);
+
+            if (!$count_stmt) {
+                throw new Exception('Database error: ' . $conn->error);
+            }
+
+            $count_stmt->bind_param('ii', $service_id, $tenantID);
+            $count_stmt->execute();
+            $count_result = $count_stmt->get_result();
+            $count_row = $count_result->fetch_assoc();
+            $deleted_sub_services = (int) ($count_row['total'] ?? 0);
+            $count_stmt->close();
+
+            $delete_sub_query = "
+                DELETE FROM services
+                WHERE parent_service_id = ?
+                AND tenantID = ?
+                AND service_type = 'Sub'
+            ";
+
+            $delete_sub_stmt = $conn->prepare($delete_sub_query);
+
+            if (!$delete_sub_stmt) {
+                throw new Exception('Database error: ' . $conn->error);
+            }
+
+            $delete_sub_stmt->bind_param('ii', $service_id, $tenantID);
+
+            if (!$delete_sub_stmt->execute()) {
+                $error = $delete_sub_stmt->error ?: $conn->error;
+                $delete_sub_stmt->close();
+                throw new Exception('Error deleting sub-services: ' . $error);
+            }
+
+            $delete_sub_stmt->close();
+        }
+
+        $query = "
+            DELETE FROM services 
+            WHERE service_id = ? 
             AND tenantID = ?
         ";
 
-        $check_stmt = $conn->prepare($check_query);
+        $stmt = $conn->prepare($query);
 
-        if (!$check_stmt) {
-            jsonResponse(500, ['success' => false, 'message' => 'Database error: ' . $conn->error]);
+        if (!$stmt) {
+            throw new Exception('Database error: ' . $conn->error);
         }
 
-        $check_stmt->bind_param('ii', $service_id, $tenantID);
-        $check_stmt->execute();
-        $check_result = $check_stmt->get_result();
-        $check_row = $check_result->fetch_assoc();
-        $check_stmt->close();
+        $stmt->bind_param('ii', $service_id, $tenantID);
 
-        if ((int) $check_row['total'] > 0) {
-            jsonResponse(400, [
-                'success' => false,
-                'message' => 'Cannot delete this main service because it still has sub-services'
-            ]);
+        if (!$stmt->execute()) {
+            $error = $stmt->error ?: $conn->error;
+            $stmt->close();
+            throw new Exception('Error deleting service: ' . $error);
         }
-    }
 
-    $query = "
-        DELETE FROM services 
-        WHERE service_id = ? 
-        AND tenantID = ?
-    ";
-
-    $stmt = $conn->prepare($query);
-
-    if (!$stmt) {
-        jsonResponse(500, ['success' => false, 'message' => 'Database error: ' . $conn->error]);
-    }
-
-    $stmt->bind_param('ii', $service_id, $tenantID);
-
-    if ($stmt->execute()) {
         $stmt->close();
+        $conn->commit();
 
         log_event(
             $conn,
             'DELETE Service',
             'service',
             $service_id,
-            'Deleted ' . strtolower((string) ($service['service_type'] ?? 'service')) . ' service "' . ((string) ($service['service_name'] ?? 'N/A')) . '"'
+            'Deleted ' . strtolower((string) ($service['service_type'] ?? 'service')) . ' service "' . ((string) ($service['service_name'] ?? 'N/A')) . '"' .
+            ($deleted_sub_services > 0 ? ' and ' . $deleted_sub_services . ' linked sub-service(s)' : '')
         );
 
         jsonResponse(200, [
             'success' => true,
-            'message' => 'Service deleted successfully'
+            'message' => $deleted_sub_services > 0
+                ? 'Main service and its sub-services deleted successfully'
+                : 'Service deleted successfully',
+            'deleted_sub_services' => $deleted_sub_services
+        ]);
+    } catch (Throwable $e) {
+        $conn->rollback();
+
+        jsonResponse(500, [
+            'success' => false,
+            'message' => $e->getMessage()
         ]);
     }
-
-    $error = $stmt->error ?: $conn->error;
-    $stmt->close();
-
-    jsonResponse(500, [
-        'success' => false,
-        'message' => 'Error deleting service: ' . $error
-    ]);
 }
 
 function changeServiceStatus($conn, $tenantID) {

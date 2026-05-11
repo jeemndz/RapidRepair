@@ -78,7 +78,7 @@ $shopName = !empty($owner['shopName']) ? $owner['shopName'] : 'AutoFix Pro';
 $shopQuery = urlencode($loginSlug);
 $currentScript = basename($_SERVER['PHP_SELF']);
 if (!isset($_GET['shop']) || trim((string) $_GET['shop']) !== $loginSlug) {
-    header('Location: /tenant/inventoryadmin.php?shop=' . $shopQuery);
+    header('Location: /RapidRepair/tenant/inventoryadmin.php?shop=' . $shopQuery);
     exit;
 }
 
@@ -162,6 +162,7 @@ $messageType = 'success';
 $formData = [
     'item_id' => 0,
     'part_name' => '',
+    'part_code' => '',
     'category' => 'Other',
     'stock_quantity' => '0',
     'reorder_level' => '10',
@@ -199,6 +200,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($formData['part_name'] === '') {
             $message = 'Part name is required.';
             $messageType = 'error';
+        } elseif ($formData['part_code'] === '') {
+            $message = 'Part code is required.';
+            $messageType = 'error';
         } elseif ($formData['unit_price'] < 0) {
             $message = 'Unit price must be a valid positive amount.';
             $messageType = 'error';
@@ -235,7 +239,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $updateStmt = mysqli_prepare(
                         $conn,
                         'UPDATE inventory_items
-                         SET part_name = ?, category = ?, stock_quantity = ?, reorder_level = ?, unit_price = ?, supplier_name = ?, status = ?
+                         SET part_name = ?, part_code = ?, category = ?, stock_quantity = ?, reorder_level = ?, unit_price = ?, supplier_name = ?, status = ?
                          WHERE item_id = ? AND tenantID = ?'
                     );
 
@@ -246,6 +250,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $supplierName = $formData['supplier_name'] !== '' ? $formData['supplier_name'] : null;
                         $params = [
                             $formData['part_name'],
+                            $formData['part_code'],
                             $formData['category'],
                             $formData['stock_quantity'],
                             $formData['reorder_level'],
@@ -256,7 +261,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             $tenantID,
                         ];
 
-                        if (!bindParams($updateStmt, 'ssiidssii', $params)) {
+                        if (!bindParams($updateStmt, 'sssiidssii', $params)) {
                             $message = 'Unable to bind update values.';
                             $messageType = 'error';
                         } elseif (!mysqli_stmt_execute($updateStmt)) {
@@ -294,7 +299,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             $formData = [
                                 'item_id' => 0,
                                 'part_name' => '',
-                                                            'category' => 'Other',
+                                'part_code' => '',
+                                'category' => 'Other',
                                 'stock_quantity' => '0',
                                 'reorder_level' => '10',
                                 'unit_price' => '',
@@ -308,8 +314,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 } else {
                     $insertStmt = mysqli_prepare(
                         $conn,
-                        'INSERT INTO inventory_items (tenantID, part_name, category, stock_quantity, reorder_level, unit_price, supplier_name, status)
-                         VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+                        'INSERT INTO inventory_items (tenantID, part_name, part_code, category, stock_quantity, reorder_level, unit_price, supplier_name, status)
+                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
                     );
 
                     if (!$insertStmt) {
@@ -320,6 +326,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $params = [
                             $tenantID,
                             $formData['part_name'],
+                            $formData['part_code'],
                             $formData['category'],
                             $formData['stock_quantity'],
                             $formData['reorder_level'],
@@ -328,7 +335,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             $formData['status'],
                         ];
 
-                        if (!bindParams($insertStmt, 'issiidss', $params)) {
+                        if (!bindParams($insertStmt, 'isssiidss', $params)) {
                             $message = 'Unable to bind insert values.';
                             $messageType = 'error';
                         } elseif (!mysqli_stmt_execute($insertStmt)) {
@@ -337,7 +344,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             $messageType = 'error';
                         } else {
                             $newItemId = (int) mysqli_insert_id($conn);
-                            log_event($conn, 'CREATE InventoryItem', 'inventory_item', $newItemId, 'Created InventoryItem with details: ' . $formData['part_name']);
+                            log_event($conn, 'CREATE InventoryItem', 'inventory_item', $newItemId, 'Created InventoryItem with details: ' . $formData['part_name'] . ' (' . $formData['part_code'] . ')');
                             $initialStock = (int) $formData['stock_quantity'];
 
                             if ($initialStock > 0) {
@@ -365,7 +372,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             $formData = [
                                 'item_id' => 0,
                                 'part_name' => '',
-                                                            'category' => 'Other',
+                                'part_code' => '',
+                                'category' => 'Other',
                                 'stock_quantity' => '0',
                                 'reorder_level' => '10',
                                 'unit_price' => '',
@@ -540,7 +548,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 if ($editingItemId > 0 && $_SERVER['REQUEST_METHOD'] !== 'POST') {
     $editStmt = mysqli_prepare(
         $conn,
-        'SELECT item_id, part_name, category, stock_quantity, reorder_level, unit_price, supplier_name, status
+        'SELECT item_id, part_name, part_code, category, stock_quantity, reorder_level, unit_price, supplier_name, status
          FROM inventory_items
          WHERE item_id = ? AND tenantID = ? LIMIT 1'
     );
@@ -555,6 +563,7 @@ if ($editingItemId > 0 && $_SERVER['REQUEST_METHOD'] !== 'POST') {
             $formData = [
                 'item_id' => (int) $editRow['item_id'],
                 'part_name' => (string) $editRow['part_name'],
+                'part_code' => (string) ($editRow['part_code'] ?? ''),
                 'category' => (string) $editRow['category'],
                 'stock_quantity' => (string) $editRow['stock_quantity'],
                 'reorder_level' => (string) $editRow['reorder_level'],
@@ -592,10 +601,11 @@ $whereParams = [$tenantID];
 $whereTypes = 'i';
 
 if ($search !== '') {
-    $whereSql .= ' AND (part_name LIKE CONCAT("%", ?, "%") OR supplier_name LIKE CONCAT("%", ?, "%")) ';
+    $whereSql .= ' AND (part_name LIKE CONCAT("%", ?, "%") OR part_code LIKE CONCAT("%", ?, "%") OR supplier_name LIKE CONCAT("%", ?, "%")) ';
     $whereParams[] = $search;
     $whereParams[] = $search;
-    $whereTypes .= 'ss';
+    $whereParams[] = $search;
+    $whereTypes .= 'sss';
 }
 if ($categoryFilter !== '') {
     $whereSql .= ' AND category = ? ';
@@ -668,7 +678,7 @@ if ($statsStmt) {
 $items = [];
 $itemsStmt = mysqli_prepare(
     $conn,
-    'SELECT item_id, part_name, category, stock_quantity, reorder_level, unit_price, supplier_name, status, updated_at
+    'SELECT item_id, part_name, part_code, category, stock_quantity, reorder_level, unit_price, supplier_name, status, updated_at
      FROM inventory_items
      ' . $whereSql . '
      ORDER BY updated_at DESC, item_id DESC
@@ -689,7 +699,7 @@ if ($itemsStmt) {
 }
 
 $itemOptions = [];
-$itemOptionsStmt = mysqli_prepare($conn, 'SELECT item_id, part_name FROM inventory_items WHERE tenantID = ? ORDER BY part_name ASC');
+$itemOptionsStmt = mysqli_prepare($conn, 'SELECT item_id, part_name, part_code FROM inventory_items WHERE tenantID = ? ORDER BY part_name ASC');
 if ($itemOptionsStmt) {
     mysqli_stmt_bind_param($itemOptionsStmt, 'i', $tenantID);
     mysqli_stmt_execute($itemOptionsStmt);
@@ -724,7 +734,7 @@ if ($recentStmt) {
 $lowStockAlerts = [];
 $alertStmt = mysqli_prepare(
     $conn,
-    'SELECT item_id, part_name, stock_quantity, reorder_level, supplier_name
+    'SELECT item_id, part_name, part_code, stock_quantity, reorder_level, supplier_name
      FROM inventory_items
     WHERE tenantID = ? AND stock_quantity < ' . LOW_STOCK_THRESHOLD . '
      ORDER BY stock_quantity ASC, part_name ASC
@@ -767,7 +777,7 @@ $lastRow = min($offset + $perPage, $filteredTotal);
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
     <meta http-equiv="Pragma" content="no-cache" />
     <meta http-equiv="Expires" content="0" />
-    <title>AutoFix Admin - Inventory Management</title>
+    <title><?php echo h($shopName); ?> - Inventory Management</title>
     <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap"
         rel="stylesheet" />
@@ -852,7 +862,7 @@ $lastRow = min($offset + $perPage, $filteredTotal);
                     <?php endif; ?>
                     <?php if (canAccessModule('inventoryadmin.php', $accessibleModules)): ?>
                     <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-primary/10 text-primary font-medium"
-                        href="/tenant/inventoryadmin.php?shop=<?php echo $shopQuery; ?>"><span
+                        href="/RapidRepair/tenant/inventoryadmin.php?shop=<?php echo $shopQuery; ?>"><span
                             class="material-symbols-outlined text-[22px]">inventory_2</span>Inventory</a>
                     <?php endif; ?>
                     <?php if (canAccessModule('customeradmin.php', $accessibleModules)): ?>
@@ -987,11 +997,11 @@ $lastRow = min($offset + $perPage, $filteredTotal);
                                         stock for the current tenant.</p>
                                 </div>
                                 <?php if ($formData['item_id'] > 0): ?><a
-                                        href="/tenant/inventoryadmin.php?shop=<?php echo $shopQuery; ?>"
+                                        href="/RapidRepair/tenant/inventoryadmin.php?shop=<?php echo $shopQuery; ?>"
                                         class="text-sm font-semibold text-primary hover:underline">Cancel
                                         edit</a><?php endif; ?>
                             </div>
-                            <form method="post" action="/tenant/inventoryadmin.php?shop=<?php echo $shopQuery; ?>#item-form" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                            <form method="post" action="/RapidRepair/tenant/inventoryadmin.php?shop=<?php echo $shopQuery; ?>#item-form" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                                 <input type="hidden" name="inventory_action" value="save_item" />
                                 <input type="hidden" name="item_id" value="<?php echo (int) $formData['item_id']; ?>" />
                                 <div><label
@@ -999,6 +1009,13 @@ $lastRow = min($offset + $perPage, $filteredTotal);
                                         Name</label><input name="part_name"
                                         value="<?php echo htmlspecialchars($formData['part_name'], ENT_QUOTES, 'UTF-8'); ?>"
                                         class="w-full rounded-lg border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 focus:ring-primary"
+                                        required /></div>
+                                <div><label
+                                        class="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Part
+                                        Code</label><input name="part_code"
+                                        value="<?php echo htmlspecialchars($formData['part_code'], ENT_QUOTES, 'UTF-8'); ?>"
+                                        class="w-full rounded-lg border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 focus:ring-primary"
+                                        placeholder="Example: BRK-001"
                                         required /></div>
                                 <div><label
                                         class="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Category</label><select
@@ -1051,16 +1068,16 @@ $lastRow = min($offset + $perPage, $filteredTotal);
 
                         <div
                             class="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800 flex flex-wrap items-center gap-4">
-                            <form method="get" action="/tenant/inventoryadmin.php" class="flex-1 min-w-[220px] relative">
+                            <form method="get" action="/RapidRepair/tenant/inventoryadmin.php" class="flex-1 min-w-[220px] relative">
                                 <input type="hidden" name="shop"
                                     value="<?php echo htmlspecialchars($loginSlug, ENT_QUOTES, 'UTF-8'); ?>" />
                                 <span
                                     class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">search</span>
                                 <input name="q" value="<?php echo htmlspecialchars($search, ENT_QUOTES, 'UTF-8'); ?>"
                                     class="w-full text-sm bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 rounded-lg pl-9 pr-3 py-2 focus:ring-primary"
-                                    placeholder="Filter by part name or supplier..." type="text" />
+                                    placeholder="Filter by part name, part code, or supplier..." type="text" />
                             </form>
-                            <form method="get" action="/tenant/inventoryadmin.php" class="contents">
+                            <form method="get" action="/RapidRepair/tenant/inventoryadmin.php" class="contents">
                                 <input type="hidden" name="shop"
                                     value="<?php echo htmlspecialchars($loginSlug, ENT_QUOTES, 'UTF-8'); ?>" />
                                 <input type="hidden" name="q"
@@ -1136,7 +1153,8 @@ $lastRow = min($offset + $perPage, $filteredTotal);
                                                 <td class="px-6 py-4">
                                                     <div class="flex flex-col"><span
                                                             class="text-sm font-bold text-slate-900 dark:text-white"><?php echo htmlspecialchars($item['part_name'], ENT_QUOTES, 'UTF-8'); ?></span><span
-                                                            class="text-xs text-slate-500">ID:
+                                                            class="text-xs text-slate-500">Code:
+                                                            <?php echo htmlspecialchars((string) ($item['part_code'] ?? 'N/A'), ENT_QUOTES, 'UTF-8'); ?> • ID:
                                                             #<?php echo htmlspecialchars((string) $item['item_id'], ENT_QUOTES, 'UTF-8'); ?></span>
                                                     </div>
                                                 </td>
@@ -1163,12 +1181,12 @@ $lastRow = min($offset + $perPage, $filteredTotal);
                                                     <?php echo htmlspecialchars((string) (!empty($item['supplier_name']) ? $item['supplier_name'] : 'Not set'), ENT_QUOTES, 'UTF-8'); ?>
                                                 </td>
                                                 <td class="px-6 py-4 text-right space-x-2">
-                                                    <a href="/tenant/inventoryadmin.php?shop=<?php echo $shopQuery; ?>&edit=<?php echo (int) $item['item_id']; ?>"
+                                                    <a href="/RapidRepair/tenant/inventoryadmin.php?shop=<?php echo $shopQuery; ?>&edit=<?php echo (int) $item['item_id']; ?>"
                                                         class="inline-flex items-center justify-center p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-slate-400 hover:text-primary transition-colors"
                                                         title="Edit item"><span
                                                             class="material-symbols-outlined text-lg">edit</span></a>
                                                     <form method="post"
-                                                        action="/tenant/inventoryadmin.php?shop=<?php echo $shopQuery; ?>"
+                                                        action="/RapidRepair/tenant/inventoryadmin.php?shop=<?php echo $shopQuery; ?>"
                                                         class="inline">
                                                         <input type="hidden" name="inventory_action"
                                                             value="toggle_status" />
@@ -1193,13 +1211,13 @@ $lastRow = min($offset + $perPage, $filteredTotal);
                                     <?php echo $firstRow; ?>-<?php echo $lastRow; ?> of
                                     <?php echo number_format($filteredTotal); ?> results</span>
                                 <div class="flex gap-2">
-                                    <a href="/tenant/inventoryadmin.php?<?php echo htmlspecialchars($queryStringBase . '&page=' . max(1, $page - 1), ENT_QUOTES, 'UTF-8'); ?>"
+                                    <a href="/RapidRepair/tenant/inventoryadmin.php?<?php echo htmlspecialchars($queryStringBase . '&page=' . max(1, $page - 1), ENT_QUOTES, 'UTF-8'); ?>"
                                         class="px-3 py-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded text-xs font-bold hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors <?php echo $page <= 1 ? 'pointer-events-none opacity-50' : ''; ?>">Previous</a>
                                     <?php for ($i = max(1, $page - 1); $i <= min($totalPages, $page + 1); $i++): ?>
-                                        <a href="/tenant/inventoryadmin.php?<?php echo htmlspecialchars($queryStringBase . '&page=' . $i, ENT_QUOTES, 'UTF-8'); ?>"
+                                        <a href="/RapidRepair/tenant/inventoryadmin.php?<?php echo htmlspecialchars($queryStringBase . '&page=' . $i, ENT_QUOTES, 'UTF-8'); ?>"
                                             class="px-3 py-1 rounded text-xs font-bold transition-colors <?php echo $i === $page ? 'bg-primary text-white' : 'bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800'; ?>"><?php echo $i; ?></a>
                                     <?php endfor; ?>
-                                    <a href="/tenant/inventoryadmin.php?<?php echo htmlspecialchars($queryStringBase . '&page=' . min($totalPages, $page + 1), ENT_QUOTES, 'UTF-8'); ?>"
+                                    <a href="/RapidRepair/tenant/inventoryadmin.php?<?php echo htmlspecialchars($queryStringBase . '&page=' . min($totalPages, $page + 1), ENT_QUOTES, 'UTF-8'); ?>"
                                         class="px-3 py-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded text-xs font-bold hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors <?php echo $page >= $totalPages ? 'pointer-events-none opacity-50' : ''; ?>">Next</a>
                                 </div>
                             </div>
@@ -1232,7 +1250,7 @@ $lastRow = min($offset + $perPage, $filteredTotal);
                                             <?php echo LOW_STOCK_THRESHOLD; ?>
                                             units<?php echo !empty($alert['supplier_name']) ? ' • Supplier: ' . htmlspecialchars($alert['supplier_name'], ENT_QUOTES, 'UTF-8') : ''; ?>.
                                         </p>
-                                        <a href="/tenant/inventoryadmin.php?shop=<?php echo $shopQuery; ?>&edit=<?php echo (int) $alert['item_id']; ?>"
+                                        <a href="/RapidRepair/tenant/inventoryadmin.php?shop=<?php echo $shopQuery; ?>&edit=<?php echo (int) $alert['item_id']; ?>"
                                             class="text-xs font-bold text-primary hover:underline flex items-center gap-1">Review
                                             item <span class="material-symbols-outlined text-sm">chevron_right</span></a>
                                     </div>
@@ -1247,7 +1265,7 @@ $lastRow = min($offset + $perPage, $filteredTotal);
                                         class="material-symbols-outlined text-blue-500">swap_vert</span>Record Movement
                                 </h3>
                             </div>
-                            <form method="post" action="/tenant/inventoryadmin.php?shop=<?php echo $shopQuery; ?>" class="space-y-4">
+                            <form method="post" action="/RapidRepair/tenant/inventoryadmin.php?shop=<?php echo $shopQuery; ?>" class="space-y-4">
                                 <input type="hidden" name="inventory_action" value="record_movement" />
                                 <div><label
                                         class="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Item</label><select
@@ -1255,7 +1273,7 @@ $lastRow = min($offset + $perPage, $filteredTotal);
                                         class="w-full rounded-lg border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 focus:ring-primary">
                                         <option value="">Select item</option><?php foreach ($itemOptions as $option): ?>
                                             <option value="<?php echo (int) $option['item_id']; ?>" <?php echo (int) $movementData['item_id'] === (int) $option['item_id'] ? 'selected' : ''; ?>>
-                                                <?php echo htmlspecialchars($option['part_name'], ENT_QUOTES, 'UTF-8'); ?>
+                                                <?php echo htmlspecialchars($option['part_name'] . (!empty($option['part_code']) ? ' (' . $option['part_code'] . ')' : ''), ENT_QUOTES, 'UTF-8'); ?>
                                             </option><?php endforeach; ?>
                                     </select></div>
                                 <div class="grid grid-cols-2 gap-3">

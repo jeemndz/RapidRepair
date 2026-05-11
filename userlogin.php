@@ -6,46 +6,88 @@ if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
 
+// Support JSON and form-data
 $data = json_decode(file_get_contents("php://input"), true);
 
-$email = trim($data['email'] ?? '');
-$password = trim($data['password'] ?? '');
+$identifier = trim(
+    $data['identifier']
+    ?? $data['email']
+    ?? $data['username']
+    ?? $_POST['identifier']
+    ?? $_POST['email']
+    ?? $_POST['username']
+    ?? ''
+);
 
-if(empty($email) || empty($password)){
+$password = trim(
+    $data['password']
+    ?? $_POST['password']
+    ?? ''
+);
+
+if (empty($identifier) || empty($password)) {
     echo json_encode([
         "status" => "error",
-        "message" => "Email and password required"
+        "message" => "Email/Username and password required"
     ]);
     exit;
 }
 
-// Resolve tenantID from user record and use it for session scoping.
-$query = "SELECT user_id, tenantID, fullName, password FROM users WHERE email=? LIMIT 1";
+/*
+|--------------------------------------------------------------------------
+| LOGIN USING EMAIL OR USERNAME
+|--------------------------------------------------------------------------
+*/
+$query = "
+    SELECT 
+        user_id,
+        tenantID,
+        fullName,
+        username,
+        email,
+        password
+    FROM users
+    WHERE email = ?
+       OR username = ?
+    LIMIT 1
+";
+
 $stmt = $conn->prepare($query);
-$stmt->bind_param("s", $email);
+$stmt->bind_param("ss", $identifier, $identifier);
 $stmt->execute();
+
 $result = $stmt->get_result();
 
-if($row = $result->fetch_assoc()){
-    // Compare password with hash
-    if(password_verify($password, $row['password'])){
-        $_SESSION['user_id'] = (int) $row['user_id'];
-        $_SESSION['tenantID'] = isset($row['tenantID']) ? (int) $row['tenantID'] : null;
+if ($row = $result->fetch_assoc()) {
+
+    if (password_verify($password, $row['password'])) {
+
+        $_SESSION['user_id'] = (int)$row['user_id'];
+        $_SESSION['tenantID'] = (int)$row['tenantID'];
         $_SESSION['fullName'] = $row['fullName'];
+        $_SESSION['username'] = $row['username'];
+        $_SESSION['email'] = $row['email'];
 
         echo json_encode([
             "status" => "success",
+            "message" => "Login successful",
             "user_id" => $row['user_id'],
             "tenantID" => $row['tenantID'],
-            "name" => $row['fullName']
+            "fullName" => $row['fullName'],
+            "username" => $row['username'],
+            "email" => $row['email']
         ]);
+
     } else {
+
         echo json_encode([
             "status" => "error",
             "message" => "Invalid password"
         ]);
     }
-}else{
+
+} else {
+
     echo json_encode([
         "status" => "error",
         "message" => "User not found"

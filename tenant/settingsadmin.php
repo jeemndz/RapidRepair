@@ -24,6 +24,378 @@ function h($value) {
     return htmlspecialchars((string) $value, ENT_QUOTES, 'UTF-8');
 }
 
+
+function seedDefaultServices($conn, $tenantID) {
+    $defaultServices = [
+        [
+            'name' => 'Engine Services',
+            'category' => 'Engine',
+            'description' => 'Engine diagnosis, repair, tune-up, and major engine work for cars, motorcycles, and trucks.',
+            'duration' => 120,
+            'subs' => [
+                ['Engine Diagnostics', 'Computer and manual inspection to identify engine problems.', 60],
+                ['Engine Tune-Up', 'General engine tune-up to improve performance and fuel efficiency.', 90],
+                ['Spark Plug Replacement', 'Replacement of worn or faulty spark plugs.', 45],
+                ['Timing Belt Replacement', 'Replacement of timing belt to prevent engine timing failure.', 180],
+                ['Timing Chain Repair', 'Inspection and repair of timing chain components.', 240],
+                ['Cylinder Head Repair', 'Repair of cylinder head damage, leaks, or compression issues.', 300],
+                ['Engine Overhaul', 'Complete engine disassembly, inspection, repair, and reassembly.', 480],
+                ['Valve Adjustment', 'Adjustment of valve clearance for smoother engine operation.', 120],
+                ['Fuel Injector Cleaning', 'Cleaning of fuel injectors to improve fuel delivery.', 60],
+                ['Throttle Body Cleaning', 'Cleaning of throttle body for better idle and acceleration.', 45],
+                ['Compression Testing', 'Testing cylinder compression to check engine health.', 60],
+                ['Engine Mount Replacement', 'Replacement of damaged engine support mounts.', 120],
+                ['Oil Leak Repair', 'Diagnosis and repair of visible engine oil leaks.', 120],
+                ['Turbocharger Repair', 'Inspection and repair of turbocharger system issues.', 240]
+            ]
+        ],
+        [
+            'name' => 'Oil & Preventive Maintenance',
+            'category' => 'Maintenance',
+            'description' => 'Routine maintenance services to keep vehicles safe, reliable, and road-ready.',
+            'duration' => 60,
+            'subs' => [
+                ['Oil Change', 'Drain and replace engine oil.', 30],
+                ['Synthetic Oil Change', 'Oil change using synthetic engine oil.', 30],
+                ['Oil Filter Replacement', 'Replacement of old oil filter.', 20],
+                ['Air Filter Replacement', 'Replacement of engine air filter.', 20],
+                ['Cabin Filter Replacement', 'Replacement of cabin air filter.', 20],
+                ['Fuel Filter Replacement', 'Replacement of fuel filter.', 45],
+                ['Fluid Top-Up', 'Top-up of basic vehicle fluids.', 20],
+                ['Preventive Maintenance Service (PMS)', 'Scheduled maintenance package and inspection.', 120],
+                ['Greasing & Lubrication', 'Lubrication of applicable moving parts.', 30],
+                ['Multi-Point Inspection', 'General safety and condition inspection.', 45]
+            ]
+        ],
+        [
+            'name' => 'Brake Services',
+            'category' => 'Brakes',
+            'description' => 'Inspection, repair, and replacement of brake components.',
+            'duration' => 90,
+            'subs' => [
+                ['Brake Pad Replacement', 'Replacement of worn brake pads.', 60],
+                ['Brake Shoe Replacement', 'Replacement of drum brake shoes.', 90],
+                ['Brake Disc Resurfacing', 'Resurfacing of brake discs or rotors.', 90],
+                ['Brake Rotor Replacement', 'Replacement of worn or damaged brake rotors.', 90],
+                ['Brake Fluid Flush', 'Removal and replacement of old brake fluid.', 45],
+                ['Brake Caliper Repair', 'Inspection and repair of brake calipers.', 120],
+                ['ABS Diagnostics', 'Diagnosis of anti-lock braking system issues.', 60],
+                ['Hand Brake Adjustment', 'Adjustment of parking brake tension.', 30],
+                ['Brake Line Repair', 'Repair or replacement of leaking brake lines.', 120],
+                ['Master Cylinder Replacement', 'Replacement of faulty brake master cylinder.', 120]
+            ]
+        ],
+        [
+            'name' => 'Suspension & Steering',
+            'category' => 'Suspension',
+            'description' => 'Suspension, steering, handling, and ride comfort repair services.',
+            'duration' => 120,
+            'subs' => [
+                ['Shock Absorber Replacement', 'Replacement of damaged shock absorbers.', 90],
+                ['Strut Replacement', 'Replacement of suspension struts.', 120],
+                ['Ball Joint Replacement', 'Replacement of worn ball joints.', 90],
+                ['Tie Rod Replacement', 'Replacement of inner or outer tie rods.', 90],
+                ['Rack and Pinion Repair', 'Repair of rack and pinion steering system.', 180],
+                ['Wheel Alignment', 'Alignment of wheels for proper tracking.', 60],
+                ['Power Steering Repair', 'Diagnosis and repair of power steering issues.', 120],
+                ['Steering Fluid Flush', 'Drain and replace steering fluid.', 45],
+                ['Bushing Replacement', 'Replacement of suspension bushings.', 90],
+                ['Stabilizer Link Replacement', 'Replacement of stabilizer links.', 60]
+            ]
+        ],
+        [
+            'name' => 'Transmission Services',
+            'category' => 'Transmission',
+            'description' => 'Transmission, clutch, gearbox, axle, and drivetrain services.',
+            'duration' => 180,
+            'subs' => [
+                ['Transmission Diagnostics', 'Diagnosis of shifting and transmission issues.', 60],
+                ['Automatic Transmission Repair', 'Repair of automatic transmission components.', 240],
+                ['Manual Transmission Repair', 'Repair of manual transmission components.', 240],
+                ['Clutch Replacement', 'Replacement of clutch assembly.', 240],
+                ['Transmission Fluid Change', 'Drain and replace transmission fluid.', 60],
+                ['CVT Repair', 'Diagnosis and repair of CVT transmission issues.', 240],
+                ['Gearbox Overhaul', 'Complete inspection and overhaul of gearbox.', 360],
+                ['Differential Repair', 'Repair of differential assembly.', 180],
+                ['Axle Repair', 'Repair or replacement of axle components.', 120],
+                ['Driveshaft Replacement', 'Replacement of driveshaft assembly.', 120]
+            ]
+        ],
+        [
+            'name' => 'Electrical Services',
+            'category' => 'Electrical',
+            'description' => 'Battery, wiring, lighting, charging, ignition, and electronic system repairs.',
+            'duration' => 90,
+            'subs' => [
+                ['Battery Replacement', 'Testing and replacement of vehicle battery.', 30],
+                ['Alternator Repair', 'Diagnosis and repair of charging system alternator.', 120],
+                ['Starter Repair', 'Diagnosis and repair of starter motor issues.', 120],
+                ['Wiring Repair', 'Tracing and repair of electrical wiring faults.', 120],
+                ['ECU Diagnostics', 'Computer diagnostics for engine control unit issues.', 60],
+                ['Fuse Replacement', 'Replacement of blown or faulty fuses.', 20],
+                ['Headlight Repair', 'Repair or replacement of headlight components.', 45],
+                ['Taillight Repair', 'Repair or replacement of taillight components.', 45],
+                ['Horn Repair', 'Diagnosis and repair of horn system.', 30],
+                ['Power Window Repair', 'Repair of power window motor, switch, or wiring.', 90],
+                ['Sensor Replacement', 'Replacement of faulty vehicle sensors.', 60],
+                ['Ignition System Repair', 'Repair of ignition-related components.', 90]
+            ]
+        ],
+        [
+            'name' => 'Cooling System Services',
+            'category' => 'Cooling System',
+            'description' => 'Cooling system inspection and repair to prevent overheating.',
+            'duration' => 90,
+            'subs' => [
+                ['Radiator Repair', 'Repair of radiator leaks or damage.', 120],
+                ['Radiator Replacement', 'Replacement of radiator assembly.', 120],
+                ['Coolant Flush', 'Drain and replace engine coolant.', 45],
+                ['Water Pump Replacement', 'Replacement of faulty water pump.', 150],
+                ['Thermostat Replacement', 'Replacement of thermostat valve.', 90],
+                ['Cooling Fan Repair', 'Repair of cooling fan motor, relay, or wiring.', 90],
+                ['Hose Replacement', 'Replacement of damaged coolant hoses.', 60],
+                ['Overheating Diagnostics', 'Inspection to find the cause of overheating.', 60]
+            ]
+        ],
+        [
+            'name' => 'Air Conditioning Services',
+            'category' => 'Other',
+            'description' => 'Vehicle air conditioning cleaning, inspection, and repair services.',
+            'duration' => 90,
+            'subs' => [
+                ['AC Cleaning', 'Cleaning of air conditioning components.', 90],
+                ['AC Diagnostics', 'Inspection and diagnosis of AC cooling issues.', 60],
+                ['Refrigerant Recharge', 'Recharge of AC refrigerant.', 45],
+                ['Compressor Replacement', 'Replacement of AC compressor.', 180],
+                ['Condenser Repair', 'Repair of AC condenser leaks or damage.', 120],
+                ['Evaporator Cleaning', 'Cleaning of evaporator unit.', 120],
+                ['Cabin Cooling Inspection', 'Inspection of cabin cooling performance.', 45],
+                ['Blower Motor Repair', 'Repair or replacement of blower motor.', 90]
+            ]
+        ],
+        [
+            'name' => 'Tire & Wheel Services',
+            'category' => 'Other',
+            'description' => 'Tire, wheel, rim, balancing, alignment, and flat tire services.',
+            'duration' => 60,
+            'subs' => [
+                ['Tire Replacement', 'Removal and installation of replacement tires.', 45],
+                ['Tire Rotation', 'Rotation of tires for even wear.', 30],
+                ['Tire Balancing', 'Balancing of wheels and tires.', 45],
+                ['Wheel Alignment', 'Adjustment of wheel alignment angles.', 60],
+                ['Tire Vulcanizing', 'Repair of punctured tires through vulcanizing.', 30],
+                ['Flat Tire Repair', 'Inspection and repair of flat tire.', 30],
+                ['Wheel Bearing Replacement', 'Replacement of worn wheel bearings.', 120],
+                ['Rim Repair', 'Repair of bent or damaged rims.', 90]
+            ]
+        ],
+        [
+            'name' => 'Exhaust System Services',
+            'category' => 'Other',
+            'description' => 'Muffler, exhaust pipe, catalytic converter, and emission-related services.',
+            'duration' => 90,
+            'subs' => [
+                ['Muffler Repair', 'Repair or replacement of muffler components.', 90],
+                ['Exhaust Pipe Replacement', 'Replacement of damaged exhaust pipes.', 120],
+                ['Catalytic Converter Repair', 'Inspection and repair of catalytic converter issues.', 120],
+                ['Emission Testing', 'Testing of vehicle emission output.', 45],
+                ['Smoke Emission Repair', 'Repair services to reduce smoke emission.', 120],
+                ['Exhaust Leak Repair', 'Repair of leaks in the exhaust system.', 90]
+            ]
+        ],
+        [
+            'name' => 'Motorcycle Engine Services',
+            'category' => 'Engine',
+            'description' => 'Motorcycle and scooter engine maintenance and repair services.',
+            'duration' => 90,
+            'subs' => [
+                ['Carburetor Cleaning', 'Cleaning and adjustment of motorcycle carburetor.', 60],
+                ['Chain Adjustment', 'Adjustment of motorcycle chain tension.', 30],
+                ['Chain Replacement', 'Replacement of motorcycle drive chain.', 45],
+                ['Sprocket Replacement', 'Replacement of front or rear sprocket.', 60],
+                ['Motorcycle Tune-Up', 'General motorcycle engine tune-up.', 60],
+                ['Kick Starter Repair', 'Repair of kick starter mechanism.', 60],
+                ['CVT Cleaning', 'Cleaning of scooter CVT components.', 60],
+                ['Scooter Belt Replacement', 'Replacement of scooter drive belt.', 60]
+            ]
+        ],
+        [
+            'name' => 'Motorcycle Electrical',
+            'category' => 'Electrical',
+            'description' => 'Motorcycle electrical, lighting, charging, and ignition repairs.',
+            'duration' => 60,
+            'subs' => [
+                ['Motorcycle Battery Replacement', 'Testing and replacement of motorcycle battery.', 30],
+                ['Signal Light Repair', 'Repair of motorcycle signal lights.', 30],
+                ['CDI Replacement', 'Replacement of CDI ignition unit.', 45],
+                ['Stator Repair', 'Inspection and repair of stator charging component.', 90],
+                ['Regulator Rectifier Replacement', 'Replacement of regulator rectifier.', 60]
+            ]
+        ],
+        [
+            'name' => 'Heavy-Duty Truck Services',
+            'category' => 'Other',
+            'description' => 'Truck and fleet-focused heavy-duty repair and maintenance services.',
+            'duration' => 180,
+            'subs' => [
+                ['Air Brake Repair', 'Inspection and repair of truck air brake systems.', 180],
+                ['Differential Overhaul', 'Overhaul of heavy-duty differential assembly.', 360],
+                ['Trailer Electrical Repair', 'Repair of trailer wiring and lighting systems.', 120],
+                ['Hydraulic System Repair', 'Repair of truck hydraulic components.', 180],
+                ['Diesel Injection Repair', 'Repair of diesel injection system.', 240],
+                ['Turbo Diesel Diagnostics', 'Diagnostics for turbo diesel engine issues.', 90],
+                ['Suspension Leaf Spring Repair', 'Repair or replacement of leaf spring suspension.', 180],
+                ['Fleet Maintenance', 'Scheduled maintenance for trucks or fleet units.', 180]
+            ]
+        ],
+        [
+            'name' => 'Computerized Diagnostics',
+            'category' => 'Diagnostics',
+            'description' => 'Computer scanning and diagnostic services for modern vehicle systems.',
+            'duration' => 60,
+            'subs' => [
+                ['OBD Scanning', 'Scan vehicle trouble codes using OBD scanner.', 30],
+                ['Check Engine Diagnostics', 'Diagnosis for check engine warning light.', 60],
+                ['ABS Diagnostics', 'Diagnosis of ABS warning or brake sensor issues.', 60],
+                ['Transmission Diagnostics', 'Electronic diagnosis of transmission issues.', 60],
+                ['Electrical Diagnostics', 'Diagnosis of electrical system faults.', 60],
+                ['Sensor Diagnostics', 'Testing and diagnosis of faulty sensors.', 60]
+            ]
+        ],
+        [
+            'name' => 'Inspection & Testing',
+            'category' => 'Diagnostics',
+            'description' => 'Vehicle inspection and testing services for safety and condition checking.',
+            'duration' => 60,
+            'subs' => [
+                ['Pre-Purchase Inspection', 'Inspection before buying a used vehicle.', 90],
+                ['Road Testing', 'Road test to verify vehicle performance and issues.', 30],
+                ['Safety Inspection', 'Inspection of important safety components.', 60],
+                ['Emission Testing', 'Testing of exhaust emission output.', 45],
+                ['Battery Load Testing', 'Battery test under electrical load.', 20],
+                ['Engine Performance Testing', 'Testing of engine performance and condition.', 60]
+            ]
+        ],
+        [
+            'name' => 'Body Repair & Painting',
+            'category' => 'Other',
+            'description' => 'Vehicle body, paint, dent, collision, and exterior repair services.',
+            'duration' => 240,
+            'subs' => [
+                ['Dent Repair', 'Repair of minor dents and body damage.', 120],
+                ['Collision Repair', 'Body repair after collision damage.', 480],
+                ['Repainting', 'Vehicle panel or full body repainting.', 480],
+                ['Paint Retouch', 'Minor paint touch-up service.', 120],
+                ['Rust Removal', 'Removal and treatment of rusted body areas.', 180],
+                ['Bumper Repair', 'Repair of damaged bumpers.', 180],
+                ['Glass Replacement', 'Replacement of damaged automotive glass.', 180]
+            ]
+        ],
+        [
+            'name' => 'Auto Detailing',
+            'category' => 'Other',
+            'description' => 'Interior, exterior, wash, polishing, and cleaning services.',
+            'duration' => 120,
+            'subs' => [
+                ['Interior Detailing', 'Deep cleaning of vehicle interior.', 120],
+                ['Exterior Detailing', 'Cleaning and polishing of vehicle exterior.', 120],
+                ['Engine Wash', 'Cleaning of engine bay area.', 45],
+                ['Car Wash', 'Basic exterior car wash.', 30],
+                ['Ceramic Coating', 'Application of ceramic paint protection coating.', 240],
+                ['Waxing', 'Application of wax for paint protection and shine.', 60],
+                ['Vacuum Cleaning', 'Interior vacuum cleaning service.', 30]
+            ]
+        ],
+        [
+            'name' => 'Emergency & Roadside Services',
+            'category' => 'Other',
+            'description' => 'Roadside assistance and emergency support services.',
+            'duration' => 60,
+            'subs' => [
+                ['Towing', 'Vehicle towing assistance.', 60],
+                ['Battery Jump Start', 'Jump start service for discharged battery.', 30],
+                ['Emergency Tire Change', 'Roadside tire replacement service.', 30],
+                ['Fuel Delivery', 'Emergency fuel delivery assistance.', 45],
+                ['Lockout Assistance', 'Assistance for locked vehicle access.', 45]
+            ]
+        ]
+    ];
+
+    $findMainStmt = mysqli_prepare($conn, "SELECT service_id FROM services WHERE tenantID = ? AND service_type = 'Main' AND service_name = ? LIMIT 1");
+    $findSubStmt = mysqli_prepare($conn, "SELECT service_id FROM services WHERE tenantID = ? AND service_name = ? LIMIT 1");
+    $insertStmt = mysqli_prepare($conn, "INSERT INTO services (tenantID, parent_service_id, service_type, service_name, description, price, duration_minutes, category, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'Active')");
+
+    if (!$findMainStmt || !$findSubStmt || !$insertStmt) {
+        return;
+    }
+
+    foreach ($defaultServices as $main) {
+        $mainId = 0;
+        mysqli_stmt_bind_param($findMainStmt, 'is', $tenantID, $main['name']);
+        mysqli_stmt_execute($findMainStmt);
+        $mainResult = mysqli_stmt_get_result($findMainStmt);
+
+        if ($mainResult && $existingMain = mysqli_fetch_assoc($mainResult)) {
+            $mainId = (int) $existingMain['service_id'];
+        } else {
+            $parentId = null;
+            $serviceType = 'Main';
+            $price = 0.00;
+            $duration = (int) $main['duration'];
+            mysqli_stmt_bind_param($insertStmt, 'iisssdis', $tenantID, $parentId, $serviceType, $main['name'], $main['description'], $price, $duration, $main['category']);
+            try {
+                mysqli_stmt_execute($insertStmt);
+                $mainId = (int) mysqli_insert_id($conn);
+            } catch (mysqli_sql_exception $e) {
+                // Skip duplicate/default seed conflicts caused by UNIQUE indexes.
+                $mainId = 0;
+                mysqli_stmt_bind_param($findMainStmt, 'is', $tenantID, $main['name']);
+                mysqli_stmt_execute($findMainStmt);
+                $retryResult = mysqli_stmt_get_result($findMainStmt);
+                if ($retryResult && $retryMain = mysqli_fetch_assoc($retryResult)) {
+                    $mainId = (int) $retryMain['service_id'];
+                }
+            }
+        }
+
+        if ($mainId <= 0) {
+            continue;
+        }
+
+        foreach ($main['subs'] as $sub) {
+            $subName = $sub[0];
+            mysqli_stmt_bind_param($findSubStmt, 'is', $tenantID, $subName);
+            mysqli_stmt_execute($findSubStmt);
+            $subResult = mysqli_stmt_get_result($findSubStmt);
+
+            // Your database has a UNIQUE index on tenantID + service_name, so the same
+            // sub-service name cannot be inserted twice even under different main services.
+            if ($subResult && mysqli_fetch_assoc($subResult)) {
+                continue;
+            }
+
+            $serviceType = 'Sub';
+            $description = $sub[1];
+            $price = 0.00;
+            $duration = (int) $sub[2];
+            mysqli_stmt_bind_param($insertStmt, 'iisssdis', $tenantID, $mainId, $serviceType, $subName, $description, $price, $duration, $main['category']);
+
+            try {
+                mysqli_stmt_execute($insertStmt);
+            } catch (mysqli_sql_exception $e) {
+                // Safe fallback for duplicate service names that already exist for this tenant.
+                continue;
+            }
+        }
+    }
+
+    mysqli_stmt_close($findMainStmt);
+    mysqli_stmt_close($findSubStmt);
+    mysqli_stmt_close($insertStmt);
+}
+
+seedDefaultServices($conn, $tenantID);
+
 if (($_SESSION['userType'] ?? '') === 'owner') {
     $loggedInUserName = $_SESSION['shopName'] ?? 'Shop Owner';
     $loggedInUserRole = 'Administrator';
@@ -1706,16 +2078,23 @@ class ServiceManager {
                     </div>
 
                     <div>
-                        <div class="flex items-center justify-between mb-3">
-                            <h5 class="text-xs font-black text-slate-500 uppercase tracking-widest">Sub-Services inside this Main Service</h5>
+                        <div class="flex items-center justify-between gap-3 mb-3">
                             <button type="button"
-                                class="add-sub-under-main-btn text-xs font-bold text-primary hover:underline"
+                                class="subservices-toggle-btn flex items-center gap-2 text-left text-xs font-black text-slate-600 uppercase tracking-widest hover:text-primary transition-colors"
+                                data-target="subservices-${main.service_id}"
+                                aria-expanded="false">
+                                <span class="material-symbols-outlined text-base transition-transform duration-200">expand_more</span>
+                                <span>Show Sub-Services (${children.length})</span>
+                            </button>
+
+                            <button type="button"
+                                class="add-sub-under-main-btn text-xs font-bold text-primary hover:underline whitespace-nowrap"
                                 data-parent-id="${main.service_id}">
                                 + Add Sub-Service
                             </button>
                         </div>
 
-                        <div class="space-y-3">
+                        <div id="subservices-${main.service_id}" class="subservices-dropdown hidden space-y-3 pt-1">
                             ${subServicesHtml}
                         </div>
                     </div>
@@ -1756,6 +2135,32 @@ class ServiceManager {
         }
 
         this.container.innerHTML = html;
+
+        document.querySelectorAll('.subservices-toggle-btn').forEach(btn => {
+            btn.addEventListener('click', e => {
+                const toggleBtn = e.currentTarget;
+                const targetId = toggleBtn.getAttribute('data-target');
+                const dropdown = document.getElementById(targetId);
+                const icon = toggleBtn.querySelector('.material-symbols-outlined');
+                const label = toggleBtn.querySelector('span:last-child');
+
+                if (!dropdown) {
+                    return;
+                }
+
+                const isHidden = dropdown.classList.contains('hidden');
+                dropdown.classList.toggle('hidden', !isHidden);
+                toggleBtn.setAttribute('aria-expanded', isHidden ? 'true' : 'false');
+
+                if (icon) {
+                    icon.style.transform = isHidden ? 'rotate(180deg)' : 'rotate(0deg)';
+                }
+
+                if (label) {
+                    label.textContent = label.textContent.replace(isHidden ? 'Show' : 'Hide', isHidden ? 'Hide' : 'Show');
+                }
+            });
+        });
 
         document.querySelectorAll('.edit-btn').forEach(btn => {
             btn.addEventListener('click', e => {
@@ -1815,7 +2220,21 @@ class ServiceManager {
     }
 
     async deleteService(serviceId) {
-        if (!confirm('Are you sure you want to delete this service? If this is a main service with sub-services, delete or move the sub-services first.')) {
+        const service = this.services.find(item => String(item.service_id) === String(serviceId));
+        const isMain = service && service.service_type === 'Main';
+        const childCount = isMain
+            ? this.services.filter(item => String(item.parent_service_id) === String(serviceId)).length
+            : 0;
+
+        let message = 'Are you sure you want to delete this sub-service?';
+
+        if (isMain) {
+            message = childCount > 0
+                ? 'Are you sure you want to delete this main service? This will also delete ' + childCount + ' sub-service(s) under it.'
+                : 'Are you sure you want to delete this main service?';
+        }
+
+        if (!confirm(message)) {
             return;
         }
 

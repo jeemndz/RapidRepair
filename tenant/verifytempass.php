@@ -11,6 +11,13 @@ if (!isset($_SESSION['tenantID']) || !isset($_SESSION['temp_pass']) || !isset($_
 $tenantID = $_SESSION['tenantID'];
 $error = "";
 
+// Fetch shop name
+$shopName = "RapidRepairCo.";
+$shopQuery = mysqli_query($conn, "SELECT shopName FROM owners WHERE tenantID='$tenantID' LIMIT 1");
+if ($shopQuery && $shopRow = mysqli_fetch_assoc($shopQuery)) {
+    $shopName = $shopRow['shopName'] ?? "AutoFix Portal";
+}
+
 // Handle code verification
 if (isset($_POST['verify'])) {
     $input_code = preg_replace('/\D/', '', (string) ($_POST['verification_code'] ?? ''));
@@ -78,7 +85,7 @@ if (isset($_POST['verify'])) {
                 <div class="flex items-center justify-center size-10 bg-primary rounded-lg text-white">
                     <span class="material-symbols-outlined">car_repair</span>
                 </div>
-                <h2 class="text-slate-900 dark:text-white text-lg font-bold">AutoFix Portal</h2>
+                <h2 class="text-slate-900 dark:text-white text-lg font-bold"><?= htmlspecialchars($shopName) ?></h2>
             </div>
         </header>
 

@@ -294,18 +294,31 @@ $qrCodeUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=' . 
                 </div>
             </a>
             <div class="hidden md:flex items-center space-x-8 font-['Inter'] tracking-tight text-sm font-medium">
-                <a class="text-[#0F4B3C] border-b-2 border-[#0F4B3C] pb-1" href="#home">Home</a>
-                <a class="text-slate-600 hover:text-[#0F4B3C] transition-colors" href="#services">Services</a>
-                <a class="text-slate-600 hover:text-[#0F4B3C] transition-colors" href="#mobile-app">Mobile App</a>
-                <a class="text-slate-600 hover:text-[#0F4B3C] transition-colors" href="#about">About</a>
+                <a data-nav-link class="nav-link text-[#0F4B3C] border-b-2 border-[#0F4B3C] pb-1 transition-colors" href="#home">Home</a>
+                <a data-nav-link class="nav-link text-slate-600 border-b-2 border-transparent pb-1 hover:text-[#0F4B3C] transition-colors" href="#services">Services</a>
+                <a data-nav-link class="nav-link text-slate-600 border-b-2 border-transparent pb-1 hover:text-[#0F4B3C] transition-colors" href="#mobile-app">Mobile App</a>
+                <a data-nav-link class="nav-link text-slate-600 border-b-2 border-transparent pb-1 hover:text-[#0F4B3C] transition-colors" href="#about">About</a>
+                <a data-nav-link class="nav-link text-slate-600 border-b-2 border-transparent pb-1 hover:text-[#0F4B3C] transition-colors" href="#contact">Contact</a>
             </div>
-            <div class="flex items-center gap-4">
+            <div class="flex items-center gap-3">
                 <a href="#about"
-                    class="inline-flex items-center bg-primary text-on-primary px-5 py-2 lg rounded-lg font-semibold text-sm transition-all active:opacity-80 active:scale-[0.98] hover:opacity-90">
+                    class="hidden sm:inline-flex items-center bg-primary text-on-primary px-5 py-2 lg rounded-lg font-semibold text-sm transition-all active:opacity-80 active:scale-[0.98] hover:opacity-90">
                     Learn More
                 </a>
+                <button id="mobileMenuButton" type="button" class="md:hidden inline-flex items-center justify-center w-10 h-10 rounded-lg border border-slate-200 text-[#0F4B3C] bg-white hover:bg-slate-50" aria-label="Open navigation menu" aria-expanded="false">
+                    <span class="material-symbols-outlined">menu</span>
+                </button>
             </div>
         </nav>
+        <div id="mobileMenu" class="md:hidden hidden border-t border-slate-200 bg-white px-6 py-4 shadow-sm">
+            <div class="flex flex-col gap-3 text-sm font-semibold">
+                <a data-nav-link class="nav-link text-[#0F4B3C] border-l-4 border-[#0F4B3C] pl-3 py-2 transition-colors" href="#home">Home</a>
+                <a data-nav-link class="nav-link text-slate-600 border-l-4 border-transparent pl-3 py-2 hover:text-[#0F4B3C] transition-colors" href="#services">Services</a>
+                <a data-nav-link class="nav-link text-slate-600 border-l-4 border-transparent pl-3 py-2 hover:text-[#0F4B3C] transition-colors" href="#mobile-app">Mobile App</a>
+                <a data-nav-link class="nav-link text-slate-600 border-l-4 border-transparent pl-3 py-2 hover:text-[#0F4B3C] transition-colors" href="#about">About</a>
+                <a data-nav-link class="nav-link text-slate-600 border-l-4 border-transparent pl-3 py-2 hover:text-[#0F4B3C] transition-colors" href="#contact">Contact</a>
+            </div>
+        </div>
     </header>
     <main class="pt-16">
         <section id="home" class="relative w-full overflow-hidden bg-[#1A2A2A] py-24 md:py-32 scroll-mt-20">
@@ -720,7 +733,7 @@ $qrCodeUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=' . 
                 </div>
             </div>
         </section>
-        <section id="services" class="py-24 max-w-7xl mx-auto px-6 md:px-12 scroll-mt-20">
+        <section id="contact" class="py-24 max-w-7xl mx-auto px-6 md:px-12 scroll-mt-20">
             <div class="bg-[#1A2A2A] rounded-xl p-12 md:p-24 text-center overflow-hidden relative">
                 <div
                     class="absolute inset-0 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-primary/20 via-transparent to-transparent">
@@ -769,6 +782,97 @@ $qrCodeUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=' . 
             </div>
         </div>
     </footer>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            const navLinks = Array.from(document.querySelectorAll('[data-nav-link]'));
+            const mobileMenu = document.getElementById('mobileMenu');
+            const mobileMenuButton = document.getElementById('mobileMenuButton');
+            const sections = navLinks
+                .map(link => document.querySelector(link.getAttribute('href')))
+                .filter(Boolean);
+
+            function setActiveNav(sectionId) {
+                navLinks.forEach(link => {
+                    const isActive = link.getAttribute('href') === '#' + sectionId;
+
+                    link.classList.toggle('text-[#0F4B3C]', isActive);
+                    link.classList.toggle('text-slate-600', !isActive);
+
+                    if (link.classList.contains('border-b-2')) {
+                        link.classList.toggle('border-[#0F4B3C]', isActive);
+                        link.classList.toggle('border-transparent', !isActive);
+                    }
+
+                    if (link.classList.contains('border-l-4')) {
+                        link.classList.toggle('border-[#0F4B3C]', isActive);
+                        link.classList.toggle('border-transparent', !isActive);
+                    }
+                });
+            }
+
+            function scrollToSection(targetId) {
+                const target = document.querySelector(targetId);
+                if (!target) return;
+
+                const headerOffset = 72;
+                const targetPosition = target.getBoundingClientRect().top + window.pageYOffset - headerOffset;
+
+                window.scrollTo({
+                    top: targetPosition,
+                    behavior: 'smooth'
+                });
+            }
+
+            navLinks.forEach(link => {
+                link.addEventListener('click', function (event) {
+                    const targetId = this.getAttribute('href');
+                    if (!targetId || !targetId.startsWith('#')) return;
+
+                    event.preventDefault();
+                    scrollToSection(targetId);
+                    setActiveNav(targetId.substring(1));
+                    history.replaceState(null, '', targetId);
+
+                    if (mobileMenu && mobileMenuButton) {
+                        mobileMenu.classList.add('hidden');
+                        mobileMenuButton.setAttribute('aria-expanded', 'false');
+                    }
+                });
+            });
+
+            if (mobileMenuButton && mobileMenu) {
+                mobileMenuButton.addEventListener('click', function () {
+                    const isHidden = mobileMenu.classList.toggle('hidden');
+                    mobileMenuButton.setAttribute('aria-expanded', String(!isHidden));
+                });
+            }
+
+            const observer = new IntersectionObserver((entries) => {
+                const visibleEntry = entries
+                    .filter(entry => entry.isIntersecting)
+                    .sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
+
+                if (visibleEntry && visibleEntry.target.id) {
+                    setActiveNav(visibleEntry.target.id);
+                }
+            }, {
+                root: null,
+                rootMargin: '-90px 0px -55% 0px',
+                threshold: [0.15, 0.35, 0.6]
+            });
+
+            sections.forEach(section => observer.observe(section));
+
+            if (window.location.hash && document.querySelector(window.location.hash)) {
+                setTimeout(() => scrollToSection(window.location.hash), 100);
+                setActiveNav(window.location.hash.substring(1));
+            } else {
+                setActiveNav('home');
+            }
+        });
+    </script>
+
 </body>
 
 </html>
