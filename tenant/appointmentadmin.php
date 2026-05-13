@@ -189,7 +189,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_review'])) {
     if ($actionError === '') {
         $validTechnicianStmt = mysqli_prepare(
             $conn,
-            "SELECT username FROM roles WHERE tenantID = ? AND username = ? AND is_active = 1 AND status = 'Active' LIMIT 1"
+            "SELECT username
+             FROM roles
+             WHERE tenantID = ?
+               AND username = ?
+               AND is_active = 1
+               AND status = 'Active'
+               AND LOWER(TRIM(role_name)) NOT IN (
+                    'office staff',
+                    'office admin',
+                    'front desk',
+                    'front desk staff',
+                    'receptionist',
+                    'cashier',
+                    'billing staff',
+                    'service advisor',
+                    'manager',
+                    'admin',
+                    'administrator'
+               )
+             LIMIT 1"
         );
 
         if (!$validTechnicianStmt) {
@@ -842,12 +861,25 @@ sort($availableBays);
 $technicianOptions = [];
 $technicianStmt = mysqli_prepare(
     $conn,
-    "SELECT role_id, username, email
+    "SELECT role_id, username, first_name, last_name, role_name
      FROM roles
      WHERE tenantID = ?
        AND is_active = 1
        AND status = 'Active'
-     ORDER BY username ASC"
+       AND LOWER(TRIM(role_name)) NOT IN (
+            'office staff',
+            'office admin',
+            'front desk',
+            'front desk staff',
+            'receptionist',
+            'cashier',
+            'billing staff',
+            'service advisor',
+            'manager',
+            'admin',
+            'administrator'
+       )
+     ORDER BY first_name ASC, last_name ASC, username ASC"
 );
 if ($technicianStmt) {
     mysqli_stmt_bind_param($technicianStmt, 'i', $tenantID);
@@ -1669,11 +1701,13 @@ if ($historyStmt) {
                                 <select name="assigned_technician" class="mt-1 w-full rounded-lg border-slate-300 text-sm" required>
                                     <option value="">Select technician</option>
                                     <?php foreach ($technicianOptions as $technicianOption): ?>
-                                        <option value="<?php echo h($technicianOption['username']); ?>" <?php echo $reviewForm['assigned_technician'] === $technicianOption['username'] ? 'selected' : ''; ?>>
-                                            <?php echo h($technicianOption['username']); ?>
-                                            <?php if (!empty($technicianOption['email'])): ?>
-                                                (<?php echo h($technicianOption['email']); ?>)
-                                            <?php endif; ?>
+                                        <?php
+                                            $technicianFullName = trim(((string) ($technicianOption['first_name'] ?? '')) . ' ' . ((string) ($technicianOption['last_name'] ?? '')));
+                                            $technicianLabel = $technicianFullName !== '' ? $technicianFullName : (string) ($technicianOption['username'] ?? '');
+                                            $technicianRole = trim((string) ($technicianOption['role_name'] ?? ''));
+                                        ?>
+                                        <option value="<?php echo h($technicianOption['username'] ?? ''); ?>" <?php echo ($reviewForm['assigned_technician'] ?? '') === ($technicianOption['username'] ?? '') ? 'selected' : ''; ?>>
+                                            <?php echo h(($technicianRole !== '' ? $technicianRole : 'Technician') . ' - ' . ($technicianLabel !== '' ? $technicianLabel : 'Unnamed Staff')); ?>
                                         </option>
                                     <?php endforeach; ?>
                                 </select>
