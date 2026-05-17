@@ -17,6 +17,84 @@ enforceModuleAccess($tenantID, basename(__FILE__));
 $accessibleModules = getAccessibleModules($tenantID);
 $isStaffUser = isset($_SESSION['userType']) && $_SESSION['userType'] === 'staff';
 
+
+// Staff job visibility control:
+// If a logged-in staff account is a technical role, show only repair jobs assigned to that staff username.
+// Owners/admin/front-office roles can still view all repair jobs depending on their module access.
+$loggedInStaffUsername = '';
+$loggedInStaffRoleName = '';
+$limitJobsToAssignedTechnician = false;
+$assignedTechnicianFilterRj = '';
+$assignedTechnicianFilterPlain = '';
+$assignedAppointmentExistsFilter = '';
+
+if ($isStaffUser) {
+    $usernameCandidates = [
+        $_SESSION['username'] ?? '',
+        $_SESSION['staffUsername'] ?? '',
+        $_SESSION['staff_username'] ?? '',
+        $_SESSION['userName'] ?? '',
+        $_SESSION['email'] ?? '',
+    ];
+
+    foreach ($usernameCandidates as $candidate) {
+        $candidate = trim((string) $candidate);
+        if ($candidate === '') {
+            continue;
+        }
+
+        $staffLookupStmt = mysqli_prepare(
+            $conn,
+            'SELECT username, role_name
+             FROM roles
+             WHERE tenantID = ?
+               AND is_active = 1
+               AND status = "Active"
+               AND (username = ? OR email = ?)
+             LIMIT 1'
+        );
+
+        if ($staffLookupStmt) {
+            mysqli_stmt_bind_param($staffLookupStmt, 'iss', $tenantID, $candidate, $candidate);
+            mysqli_stmt_execute($staffLookupStmt);
+            $staffLookupResult = mysqli_stmt_get_result($staffLookupStmt);
+            $staffLookupRow = $staffLookupResult ? mysqli_fetch_assoc($staffLookupResult) : null;
+            mysqli_stmt_close($staffLookupStmt);
+
+            if ($staffLookupRow) {
+                $loggedInStaffUsername = trim((string) ($staffLookupRow['username'] ?? ''));
+                $loggedInStaffRoleName = trim((string) ($staffLookupRow['role_name'] ?? ''));
+                break;
+            }
+        }
+    }
+
+    $nonTechnicianRoles = [
+        'office staff',
+        'office admin',
+        'front desk',
+        'front desk staff',
+        'receptionist',
+        'cashier',
+        'billing staff',
+        'service advisor',
+        'manager',
+        'admin',
+        'administrator',
+    ];
+
+    $staffRoleLower = strtolower(trim($loggedInStaffRoleName));
+    $isTechnicalStaff = $loggedInStaffUsername !== '' && $staffRoleLower !== '' && !in_array($staffRoleLower, $nonTechnicianRoles, true);
+
+    if ($isTechnicalStaff) {
+        $limitJobsToAssignedTechnician = true;
+        $safeAssignedTechnician = mysqli_real_escape_string($conn, $loggedInStaffUsername);
+        $assignedTechnicianFilterRj = " AND rj.assigned_technician = '" . $safeAssignedTechnician . "'";
+        $assignedTechnicianFilterPlain = " AND assigned_technician = '" . $safeAssignedTechnician . "'";
+        $assignedAppointmentExistsFilter = " AND EXISTS (SELECT 1 FROM repair_jobs rj_assigned WHERE rj_assigned.appointment_id = a.appointment_id AND rj_assigned.tenantID = a.tenantID AND rj_assigned.assigned_technician = '" . $safeAssignedTechnician . "')";
+    }
+}
+
 function canAccessModule($moduleFile, $accessibleModules) {
     return in_array($moduleFile, $accessibleModules, true);
 }
@@ -69,6 +147,7 @@ if (empty($_SESSION['repairjobs_csrf'])) {
     $_SESSION['repairjobs_csrf'] = bin2hex(random_bytes(16));
 }
 $csrfToken = $_SESSION['repairjobs_csrf'];
+
 
 $jobStatuses = ['Queued', 'In Progress', 'Diagnostics', 'Waiting for Parts', 'Quality Check', 'Ready for Pickup', 'Completed', 'Cancelled'];
 $serviceStatuses = ['Pending', 'In Progress', 'Paused', 'Completed', 'Cancelled'];
@@ -365,6 +444,8 @@ if (isset($_GET['msg'])) {
         $messageType = 'error';
     }
 }
+
+
 
 /**
  * POST: Start repair now
@@ -1470,40 +1551,6 @@ if ($startDueJobsStmt) {
 }
 
 /**
- * Lightweight polling endpoint for auto-refresh.
- * The page reloads only when the active repair-jobs signature changes.
- */
-if (isset($_GET['ajax']) && $_GET['ajax'] === 'repair_job_count') {
-    header('Content-Type: application/json');
-
-    $signature = '0|0|';
-    $countStmt = mysqli_prepare(
-        $conn,
-        "SELECT COUNT(*) AS total_active,
-                COALESCE(MAX(repair_job_id), 0) AS latest_id,
-                COALESCE(MAX(updated_at), '') AS latest_update
-         FROM repair_jobs
-         WHERE tenantID = ?
-           AND job_status IN ('Queued', 'In Progress', 'Diagnostics', 'Waiting for Parts', 'Quality Check', 'Ready for Pickup')"
-    );
-
-    if ($countStmt) {
-        mysqli_stmt_bind_param($countStmt, 'i', $tenantID);
-        mysqli_stmt_execute($countStmt);
-        $countResult = mysqli_stmt_get_result($countStmt);
-        if ($countResult && $countRow = mysqli_fetch_assoc($countResult)) {
-            $signature = (int) ($countRow['total_active'] ?? 0) . '|' .
-                         (int) ($countRow['latest_id'] ?? 0) . '|' .
-                         (string) ($countRow['latest_update'] ?? '');
-        }
-        mysqli_stmt_close($countStmt);
-    }
-
-    echo json_encode(['signature' => $signature]);
-    exit;
-}
-
-/**
  * Modal state: Parts completion
  */
 $showPartsModal = false;
@@ -1523,7 +1570,7 @@ if (isset($_GET['show_parts_modal'])) {
              LEFT JOIN appointments a ON a.appointment_id = rj.appointment_id AND a.tenantID = rj.tenantID
     LEFT JOIN users u ON u.user_id = rj.user_id
              LEFT JOIN vehicleinformation v ON v.vehicle_id = rj.vehicle_id AND v.tenantID = rj.tenantID
-             WHERE rj.repair_job_id = ? AND rj.tenantID = ? LIMIT 1'
+             WHERE rj.repair_job_id = ? AND rj.tenantID = ?' . $assignedTechnicianFilterRj . ' LIMIT 1'
         );
 
         if ($jobDetailsStmt) {
@@ -1715,7 +1762,8 @@ $statsStmt = mysqli_prepare(
               AND dr.diagnosis_status = 'Submitted'
         ) AS for_approval
      FROM repair_jobs rj
-     WHERE rj.tenantID = ?"
+     WHERE rj.tenantID = ?
+       {$assignedTechnicianFilterRj}"
 );
 
 if ($statsStmt) {
@@ -1756,6 +1804,7 @@ $newRepairJobsStmt = mysqli_prepare(
     "SELECT COUNT(*) AS total
      FROM repair_jobs rj
      WHERE rj.tenantID = ?
+       {$assignedTechnicianFilterRj}
        AND rj.check_in_time >= CURDATE()
        AND rj.job_status IN ('Queued', 'In Progress', 'Diagnostics')"
 );
@@ -1839,6 +1888,11 @@ $avgCycleHours = $stats['avg_cycle_minutes'] > 0 ? $stats['avg_cycle_minutes'] /
 
 $searchLike = '%' . $search . '%';
 $recordsPerPage = 5;
+$calendarDateFilter = isset($_GET['calendar_date']) ? trim((string) $_GET['calendar_date']) : '';
+$calendarDateObj = $calendarDateFilter !== '' ? DateTime::createFromFormat('Y-m-d', $calendarDateFilter) : false;
+if (!$calendarDateObj || $calendarDateObj->format('Y-m-d') !== $calendarDateFilter) {
+    $calendarDateFilter = '';
+}
 $upcomingPage = max(1, (int) ($_GET['upcoming_page'] ?? 1));
 $jobsPage = max(1, (int) ($_GET['jobs_page'] ?? 1));
 $diagnosticsPage = max(1, (int) ($_GET['diagnostics_page'] ?? 1));
@@ -1915,6 +1969,7 @@ $upcomingCountStmt = mysqli_prepare(
     "SELECT COUNT(*) AS total_rows
      FROM appointments a
      WHERE a.tenantID = ?
+       {$assignedAppointmentExistsFilter}
        AND a.status IN ('Pending', 'Confirmed', 'For Diagnosis', 'Diagnosing', 'For Approval', 'In Progress')
        AND (a.appointment_date > CURDATE() OR (a.appointment_date = CURDATE() AND a.appointment_time >= CURTIME()))
        AND NOT EXISTS (
@@ -1958,6 +2013,7 @@ $upcomingStmt = mysqli_prepare(
      LEFT JOIN users u ON u.user_id = a.user_id
      LEFT JOIN vehicleinformation v ON v.vehicle_id = a.vehicle_id AND v.tenantID = a.tenantID
      WHERE a.tenantID = ?
+       {$assignedAppointmentExistsFilter}
        AND a.status IN ('Pending', 'Confirmed', 'For Diagnosis', 'Diagnosing', 'For Approval', 'In Progress')
        AND (a.appointment_date > CURDATE() OR (a.appointment_date = CURDATE() AND a.appointment_time >= CURTIME()))
        AND NOT EXISTS (
@@ -1982,6 +2038,61 @@ if ($upcomingStmt) {
 }
 
 /**
+ * Appointment calendar
+ */
+$calendarMonth = isset($_GET['calendar_month']) ? trim((string) $_GET['calendar_month']) : date('Y-m');
+if (!preg_match('/^\d{4}-\d{2}$/', $calendarMonth)) {
+    $calendarMonth = date('Y-m');
+}
+$calendarFirstDateObj = DateTime::createFromFormat('Y-m-d', $calendarMonth . '-01');
+if (!$calendarFirstDateObj) {
+    $calendarFirstDateObj = new DateTime('first day of this month');
+    $calendarMonth = $calendarFirstDateObj->format('Y-m');
+}
+$calendarStartDate = $calendarFirstDateObj->format('Y-m-01');
+$calendarEndDate = $calendarFirstDateObj->format('Y-m-t');
+$calendarMonthLabel = $calendarFirstDateObj->format('F Y');
+$calendarPrevMonth = (clone $calendarFirstDateObj)->modify('-1 month')->format('Y-m');
+$calendarNextMonth = (clone $calendarFirstDateObj)->modify('+1 month')->format('Y-m');
+$calendarDaysInMonth = (int) $calendarFirstDateObj->format('t');
+$calendarFirstWeekday = (int) $calendarFirstDateObj->format('N');
+$calendarAppointmentsByDate = [];
+
+$calendarStmt = mysqli_prepare(
+    $conn,
+    "SELECT
+        a.appointment_date,
+        COUNT(DISTINCT rj.repair_job_id) AS total_jobs,
+        SUM(CASE WHEN rj.job_status IN ('Queued', 'In Progress', 'Diagnostics', 'Waiting for Parts', 'Quality Check', 'Ready for Pickup') THEN 1 ELSE 0 END) AS active_jobs,
+        SUM(CASE WHEN rj.job_status = 'Completed' THEN 1 ELSE 0 END) AS completed_jobs,
+        SUM(CASE WHEN rj.job_status = 'Cancelled' THEN 1 ELSE 0 END) AS cancelled_jobs
+     FROM repair_jobs rj
+     INNER JOIN appointments a ON a.appointment_id = rj.appointment_id AND a.tenantID = rj.tenantID
+     WHERE rj.tenantID = ?
+       {$assignedTechnicianFilterRj}
+       AND a.appointment_date BETWEEN ? AND ?
+     GROUP BY a.appointment_date"
+);
+if ($calendarStmt) {
+    mysqli_stmt_bind_param($calendarStmt, 'iss', $tenantID, $calendarStartDate, $calendarEndDate);
+    mysqli_stmt_execute($calendarStmt);
+    $calendarResult = mysqli_stmt_get_result($calendarStmt);
+    while ($calendarResult && $calendarRow = mysqli_fetch_assoc($calendarResult)) {
+        $dateKey = (string) ($calendarRow['appointment_date'] ?? '');
+        if ($dateKey !== '') {
+            $calendarAppointmentsByDate[$dateKey] = [
+                'total' => (int) ($calendarRow['total_jobs'] ?? 0),
+                'active' => (int) ($calendarRow['active_jobs'] ?? 0),
+                'completed' => (int) ($calendarRow['completed_jobs'] ?? 0),
+                'cancelled' => (int) ($calendarRow['cancelled_jobs'] ?? 0),
+            ];
+        }
+    }
+    mysqli_stmt_close($calendarStmt);
+}
+
+
+/**
  * Active repair jobs
  */
 $jobRows = [];
@@ -1991,21 +2102,24 @@ $jobsOffset = 0;
 
 $jobsCountSql = "SELECT COUNT(DISTINCT rj.repair_job_id) AS total_rows
     FROM repair_jobs rj
+    LEFT JOIN appointments a ON a.appointment_id = rj.appointment_id AND a.tenantID = rj.tenantID
     LEFT JOIN users u ON u.user_id = rj.user_id
     LEFT JOIN vehicleinformation v ON v.vehicle_id = rj.vehicle_id AND v.tenantID = rj.tenantID
     LEFT JOIN repair_job_services rjs ON rjs.repair_job_id = rj.repair_job_id AND rjs.tenantID = rj.tenantID
     WHERE rj.tenantID = ?
+      {$assignedTechnicianFilterRj}
       AND rj.job_status IN ('Queued', 'In Progress', 'Diagnostics', 'Waiting for Parts', 'Quality Check', 'Ready for Pickup')
       AND (? = 'All' OR rj.job_status = ?)
       AND (? = 'All' OR rj.priority = ?)
       AND (? = 'All' OR rjs.service_status = ?)
+      AND (? = '' OR a.appointment_date = ?)
       AND (? = '' OR rj.job_order_no LIKE ? OR u.fullName LIKE ? OR v.brand LIKE ? OR v.model LIKE ? OR rj.assigned_technician LIKE ?)";
 
 $jobsCountStmt = mysqli_prepare($conn, $jobsCountSql);
 if ($jobsCountStmt) {
     mysqli_stmt_bind_param(
         $jobsCountStmt,
-        'issssssssssss',
+        'issssssssssssss',
         $tenantID,
         $jobStatusFilter,
         $jobStatusFilter,
@@ -2013,6 +2127,8 @@ if ($jobsCountStmt) {
         $priorityFilter,
         $serviceStatusFilter,
         $serviceStatusFilter,
+        $calendarDateFilter,
+        $calendarDateFilter,
         $search,
         $searchLike,
         $searchLike,
@@ -2066,10 +2182,12 @@ $jobsSql = "SELECT
     LEFT JOIN services s ON s.service_id = rjs.service_id AND s.tenantID = rj.tenantID
     LEFT JOIN diagnostic_reports dr ON dr.repair_job_id = rj.repair_job_id AND dr.tenantID = rj.tenantID
     WHERE rj.tenantID = ?
+      {$assignedTechnicianFilterRj}
       AND rj.job_status IN ('Queued', 'In Progress', 'Diagnostics', 'Waiting for Parts', 'Quality Check', 'Ready for Pickup')
       AND (? = 'All' OR rj.job_status = ?)
       AND (? = 'All' OR rj.priority = ?)
       AND (? = 'All' OR rjs.service_status = ?)
+      AND (? = '' OR a.appointment_date = ?)
       AND (? = '' OR rj.job_order_no LIKE ? OR u.fullName LIKE ? OR v.brand LIKE ? OR v.model LIKE ? OR rj.assigned_technician LIKE ?)
     GROUP BY
         rj.repair_job_id,
@@ -2099,7 +2217,7 @@ $jobsStmt = mysqli_prepare($conn, $jobsSql);
 if ($jobsStmt) {
     mysqli_stmt_bind_param(
         $jobsStmt,
-        'issssssssssssii',
+        'issssssssssssssii',
         $tenantID,
         $jobStatusFilter,
         $jobStatusFilter,
@@ -2107,6 +2225,8 @@ if ($jobsStmt) {
         $priorityFilter,
         $serviceStatusFilter,
         $serviceStatusFilter,
+        $calendarDateFilter,
+        $calendarDateFilter,
         $search,
         $searchLike,
         $searchLike,
@@ -2264,6 +2384,7 @@ $historyStmt = mysqli_prepare(
      LEFT JOIN repair_job_services rjs ON rjs.repair_job_id = rj.repair_job_id AND rjs.tenantID = rj.tenantID
      LEFT JOIN services s ON s.service_id = rjs.service_id AND s.tenantID = rj.tenantID
      WHERE rj.tenantID = ?
+       {$assignedTechnicianFilterRj}
        AND rj.job_status IN ('Completed', 'Cancelled')
      GROUP BY
         rj.repair_job_id,
@@ -2297,27 +2418,6 @@ if ($historyStmt) {
     mysqli_stmt_close($historyStmt);
 }
 
-$activeJobsSignature = count($jobRows) . '|0|';
-$activeSignatureStmt = mysqli_prepare(
-    $conn,
-    "SELECT COUNT(*) AS total_active,
-            COALESCE(MAX(repair_job_id), 0) AS latest_id,
-            COALESCE(MAX(updated_at), '') AS latest_update
-     FROM repair_jobs
-     WHERE tenantID = ?
-       AND job_status IN ('Queued', 'In Progress', 'Diagnostics', 'Waiting for Parts', 'Quality Check', 'Ready for Pickup')"
-);
-if ($activeSignatureStmt) {
-    mysqli_stmt_bind_param($activeSignatureStmt, 'i', $tenantID);
-    mysqli_stmt_execute($activeSignatureStmt);
-    $activeSignatureResult = mysqli_stmt_get_result($activeSignatureStmt);
-    if ($activeSignatureResult && $activeSignatureRow = mysqli_fetch_assoc($activeSignatureResult)) {
-        $activeJobsSignature = (int) ($activeSignatureRow['total_active'] ?? 0) . '|' .
-                               (int) ($activeSignatureRow['latest_id'] ?? 0) . '|' .
-                               (string) ($activeSignatureRow['latest_update'] ?? '');
-    }
-    mysqli_stmt_close($activeSignatureStmt);
-}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -2564,137 +2664,8 @@ if ($activeSignatureStmt) {
                 </div>
             </div>
 
-            <section class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden mb-8">
-                <div class="px-6 py-5 border-b border-slate-100 flex items-center justify-between gap-3">
-                    <div>
-                        <h3 class="text-lg font-bold text-slate-900">Upcoming Appointments</h3>
-                        <p class="text-xs text-slate-500 font-medium">Pending, confirmed, diagnostic, approval, and in-progress appointments.</p>
-                    </div>
-                    <div class="flex items-center gap-2">
-                        <form method="get" class="flex items-center gap-2">
-                            <input type="hidden" name="shop" value="<?php echo h($loginSlug); ?>">
-                            <input type="hidden" name="q" value="<?php echo h($search); ?>">
-                            <input type="hidden" name="job_status" value="<?php echo h($jobStatusFilter); ?>">
-                            <input type="hidden" name="service_status" value="<?php echo h($serviceStatusFilter); ?>">
-                            <input type="hidden" name="priority" value="<?php echo h($priorityFilter); ?>">
-                            <input type="hidden" name="jobs_sort_by" value="<?php echo h($jobsSortBy); ?>">
-                            <input type="hidden" name="jobs_sort_dir" value="<?php echo h($jobsSortDir); ?>">
-                            <input type="hidden" name="diagnostics_sort_by" value="<?php echo h($diagnosticsSortBy); ?>">
-                            <input type="hidden" name="diagnostics_sort_dir" value="<?php echo h($diagnosticsSortDir); ?>">
-                            <select name="upcoming_sort_by" class="rounded-lg border-slate-300 text-xs min-w-[150px]">
-                                <option value="appointment_id" <?php echo $upcomingSortBy === 'appointment_id' ? 'selected' : ''; ?>>Sort: Appointment ID</option>
-                                <option value="appointment_date" <?php echo $upcomingSortBy === 'appointment_date' ? 'selected' : ''; ?>>Sort: Date</option>
-                                <option value="appointment_time" <?php echo $upcomingSortBy === 'appointment_time' ? 'selected' : ''; ?>>Sort: Time</option>
-                                <option value="status" <?php echo $upcomingSortBy === 'status' ? 'selected' : ''; ?>>Sort: Status</option>
-                                <option value="total_amount" <?php echo $upcomingSortBy === 'total_amount' ? 'selected' : ''; ?>>Sort: Amount</option>
-                            </select>
-                            <select name="upcoming_sort_dir" class="rounded-lg border-slate-300 text-xs min-w-[110px]">
-                                <option value="DESC" <?php echo $upcomingSortDir === 'DESC' ? 'selected' : ''; ?>>Descending</option>
-                                <option value="ASC" <?php echo $upcomingSortDir === 'ASC' ? 'selected' : ''; ?>>Ascending</option>
-                            </select>
-                            <button type="submit" class="px-3 py-2 rounded-lg border border-slate-300 bg-white text-xs font-semibold text-slate-700 hover:bg-slate-100">Apply</button>
-                        </form>
-                        <a href="appointmentadmin.php?shop=<?php echo h($shopQuery); ?>" class="text-xs font-semibold text-blue-700 hover:underline">Open Appointments Page</a>
-                    </div>
-                </div>
-
-                <div class="overflow-x-auto">
-                    <table class="w-full text-left">
-                        <thead>
-                        <tr class="bg-slate-50/50">
-                            <th class="px-6 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">Appointment</th>
-                            <th class="px-6 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">Customer</th>
-                            <th class="px-6 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">Vehicle</th>
-                            <th class="px-6 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">Date / Time</th>
-                            <th class="px-6 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">Status</th>
-                            <th class="px-6 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">Amount</th>
-                        </tr>
-                        </thead>
-                        <tbody class="divide-y divide-slate-100">
-                        <?php if (count($upcomingAppointments) === 0): ?>
-                            <tr>
-                                <td colspan="6" class="px-6 py-10 text-center text-sm text-slate-500">No upcoming appointments found.</td>
-                            </tr>
-                        <?php else: ?>
-                            <?php foreach ($upcomingAppointments as $appointment): ?>
-                                <?php
-                                $vehicleText = trim((string) ($appointment['vehicle_name'] ?? ''));
-                                if ($vehicleText === '') $vehicleText = 'Vehicle record';
-                                $plateText = trim((string) ($appointment['plate_number'] ?? ''));
-                                ?>
-                                <tr class="hover:bg-slate-50/50 transition-colors">
-                                    <td class="px-6 py-4 text-sm font-bold text-slate-900">#<?php echo (int) $appointment['appointment_id']; ?></td>
-                                    <td class="px-6 py-4 text-sm text-slate-700"><?php echo h($appointment['customer_name']); ?></td>
-                                    <td class="px-6 py-4 text-sm text-slate-700">
-                                        <?php echo h($vehicleText); ?>
-                                        <?php if ($plateText !== ''): ?>
-                                            <div class="text-xs text-slate-500 mt-0.5">Plate: <?php echo h($plateText); ?></div>
-                                        <?php endif; ?>
-                                    </td>
-                                    <td class="px-6 py-4 text-sm text-slate-700">
-                                        <div class="font-semibold"><?php echo h(date('M d, Y', strtotime((string) $appointment['appointment_date']))); ?></div>
-                                        <div class="text-xs text-slate-500"><?php echo h(date('h:i A', strtotime((string) $appointment['appointment_time']))); ?></div>
-                                    </td>
-                                    <td class="px-6 py-4 text-sm">
-                                        <span class="inline-flex px-2 py-1 rounded-full text-xs font-bold <?php echo h(statusBadgeClass((string) $appointment['status'])); ?>">
-                                            <?php echo h($appointment['status']); ?>
-                                        </span>
-                                    </td>
-                                    <td class="px-6 py-4 text-sm font-semibold text-slate-900">₱<?php echo number_format((float) ($appointment['total_amount'] ?? 0), 2); ?></td>
-                                </tr>
-                            <?php endforeach; ?>
-                        <?php endif; ?>
-                        </tbody>
-                    </table>
-                </div>
-
-                <div class="px-6 py-4 border-t border-slate-100 bg-slate-50/40 flex items-center justify-between">
-                    <p class="text-xs text-slate-500 font-medium">Showing <?php echo number_format(count($upcomingAppointments)); ?> of <?php echo number_format($upcomingTotalRows); ?> records</p>
-                    <div class="flex items-center gap-2">
-                        <?php if ($upcomingPage > 1): ?>
-                            <a href="repairjobsadmin.php?<?php echo h(http_build_query(array_filter([
-                                'shop' => $loginSlug,
-                                'q' => $search,
-                                'job_status' => $jobStatusFilter,
-                                'service_status' => $serviceStatusFilter,
-                                'priority' => $priorityFilter,
-                                'upcoming_sort_by' => $upcomingSortBy,
-                                'upcoming_sort_dir' => $upcomingSortDir,
-                                'jobs_sort_by' => $jobsSortBy,
-                                'jobs_sort_dir' => $jobsSortDir,
-                                'diagnostics_sort_by' => $diagnosticsSortBy,
-                                'diagnostics_sort_dir' => $diagnosticsSortDir,
-                                'upcoming_page' => $upcomingPage - 1,
-                                'jobs_page' => $jobsPage,
-                                'diagnostics_page' => $diagnosticsPage,
-                            ], static fn($v) => $v !== ''))); ?>" class="px-3 py-1.5 text-xs font-semibold rounded-lg border border-slate-300 bg-white hover:bg-slate-100">Previous</a>
-                        <?php endif; ?>
-
-                        <span class="px-2 py-1 text-xs font-semibold text-slate-600">Page <?php echo (int) $upcomingPage; ?> of <?php echo (int) $upcomingTotalPages; ?></span>
-
-                        <?php if ($upcomingPage < $upcomingTotalPages): ?>
-                            <a href="repairjobsadmin.php?<?php echo h(http_build_query(array_filter([
-                                'shop' => $loginSlug,
-                                'q' => $search,
-                                'job_status' => $jobStatusFilter,
-                                'service_status' => $serviceStatusFilter,
-                                'priority' => $priorityFilter,
-                                'upcoming_sort_by' => $upcomingSortBy,
-                                'upcoming_sort_dir' => $upcomingSortDir,
-                                'jobs_sort_by' => $jobsSortBy,
-                                'jobs_sort_dir' => $jobsSortDir,
-                                'diagnostics_sort_by' => $diagnosticsSortBy,
-                                'diagnostics_sort_dir' => $diagnosticsSortDir,
-                                'upcoming_page' => $upcomingPage + 1,
-                                'jobs_page' => $jobsPage,
-                                'diagnostics_page' => $diagnosticsPage,
-                            ], static fn($v) => $v !== ''))); ?>" class="px-3 py-1.5 text-xs font-semibold rounded-lg border border-slate-300 bg-white hover:bg-slate-100">Next</a>
-                        <?php endif; ?>
-                    </div>
-                </div>
-            </section>
-
-            <section class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden mb-8">
+            <div class="grid grid-cols-1 2xl:grid-cols-[minmax(0,1fr)_360px] gap-6 mb-8 items-start">
+<section class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden min-w-0">
                 <div class="px-6 py-5 border-b border-slate-100 flex items-center justify-between">
                     <div>
                         <h3 class="text-lg font-bold text-slate-900">Active Repair Jobs</h3>
@@ -2916,7 +2887,130 @@ if ($activeSignatureStmt) {
                         <?php endif; ?>
                     </div>
                 </div>
-            </section>
+            </section> 
+
+<section class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden min-w-0 xl:sticky xl:top-24">
+                    <div class="px-4 py-4 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                        <div>
+                            <h3 class="text-lg font-bold text-slate-900">Calendar</h3>
+                            <p class="text-xs text-slate-500 font-medium">Repair-job schedule by appointment date.</p>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <a href="repairjobsadmin.php?<?php echo h(http_build_query(array_filter([
+                                'shop' => $loginSlug,
+                                'q' => $search,
+                                'job_status' => $jobStatusFilter,
+                                'service_status' => $serviceStatusFilter,
+                                'priority' => $priorityFilter,
+                                'upcoming_sort_by' => $upcomingSortBy,
+                                'upcoming_sort_dir' => $upcomingSortDir,
+                                'jobs_sort_by' => $jobsSortBy,
+                                'jobs_sort_dir' => $jobsSortDir,
+                                'diagnostics_sort_by' => $diagnosticsSortBy,
+                                'diagnostics_sort_dir' => $diagnosticsSortDir,
+                                'calendar_month' => $calendarPrevMonth,
+                            ], static fn($v) => $v !== ''))); ?>" class="inline-flex items-center justify-center w-8 h-8 rounded-lg border border-slate-300 text-slate-600 hover:bg-slate-100"><span class="material-symbols-outlined text-lg">chevron_left</span></a>
+                            <span class="min-w-[115px] text-center text-xs font-black text-slate-900"><?php echo h($calendarMonthLabel); ?></span>
+                            <a href="repairjobsadmin.php?<?php echo h(http_build_query(array_filter([
+                                'shop' => $loginSlug,
+                                'q' => $search,
+                                'job_status' => $jobStatusFilter,
+                                'service_status' => $serviceStatusFilter,
+                                'priority' => $priorityFilter,
+                                'upcoming_sort_by' => $upcomingSortBy,
+                                'upcoming_sort_dir' => $upcomingSortDir,
+                                'jobs_sort_by' => $jobsSortBy,
+                                'jobs_sort_dir' => $jobsSortDir,
+                                'diagnostics_sort_by' => $diagnosticsSortBy,
+                                'diagnostics_sort_dir' => $diagnosticsSortDir,
+                                'calendar_month' => $calendarNextMonth,
+                            ], static fn($v) => $v !== ''))); ?>" class="inline-flex items-center justify-center w-8 h-8 rounded-lg border border-slate-300 text-slate-600 hover:bg-slate-100"><span class="material-symbols-outlined text-lg">chevron_right</span></a>
+                        </div>
+                    </div>
+                    <div class="p-4">
+                        <div class="w-full">
+                        <div class="grid grid-cols-7 gap-1 mb-2">
+                            <?php foreach (['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] as $dayName): ?>
+                                <div class="text-center text-[10px] font-black uppercase tracking-widest text-slate-400"><?php echo h($dayName); ?></div>
+                            <?php endforeach; ?>
+                        </div>
+                        <div class="grid grid-cols-7 gap-1">
+                            <?php for ($blank = 1; $blank < $calendarFirstWeekday; $blank++): ?>
+                                <div class="min-h-[46px] rounded-xl border border-transparent bg-slate-50/40"></div>
+                            <?php endfor; ?>
+                            <?php for ($day = 1; $day <= $calendarDaysInMonth; $day++): ?>
+                                <?php
+                                    $dateKey = $calendarFirstDateObj->format('Y-m-') . str_pad((string) $day, 2, '0', STR_PAD_LEFT);
+                                    $dayData = $calendarAppointmentsByDate[$dateKey] ?? ['total' => 0, 'active' => 0, 'completed' => 0, 'cancelled' => 0];
+                                    $isToday = $dateKey === date('Y-m-d');
+                                    $isSelectedDate = $calendarDateFilter === $dateKey;
+                                    $hasJobs = ((int) $dayData['total']) > 0;
+                                    $dayUrl = 'repairjobsadmin.php?' . http_build_query(array_filter([
+                                        'shop' => $loginSlug,
+                                        'q' => $search,
+                                        'job_status' => $jobStatusFilter,
+                                        'service_status' => $serviceStatusFilter,
+                                        'priority' => $priorityFilter,
+                                        'upcoming_sort_by' => $upcomingSortBy,
+                                        'upcoming_sort_dir' => $upcomingSortDir,
+                                        'jobs_sort_by' => $jobsSortBy,
+                                        'jobs_sort_dir' => $jobsSortDir,
+                                        'diagnostics_sort_by' => $diagnosticsSortBy,
+                                        'diagnostics_sort_dir' => $diagnosticsSortDir,
+                                        'calendar_month' => $calendarMonth,
+                                        'calendar_date' => $dateKey,
+                                    ], static fn($v) => $v !== ''));
+                                ?>
+                                <a href="<?php echo h($dayUrl); ?>" class="block min-h-[58px] rounded-lg border p-1.5 transition-colors <?php echo $isSelectedDate ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-100' : ($isToday ? 'border-blue-300 bg-blue-50' : ($hasJobs ? 'border-slate-300 bg-white hover:bg-slate-50' : 'border-slate-100 bg-slate-50/50 hover:bg-slate-100')); ?>">
+                                    <div class="flex items-center justify-between gap-1">
+                                        <span class="text-xs font-black <?php echo ($isToday || $isSelectedDate) ? 'text-blue-700' : 'text-slate-800'; ?>"><?php echo (int) $day; ?></span>
+                                        <?php if ($hasJobs): ?>
+                                            <span class="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-slate-900 px-1 text-[9px] font-black text-white"><?php echo (int) $dayData['total']; ?></span>
+                                        <?php endif; ?>
+                                    </div>
+                                    <?php if ($hasJobs): ?>
+                                        <p class="mt-1 text-[9px] font-bold text-slate-600"><?php echo (int) $dayData['active']; ?> active job<?php echo (int) $dayData['active'] === 1 ? '' : 's'; ?></p>
+                                        <div class="mt-1 flex flex-wrap gap-0.5">
+                                            <?php if ((int) $dayData['completed'] > 0): ?><span class="h-1 w-1 rounded-full bg-green-500"></span><?php endif; ?>
+                                            <?php if ((int) $dayData['cancelled'] > 0): ?><span class="h-1 w-1 rounded-full bg-red-500"></span><?php endif; ?>
+                                            <?php if ((int) $dayData['active'] > 0): ?><span class="h-1 w-1 rounded-full bg-blue-500"></span><?php endif; ?>
+                                        </div>
+                                    <?php else: ?>
+                                        <p class="mt-1 text-[9px] text-slate-400">No repair job</p>
+                                    <?php endif; ?>
+                                </a>
+                            <?php endfor; ?>
+                        </div>
+                        <div class="mt-3 flex flex-wrap items-center gap-3 text-[10px] text-slate-500">
+                            <span class="inline-flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full bg-slate-900"></span> Has repair job</span>
+                            <span class="inline-flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full bg-blue-100 border border-blue-300"></span> Today</span>
+                        </div>
+
+                        <?php if ($calendarDateFilter !== ''): ?>
+                            <div class="mt-4 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-800">
+                                Showing active repair jobs for <strong><?php echo h(date('F d, Y', strtotime($calendarDateFilter))); ?></strong>.
+                                <a class="font-bold underline ml-1" href="repairjobsadmin.php?<?php echo h(http_build_query(array_filter([
+                                    'shop' => $loginSlug,
+                                    'q' => $search,
+                                    'job_status' => $jobStatusFilter,
+                                    'service_status' => $serviceStatusFilter,
+                                    'priority' => $priorityFilter,
+                                    'upcoming_sort_by' => $upcomingSortBy,
+                                    'upcoming_sort_dir' => $upcomingSortDir,
+                                    'jobs_sort_by' => $jobsSortBy,
+                                    'jobs_sort_dir' => $jobsSortDir,
+                                    'diagnostics_sort_by' => $diagnosticsSortBy,
+                                    'diagnostics_sort_dir' => $diagnosticsSortDir,
+                                    'calendar_month' => $calendarMonth,
+                                'calendar_date' => $calendarDateFilter,
+                                ], static fn($v) => $v !== ''))); ?>">Clear date filter</a>
+                            </div>
+                        <?php endif; ?>
+
+                        </div>
+                    </div>
+                </section>
+            </div>
 
             <section class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden mb-8" id="repairHistorySection">
                 <div class="px-6 py-5 border-b border-slate-100 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
@@ -3146,6 +3240,149 @@ if ($activeSignatureStmt) {
                     </div>
                 </div>
             </section>
+
+
+            <div class="mt-8">
+            <div class="space-y-6 mb-8">
+                <section class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden min-w-0">
+                <div class="px-6 py-5 border-b border-slate-100 flex flex-col xl:flex-row xl:items-center xl:justify-between gap-4">
+                    <div class="min-w-0">
+                        <h3 class="text-lg font-bold text-slate-900">Upcoming Appointments</h3>
+                        <p class="text-xs text-slate-500 font-medium">Pending, confirmed, diagnostic, approval, and in-progress appointments.</p>
+                    </div>
+                    <div class="w-full xl:w-auto flex flex-col sm:flex-row sm:items-center gap-2">
+                        <form method="get" class="flex flex-wrap items-center gap-2">
+                            <input type="hidden" name="shop" value="<?php echo h($loginSlug); ?>">
+                            <input type="hidden" name="q" value="<?php echo h($search); ?>">
+                            <input type="hidden" name="job_status" value="<?php echo h($jobStatusFilter); ?>">
+                            <input type="hidden" name="service_status" value="<?php echo h($serviceStatusFilter); ?>">
+                            <input type="hidden" name="priority" value="<?php echo h($priorityFilter); ?>">
+                            <input type="hidden" name="jobs_sort_by" value="<?php echo h($jobsSortBy); ?>">
+                            <input type="hidden" name="jobs_sort_dir" value="<?php echo h($jobsSortDir); ?>">
+                            <input type="hidden" name="diagnostics_sort_by" value="<?php echo h($diagnosticsSortBy); ?>">
+                            <input type="hidden" name="diagnostics_sort_dir" value="<?php echo h($diagnosticsSortDir); ?>">
+                            <input type="hidden" name="calendar_month" value="<?php echo h($calendarMonth); ?>">
+                        <input type="hidden" name="calendar_date" value="<?php echo h($calendarDateFilter); ?>">
+                            <select name="upcoming_sort_by" class="rounded-lg border-slate-300 text-xs min-w-[150px]">
+                                <option value="appointment_id" <?php echo $upcomingSortBy === 'appointment_id' ? 'selected' : ''; ?>>Sort: Appointment ID</option>
+                                <option value="appointment_date" <?php echo $upcomingSortBy === 'appointment_date' ? 'selected' : ''; ?>>Sort: Date</option>
+                                <option value="appointment_time" <?php echo $upcomingSortBy === 'appointment_time' ? 'selected' : ''; ?>>Sort: Time</option>
+                                <option value="status" <?php echo $upcomingSortBy === 'status' ? 'selected' : ''; ?>>Sort: Status</option>
+                                <option value="total_amount" <?php echo $upcomingSortBy === 'total_amount' ? 'selected' : ''; ?>>Sort: Amount</option>
+                            </select>
+                            <select name="upcoming_sort_dir" class="rounded-lg border-slate-300 text-xs min-w-[110px]">
+                                <option value="DESC" <?php echo $upcomingSortDir === 'DESC' ? 'selected' : ''; ?>>Descending</option>
+                                <option value="ASC" <?php echo $upcomingSortDir === 'ASC' ? 'selected' : ''; ?>>Ascending</option>
+                            </select>
+                            <button type="submit" class="px-3 py-2 rounded-lg border border-slate-300 bg-white text-xs font-semibold text-slate-700 hover:bg-slate-100">Apply</button>
+                        </form>
+                        <a href="appointmentadmin.php?shop=<?php echo h($shopQuery); ?>" class="text-xs font-semibold text-blue-700 hover:underline">Open Appointments Page</a>
+                    </div>
+                </div>
+
+                <div class="overflow-x-auto">
+                    <table class="w-full min-w-[760px] text-left">
+                        <thead>
+                        <tr class="bg-slate-50/50">
+                            <th class="px-6 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">Appointment</th>
+                            <th class="px-6 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">Customer</th>
+                            <th class="px-6 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">Vehicle</th>
+                            <th class="px-6 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">Date / Time</th>
+                            <th class="px-6 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">Status</th>
+                            <th class="px-6 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">Amount</th>
+                        </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-100">
+                        <?php if (count($upcomingAppointments) === 0): ?>
+                            <tr>
+                                <td colspan="6" class="px-6 py-10 text-center text-sm text-slate-500">No upcoming appointments found.</td>
+                            </tr>
+                        <?php else: ?>
+                            <?php foreach ($upcomingAppointments as $appointment): ?>
+                                <?php
+                                $vehicleText = trim((string) ($appointment['vehicle_name'] ?? ''));
+                                if ($vehicleText === '') $vehicleText = 'Vehicle record';
+                                $plateText = trim((string) ($appointment['plate_number'] ?? ''));
+                                ?>
+                                <tr class="hover:bg-slate-50/50 transition-colors">
+                                    <td class="px-6 py-4 text-sm font-bold text-slate-900">#<?php echo (int) $appointment['appointment_id']; ?></td>
+                                    <td class="px-6 py-4 text-sm text-slate-700"><?php echo h($appointment['customer_name']); ?></td>
+                                    <td class="px-6 py-4 text-sm text-slate-700">
+                                        <?php echo h($vehicleText); ?>
+                                        <?php if ($plateText !== ''): ?>
+                                            <div class="text-xs text-slate-500 mt-0.5">Plate: <?php echo h($plateText); ?></div>
+                                        <?php endif; ?>
+                                    </td>
+                                    <td class="px-6 py-4 text-sm text-slate-700">
+                                        <div class="font-semibold"><?php echo h(date('M d, Y', strtotime((string) $appointment['appointment_date']))); ?></div>
+                                        <div class="text-xs text-slate-500"><?php echo h(date('h:i A', strtotime((string) $appointment['appointment_time']))); ?></div>
+                                    </td>
+                                    <td class="px-6 py-4 text-sm">
+                                        <span class="inline-flex px-2 py-1 rounded-full text-xs font-bold <?php echo h(statusBadgeClass((string) $appointment['status'])); ?>">
+                                            <?php echo h($appointment['status']); ?>
+                                        </span>
+                                    </td>
+                                    <td class="px-6 py-4 text-sm font-semibold text-slate-900">₱<?php echo number_format((float) ($appointment['total_amount'] ?? 0), 2); ?></td>
+                                </tr>
+                            <?php endforeach; ?>
+                        <?php endif; ?>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="px-6 py-4 border-t border-slate-100 bg-slate-50/40 flex items-center justify-between">
+                    <p class="text-xs text-slate-500 font-medium">Showing <?php echo number_format(count($upcomingAppointments)); ?> of <?php echo number_format($upcomingTotalRows); ?> records</p>
+                    <div class="flex items-center gap-2">
+                        <?php if ($upcomingPage > 1): ?>
+                            <a href="repairjobsadmin.php?<?php echo h(http_build_query(array_filter([
+                                'shop' => $loginSlug,
+                                'q' => $search,
+                                'job_status' => $jobStatusFilter,
+                                'service_status' => $serviceStatusFilter,
+                                'priority' => $priorityFilter,
+                                'upcoming_sort_by' => $upcomingSortBy,
+                                'upcoming_sort_dir' => $upcomingSortDir,
+                                'jobs_sort_by' => $jobsSortBy,
+                                'jobs_sort_dir' => $jobsSortDir,
+                                'diagnostics_sort_by' => $diagnosticsSortBy,
+                                'diagnostics_sort_dir' => $diagnosticsSortDir,
+                                'calendar_month' => $calendarMonth,
+                                'upcoming_page' => $upcomingPage - 1,
+                                'jobs_page' => $jobsPage,
+                                'diagnostics_page' => $diagnosticsPage,
+                            ], static fn($v) => $v !== ''))); ?>" class="px-3 py-1.5 text-xs font-semibold rounded-lg border border-slate-300 bg-white hover:bg-slate-100">Previous</a>
+                        <?php endif; ?>
+
+                        <span class="px-2 py-1 text-xs font-semibold text-slate-600">Page <?php echo (int) $upcomingPage; ?> of <?php echo (int) $upcomingTotalPages; ?></span>
+
+                        <?php if ($upcomingPage < $upcomingTotalPages): ?>
+                            <a href="repairjobsadmin.php?<?php echo h(http_build_query(array_filter([
+                                'shop' => $loginSlug,
+                                'q' => $search,
+                                'job_status' => $jobStatusFilter,
+                                'service_status' => $serviceStatusFilter,
+                                'priority' => $priorityFilter,
+                                'upcoming_sort_by' => $upcomingSortBy,
+                                'upcoming_sort_dir' => $upcomingSortDir,
+                                'jobs_sort_by' => $jobsSortBy,
+                                'jobs_sort_dir' => $jobsSortDir,
+                                'diagnostics_sort_by' => $diagnosticsSortBy,
+                                'diagnostics_sort_dir' => $diagnosticsSortDir,
+                                'calendar_month' => $calendarMonth,
+                                'calendar_date' => $calendarDateFilter,
+                                'upcoming_page' => $upcomingPage + 1,
+                                'jobs_page' => $jobsPage,
+                                'diagnostics_page' => $diagnosticsPage,
+                            ], static fn($v) => $v !== ''))); ?>" class="px-3 py-1.5 text-xs font-semibold rounded-lg border border-slate-300 bg-white hover:bg-slate-100">Next</a>
+                        <?php endif; ?>
+                    </div>
+                </div>
+            </section>
+
+                
+            </div>
+
+            </div>
         </div>
     </main>
 </div>
@@ -3659,76 +3896,6 @@ document.querySelectorAll('.history-filter-btn').forEach((button) => {
     });
 });
 applyHistoryFilters();
-
-const initialRepairJobsSignature = '<?php echo h($activeJobsSignature ?? ''); ?>';
-let latestRepairJobsSignature = initialRepairJobsSignature;
-let autoRefreshNoticeShown = false;
-
-function hasOpenRepairModal() {
-    return Boolean(
-        document.getElementById('diagnosticForm') ||
-        document.getElementById('partsCompletionForm') ||
-        document.querySelector('[data-modal-open="true"]') ||
-        window.location.search.includes('diagnostic_job=') ||
-        window.location.search.includes('show_parts_modal=')
-    );
-}
-
-function userIsTypingOrEditing() {
-    const active = document.activeElement;
-    if (!active) {
-        return false;
-    }
-
-    const tagName = active.tagName ? active.tagName.toLowerCase() : '';
-    return tagName === 'input' || tagName === 'textarea' || tagName === 'select' || active.isContentEditable;
-}
-
-async function checkForRepairJobUpdates() {
-    if (hasOpenRepairModal() || userIsTypingOrEditing()) {
-        return;
-    }
-
-    try {
-        const url = new URL(window.location.href);
-        url.searchParams.set('ajax', 'repair_job_count');
-        url.searchParams.set('_', Date.now().toString());
-
-        const response = await fetch(url.toString(), {
-            cache: 'no-store',
-            headers: { 'X-Requested-With': 'XMLHttpRequest' }
-        });
-
-        if (!response.ok) {
-            return;
-        }
-
-        const data = await response.json();
-        if (!data || typeof data.signature !== 'string') {
-            return;
-        }
-
-        if (latestRepairJobsSignature && data.signature !== latestRepairJobsSignature) {
-            if (!autoRefreshNoticeShown) {
-                autoRefreshNoticeShown = true;
-                const notice = document.createElement('div');
-                notice.className = 'fixed bottom-5 right-5 z-50 rounded-xl bg-slate-900 px-4 py-3 text-sm font-bold text-white shadow-lg';
-                notice.textContent = 'New repair job update detected. Refreshing...';
-                document.body.appendChild(notice);
-            }
-
-            window.setTimeout(() => {
-                window.location.reload();
-            }, 700);
-        } else {
-            latestRepairJobsSignature = data.signature;
-        }
-    } catch (error) {
-        // Keep the page usable even if polling fails.
-    }
-}
-
-window.setInterval(checkForRepairJobUpdates, 10000);
 
 const diagnosticMainServiceTotal = Number('<?php echo isset($diagnosticMainServiceTotal) ? (float) $diagnosticMainServiceTotal : 0; ?>');
 

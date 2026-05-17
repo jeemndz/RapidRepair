@@ -596,36 +596,71 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['createTenantApplicati
             <div class="text-xl font-black tracking-tighter text-[#1152d4] dark:text-[#3b82f6]">RapidRepairCo.</div>
 
             <div class="hidden md:flex items-center gap-8">
+
                 <a class="font-medium text-sm tracking-tight text-slate-600 dark:text-slate-400 hover:text-[#1152d4] transition-colors"
-                    href="#features">Features</a>
+                    href="clientlanding.php">
+                    Home
+                </a>
                 <a class="font-medium text-sm tracking-tight text-slate-600 dark:text-slate-400 hover:text-[#1152d4] transition-colors"
-                    href="#pricing">Pricing</a>
+                    href="#features">
+                    Features
+                </a>
                 <a class="font-medium text-sm tracking-tight text-slate-600 dark:text-slate-400 hover:text-[#1152d4] transition-colors"
-                    href="#about">About</a>
+                    href="#pricing">
+                    Pricing
+                </a>
                 <a class="font-medium text-sm tracking-tight text-slate-600 dark:text-slate-400 hover:text-[#1152d4] transition-colors"
-                    href="#support">Support</a>
+                    href="#about">
+                    About
+                </a>
+                <a class="font-medium text-sm tracking-tight text-slate-600 dark:text-slate-400 hover:text-[#1152d4] transition-colors"
+                    href="#support">
+                    Support
+                </a>
+
             </div>
 
             <div class="flex items-center gap-3">
                 <?php if ($isClientLoggedIn): ?>
-                    <a href="#"
-                        class="w-10 h-10 inline-flex items-center justify-center rounded-full border border-primary/30 text-primary hover:bg-primary/5 transition-all"
-                        title="Profile">
-                        <span class="material-symbols-outlined">account_circle</span>
-                    </a>
-                    <a href="../logout/logout.php?redirect=clientlanding.php"
-                        class="px-4 py-2 rounded-lg text-sm font-bold tracking-tight border border-red-200 text-red-600 hover:bg-red-50 transition-all">Logout</a>
+
+                    <div class="relative group">
+                        <button type="button"
+                            class="w-10 h-10 inline-flex items-center justify-center rounded-full border border-primary/30 text-primary hover:bg-primary/5 transition-all"
+                            title="Profile">
+                            <span class="material-symbols-outlined">account_circle</span>
+                        </button>
+
+                        <div
+                            class="absolute right-0 mt-2 w-44 bg-white border border-outline rounded-xl shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 overflow-hidden">
+
+
+                            <a href="clientprofile.php"
+                                class="flex items-center gap-2 px-4 py-3 text-sm text-slate-700 hover:bg-slate-50 transition-all">
+                                <span class="material-symbols-outlined text-[18px]">person</span>
+                                Profile
+                            </a>
+
+                            <a href="../logout/logout.php?redirect=clientlanding.php"
+                                class="flex items-center gap-2 px-4 py-3 text-sm text-red-600 hover:bg-red-50 transition-all">
+                                <span class="material-symbols-outlined text-[18px]">logout</span>
+                                Logout
+                            </a>
+                        </div>
+                    </div>
+
                 <?php else: ?>
+
                     <a href="clientregister.php"
                         class="px-5 py-2 rounded-lg text-sm font-bold tracking-tight border border-primary text-primary hover:bg-primary/5 transition-all">
                         Register
                     </a>
-                <?php endif; ?>
 
-                <a href="#application"
-                    class="bg-primary text-on-primary px-5 py-2 rounded-lg text-sm font-bold tracking-tight hover:opacity-90 transition-all active:scale-95">
-                    Get Started
-                </a>
+                    <a href="#application"
+                        class="bg-primary text-on-primary px-5 py-2 rounded-lg text-sm font-bold tracking-tight hover:opacity-90 transition-all active:scale-95">
+                        Get Started
+                    </a>
+
+                <?php endif; ?>
             </div>
         </div>
     </nav>
