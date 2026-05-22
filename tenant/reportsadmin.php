@@ -682,9 +682,15 @@ $jobStatusValues = array_map('intval', array_column($jobStatusData, 'total'));
                                     <span>Website Customizer</span>
                                 </a>
                                 <?php if (canAccessModule('settingsadmin.php', $accessibleModules)): ?>
-                                    <a href="settingsadmin.php" class="flex items-center gap-2 px-4 py-2.5 text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
+                                    <a href="settingsadmin.php" class="flex items-center gap-2 px-4 py-2.5 text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors border-b border-slate-100 dark:border-slate-800">
                                         <span class="material-symbols-outlined text-[18px]">settings</span>
                                         <span>Settings</span>
+                                    </a>
+                                <?php endif; ?>
+                                <?php if (canAccessModule('storage_managementadmin.php', $accessibleModules)): ?>
+                                    <a href="storage_managementadmin.php" class="flex items-center gap-2 px-4 py-2.5 text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
+                                        <span class="material-symbols-outlined text-[18px]">storage</span>
+                                        <span>Storage Management</span>
                                     </a>
                                 <?php endif; ?>
                             </div>

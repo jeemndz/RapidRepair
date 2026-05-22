@@ -23,6 +23,7 @@ const MODULE_ACCESS_MAP = [
     'accountbillingadmin.php' => ['Billing', 'All'],
     'reportsadmin.php' => ['Reports', 'All'],
     'settingsadmin.php' => ['Settings', 'All'],
+    'storage_managementadmin.php' => ['Settings', 'All'],
     'tenantslogs.php' => ['Logs', 'All'],
     'save_customization.php' => ['Settings', 'All'],
 ];

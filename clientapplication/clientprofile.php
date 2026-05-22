@@ -203,7 +203,7 @@ if (!empty($client['tenantID'])) {
             <div class="mb-8">
                 <p class="text-xs font-black uppercase tracking-widest text-primary mb-2">Client Account</p>
                 <h1 class="text-4xl font-black tracking-tight">My Profile</h1>
-                <p class="text-sm text-slate-500 mt-2">Manage your personal details used for bookings, service records, and repair updates.</p>
+                <p class="text-sm text-slate-500 mt-2">Manage your personal details.</p>
             </div>
 
             <?php if ($successMessage !== ''): ?>

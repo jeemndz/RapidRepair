@@ -1235,10 +1235,17 @@ if ($editVehicleId > 0) {
                                 Website Customizer
                             </a>
                             <?php if (canAccessModule('settingsadmin.php', $accessibleModules)): ?>
-                            <a class="flex items-center gap-3 px-3 py-2.5 rounded-b-lg text-slate-600 hover:bg-blue-50 transition-colors text-sm border-t border-slate-100"
+                            <a class="flex items-center gap-3 px-3 py-2.5 text-slate-600 hover:bg-blue-50 transition-colors text-sm border-t border-slate-100"
                                 href="settingsadmin.php">
                                 <span class="material-symbols-outlined text-[18px]">settings</span>
                                 Settings
+                            </a>
+                            <?php endif; ?>
+                            <?php if (canAccessModule('storage_managementadmin.php', $accessibleModules)): ?>
+                            <a class="flex items-center gap-3 px-3 py-2.5 rounded-b-lg text-slate-600 hover:bg-blue-50 transition-colors text-sm border-t border-slate-100"
+                                href="storage_managementadmin.php">
+                                <span class="material-symbols-outlined text-[18px]">storage</span>
+                                Storage Management
                             </a>
                             <?php endif; ?>
                         </div>

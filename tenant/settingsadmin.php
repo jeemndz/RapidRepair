@@ -606,9 +606,16 @@ if ($ownerStmt) {
                             <?php endif; ?>
 
                             <?php if (canAccessModule('accountbillingadmin.php', $accessibleModules)): ?>
-                                <a class="flex items-center gap-3 px-3 py-2.5 rounded-b-lg text-slate-600 dark:text-slate-400 hover:bg-blue-50 dark:hover:bg-slate-800 transition-colors text-sm border-t border-slate-100 dark:border-slate-700" href="accountbillingadmin.php">
+                                <a class="flex items-center gap-3 px-3 py-2.5 text-slate-600 dark:text-slate-400 hover:bg-blue-50 dark:hover:bg-slate-800 transition-colors text-sm border-t border-slate-100 dark:border-slate-700" href="accountbillingadmin.php">
                                     <span class="material-symbols-outlined text-[18px]">receipt_long</span>
                                     Account Billing
+                                </a>
+                            <?php endif; ?>
+
+                            <?php if (canAccessModule('storage_managementadmin.php', $accessibleModules)): ?>
+                                <a class="flex items-center gap-3 px-3 py-2.5 rounded-b-lg text-slate-600 dark:text-slate-400 hover:bg-blue-50 dark:hover:bg-slate-800 transition-colors text-sm border-t border-slate-100 dark:border-slate-700" href="storage_managementadmin.php">
+                                    <span class="material-symbols-outlined text-[18px]">storage</span>
+                                    Storage Management
                                 </a>
                             <?php endif; ?>
                         </div>

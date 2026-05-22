@@ -8,6 +8,28 @@ require_once __DIR__ . "/../PHPMailer/src/Exception.php";
 use PHPMailer\PHPMailer\PHPMailer;
 use PHPMailer\PHPMailer\Exception;
 
+/**
+ * Generate the correct base URL for reset links
+ * Prefers production domain over localhost for email links
+ */
+function getResetLinkBaseUrl() {
+    $currentHost = $_SERVER['HTTP_HOST'];
+    
+    // If current host is localhost/127.0.0.1, use production domain if available
+    if (defined('PRODUCTION_DOMAIN') && PRODUCTION_DOMAIN && !defined('ALLOW_LOCALHOST_LINKS')) {
+        return 'https://' . PRODUCTION_DOMAIN;
+    }
+    
+    // If current host is localhost and ALLOW_LOCALHOST_LINKS is true, check which to prioritize
+    if (defined('PRODUCTION_DOMAIN') && PRODUCTION_DOMAIN && (strpos($currentHost, 'localhost') !== false || strpos($currentHost, '127.0.0.1') !== false)) {
+        // Use production domain for email links when accessed from localhost
+        return 'https://' . PRODUCTION_DOMAIN;
+    }
+    
+    // Use current host (production domain)
+    return 'https://' . $currentHost;
+}
+
 $message = "";
 $messageType = "";
 $requestedShop = isset($_GET['shop']) ? trim($_GET['shop']) : '';
@@ -118,7 +140,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                     $mail->isHTML(true);
                     $mail->Subject = 'Password Reset Request - Rapid Repair';
                     
-                    $resetLink = "https://" . $_SERVER['HTTP_HOST'] . dirname($_SERVER['REQUEST_URI']) . "/tenant_reset_password.php?token=" . urlencode($resetToken) . "&shop=" . urlencode($requestedShop);
+                    $resetLink = getResetLinkBaseUrl() . dirname($_SERVER['REQUEST_URI']) . "/tenant_reset_password.php?token=" . urlencode($resetToken) . "&shop=" . urlencode($requestedShop);
                     
                     $htmlBody = "
                     <html>
@@ -215,7 +237,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                         $mail->isHTML(true);
                         $mail->Subject = 'Password Reset Request - Rapid Repair';
                         
-                        $resetLink = "https://" . $_SERVER['HTTP_HOST'] . dirname($_SERVER['REQUEST_URI']) . "/tenant_reset_password.php?token=" . urlencode($resetToken) . "&shop=" . urlencode($requestedShop);
+                        $resetLink = getResetLinkBaseUrl() . dirname($_SERVER['REQUEST_URI']) . "/tenant_reset_password.php?token=" . urlencode($resetToken) . "&shop=" . urlencode($requestedShop);
                         
                         $htmlBody = "
                         <html>

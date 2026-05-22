@@ -17,6 +17,19 @@ $formData = [
     'billingCycle' => 'monthly'
 ];
 
+if (isset($_GET['restore']) && isset($_SESSION['tenant_application_data']) && is_array($_SESSION['tenant_application_data'])) {
+    $savedApplicationData = $_SESSION['tenant_application_data'];
+
+    $formData['shopName'] = $savedApplicationData['shopName'] ?? '';
+    $formData['shopAddress'] = $savedApplicationData['shopAddress'] ?? '';
+    $formData['ownerName'] = $savedApplicationData['ownerName'] ?? '';
+    $formData['countryCode'] = $savedApplicationData['countryCode'] ?? 'PH';
+    $formData['contactNumber'] = $savedApplicationData['contactNumber'] ?? '';
+    $formData['email'] = $savedApplicationData['email'] ?? '';
+    $formData['subscriptionPlan'] = $savedApplicationData['subscriptionPlan'] ?? '';
+    $formData['billingCycle'] = $savedApplicationData['billingCycle'] ?? 'monthly';
+}
+
 function getCountriesWithPhoneCodes()
 {
     return [
@@ -285,6 +298,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['createTenantApplicati
         $formData['subscriptionPlan'] = strtolower(trim((string) ($_POST['subscriptionPlan'] ?? '')));
         $formData['billingCycle'] = strtolower(trim((string) ($_POST['billingCycle'] ?? 'monthly')));
 
+        $_SESSION['tenant_application_data'] = [
+            'tenantID' => $_SESSION['tenant_application_data']['tenantID'] ?? '',
+            'shopName' => $formData['shopName'],
+            'shopAddress' => $formData['shopAddress'],
+            'ownerName' => $formData['ownerName'],
+            'countryCode' => $formData['countryCode'],
+            'contactNumber' => $formData['contactNumber'],
+            'email' => $formData['email'],
+            'subscriptionPlan' => $formData['subscriptionPlan'],
+            'billingCycle' => $formData['billingCycle']
+        ];
+
         if (
             $formData['shopName'] === '' ||
             $formData['shopAddress'] === '' ||
@@ -322,7 +347,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['createTenantApplicati
             $errors[] = 'Please enter a valid email address.';
         }
 
-        $existingEmailSql = "SELECT tenantID FROM owners WHERE email='" . mysqli_real_escape_string($conn, $formData['email']) . "' LIMIT 1";
+        $savedTenantID = $_SESSION['tenant_application_data']['tenantID'] ?? '';
+
+        $existingEmailSql = "SELECT tenantID FROM owners WHERE email='" . mysqli_real_escape_string($conn, $formData['email']) . "'";
+
+        if ($savedTenantID !== '') {
+            $existingEmailSql .= " AND tenantID <> '" . mysqli_real_escape_string($conn, $savedTenantID) . "'";
+        }
+
+        $existingEmailSql .= " LIMIT 1";
         $existingEmailResult = mysqli_query($conn, $existingEmailSql);
 
         if ($existingEmailResult && mysqli_num_rows($existingEmailResult) > 0) {
@@ -336,111 +369,166 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['createTenantApplicati
         }
 
         if (count($errors) === 0) {
-            $nextIdResult = mysqli_query($conn, "SELECT tenantID FROM owners ORDER BY CAST(tenantID AS UNSIGNED) DESC LIMIT 1");
-            $newNumericId = 1;
+            $savedTenantID = $_SESSION['tenant_application_data']['tenantID'] ?? '';
 
-            if ($nextIdResult && mysqli_num_rows($nextIdResult) > 0) {
-                $last = mysqli_fetch_assoc($nextIdResult);
-                $lastId = (int) ($last['tenantID'] ?? 0);
-                $newNumericId = $lastId + 1;
-            }
+            if ($savedTenantID !== '') {
+                $tenantID = $savedTenantID;
+                $loginSlug = generateSlugForApplication($conn, $formData['shopName']);
 
-            $tenantID = str_pad((string) $newNumericId, 3, '0', STR_PAD_LEFT);
-            $loginSlug = generateSlugForApplication($conn, $formData['shopName']);
-            $temporaryPassword = generateTemporaryPasswordForApplication();
-            $inviteCode = generateUniqueInviteCode($conn);
-
-            $businessPermitImage = uploadRequiredDocumentImage('business_permit_image', $tenantID, $errors);
-            $validIdImage = uploadRequiredDocumentImage('valid_id_image', $tenantID, $errors);
-            $birCertificateImage = uploadRequiredDocumentImage('bir_certificate_image', $tenantID, $errors);
-
-            if (count($errors) === 0) {
-                $insertColumns = [
-                    'tenantID',
-                    'ownerName',
-                    'shopName',
-                    'email',
-                    'contactNumber',
-                    'shopAddress',
-                    'password',
-                    'first_login',
-                    'status'
-                ];
-
-                $insertValues = [
-                    "'" . mysqli_real_escape_string($conn, $tenantID) . "'",
-                    "'" . mysqli_real_escape_string($conn, $formData['ownerName']) . "'",
-                    "'" . mysqli_real_escape_string($conn, $formData['shopName']) . "'",
-                    "'" . mysqli_real_escape_string($conn, $formData['email']) . "'",
-                    "'" . mysqli_real_escape_string($conn, $formData['contactNumber']) . "'",
-                    "'" . mysqli_real_escape_string($conn, $formData['shopAddress']) . "'",
-                    "'" . mysqli_real_escape_string($conn, $temporaryPassword) . "'",
-                    '1',
-                    "'Pending'"
+                $updateParts = [
+                    "ownerName='" . mysqli_real_escape_string($conn, $formData['ownerName']) . "'",
+                    "shopName='" . mysqli_real_escape_string($conn, $formData['shopName']) . "'",
+                    "email='" . mysqli_real_escape_string($conn, $formData['email']) . "'",
+                    "contactNumber='" . mysqli_real_escape_string($conn, $formData['contactNumber']) . "'",
+                    "shopAddress='" . mysqli_real_escape_string($conn, $formData['shopAddress']) . "'"
                 ];
 
                 if (ownersColumnExists($conn, 'login_slug')) {
-                    $insertColumns[] = 'login_slug';
-                    $insertValues[] = "'" . mysqli_real_escape_string($conn, $loginSlug) . "'";
+                    $updateParts[] = "login_slug='" . mysqli_real_escape_string($conn, $loginSlug) . "'";
                 }
 
                 if (ownersColumnExists($conn, 'subscription_plan')) {
-                    $insertColumns[] = 'subscription_plan';
-                    $insertValues[] = "'" . mysqli_real_escape_string($conn, $formData['subscriptionPlan']) . "'";
+                    $updateParts[] = "subscription_plan='" . mysqli_real_escape_string($conn, $formData['subscriptionPlan']) . "'";
                 }
 
                 if (ownersColumnExists($conn, 'billing_cycle')) {
-                    $insertColumns[] = 'billing_cycle';
-                    $insertValues[] = "'" . mysqli_real_escape_string($conn, $formData['billingCycle']) . "'";
+                    $updateParts[] = "billing_cycle='" . mysqli_real_escape_string($conn, $formData['billingCycle']) . "'";
                 }
 
                 if (ownersColumnExists($conn, 'country_code')) {
-                    $insertColumns[] = 'country_code';
-                    $insertValues[] = "'" . mysqli_real_escape_string($conn, $formData['countryCode']) . "'";
+                    $updateParts[] = "country_code='" . mysqli_real_escape_string($conn, $formData['countryCode']) . "'";
                 }
 
-                if (ownersColumnExists($conn, 'invite_code')) {
-                    $insertColumns[] = 'invite_code';
-                    $insertValues[] = "'" . mysqli_real_escape_string($conn, $inviteCode) . "'";
+                if (ownersColumnExists($conn, 'updated_at')) {
+                    $updateParts[] = "updated_at=NOW()";
                 }
 
-                if (ownersColumnExists($conn, 'business_permit_image')) {
-                    $insertColumns[] = 'business_permit_image';
-                    $insertValues[] = "'" . mysqli_real_escape_string($conn, $businessPermitImage) . "'";
-                }
+                $updateSql = "UPDATE owners SET " . implode(', ', $updateParts) . " WHERE tenantID='" . mysqli_real_escape_string($conn, $tenantID) . "' LIMIT 1";
+                $updateResult = mysqli_query($conn, $updateSql);
 
-                if (ownersColumnExists($conn, 'valid_id_image')) {
-                    $insertColumns[] = 'valid_id_image';
-                    $insertValues[] = "'" . mysqli_real_escape_string($conn, $validIdImage) . "'";
-                }
+                if ($updateResult) {
+                    $_SESSION['tenant_application_data'] = array_merge($_SESSION['tenant_application_data'], [
+                        'tenantID' => $tenantID,
+                        'shopName' => $formData['shopName'],
+                        'shopAddress' => $formData['shopAddress'],
+                        'ownerName' => $formData['ownerName'],
+                        'countryCode' => $formData['countryCode'],
+                        'contactNumber' => $formData['contactNumber'],
+                        'email' => $formData['email'],
+                        'subscriptionPlan' => $formData['subscriptionPlan'],
+                        'billingCycle' => $formData['billingCycle']
+                    ]);
 
-                if (ownersColumnExists($conn, 'bir_certificate_image')) {
-                    $insertColumns[] = 'bir_certificate_image';
-                    $insertValues[] = "'" . mysqli_real_escape_string($conn, $birCertificateImage) . "'";
-                }
-
-                if (ownersColumnExists($conn, 'created_at')) {
-                    $insertColumns[] = 'created_at';
-                    $insertValues[] = 'NOW()';
-                }
-
-                $insertSql = "INSERT INTO owners (" . implode(', ', $insertColumns) . ") VALUES (" . implode(', ', $insertValues) . ")";
-                $insertResult = mysqli_query($conn, $insertSql);
-
-                if ($insertResult) {
                     header(
-                        'Location: clientpayment.php?tenantID=' . urlencode($tenantID) .
+                        'Location: clientdocumentrequirements.php?tenantID=' . urlencode($tenantID) .
                         '&plan=' . urlencode($formData['subscriptionPlan']) .
                         '&billingCycle=' . urlencode($formData['billingCycle'])
                     );
                     exit();
                 } else {
-                    $errors[] = 'Unable to submit your application right now. Please try again.';
+                    $errors[] = 'Unable to update your application right now. Please try again.';
+                }
+            } else {
+                $nextIdResult = mysqli_query($conn, "SELECT tenantID FROM owners ORDER BY CAST(tenantID AS UNSIGNED) DESC LIMIT 1");
+                $newNumericId = 1;
+
+                if ($nextIdResult && mysqli_num_rows($nextIdResult) > 0) {
+                    $last = mysqli_fetch_assoc($nextIdResult);
+                    $lastId = (int) ($last['tenantID'] ?? 0);
+                    $newNumericId = $lastId + 1;
+                }
+
+                $tenantID = str_pad((string) $newNumericId, 3, '0', STR_PAD_LEFT);
+                $loginSlug = generateSlugForApplication($conn, $formData['shopName']);
+                $temporaryPassword = generateTemporaryPasswordForApplication();
+                $inviteCode = generateUniqueInviteCode($conn);
+
+                if (count($errors) === 0) {
+                    $insertColumns = [
+                        'tenantID',
+                        'ownerName',
+                        'shopName',
+                        'email',
+                        'contactNumber',
+                        'shopAddress',
+                        'password',
+                        'first_login',
+                        'status'
+                    ];
+
+                    $insertValues = [
+                        "'" . mysqli_real_escape_string($conn, $tenantID) . "'",
+                        "'" . mysqli_real_escape_string($conn, $formData['ownerName']) . "'",
+                        "'" . mysqli_real_escape_string($conn, $formData['shopName']) . "'",
+                        "'" . mysqli_real_escape_string($conn, $formData['email']) . "'",
+                        "'" . mysqli_real_escape_string($conn, $formData['contactNumber']) . "'",
+                        "'" . mysqli_real_escape_string($conn, $formData['shopAddress']) . "'",
+                        "'" . mysqli_real_escape_string($conn, $temporaryPassword) . "'",
+                        '1',
+                        "'Pending'"
+                    ];
+
+                    if (ownersColumnExists($conn, 'login_slug')) {
+                        $insertColumns[] = 'login_slug';
+                        $insertValues[] = "'" . mysqli_real_escape_string($conn, $loginSlug) . "'";
+                    }
+
+                    if (ownersColumnExists($conn, 'subscription_plan')) {
+                        $insertColumns[] = 'subscription_plan';
+                        $insertValues[] = "'" . mysqli_real_escape_string($conn, $formData['subscriptionPlan']) . "'";
+                    }
+
+                    if (ownersColumnExists($conn, 'billing_cycle')) {
+                        $insertColumns[] = 'billing_cycle';
+                        $insertValues[] = "'" . mysqli_real_escape_string($conn, $formData['billingCycle']) . "'";
+                    }
+
+                    if (ownersColumnExists($conn, 'country_code')) {
+                        $insertColumns[] = 'country_code';
+                        $insertValues[] = "'" . mysqli_real_escape_string($conn, $formData['countryCode']) . "'";
+                    }
+
+                    if (ownersColumnExists($conn, 'invite_code')) {
+                        $insertColumns[] = 'invite_code';
+                        $insertValues[] = "'" . mysqli_real_escape_string($conn, $inviteCode) . "'";
+                    }
+
+                    if (ownersColumnExists($conn, 'created_at')) {
+                        $insertColumns[] = 'created_at';
+                        $insertValues[] = 'NOW()';
+                    }
+
+                    $insertSql = "INSERT INTO owners (" . implode(', ', $insertColumns) . ") VALUES (" . implode(', ', $insertValues) . ")";
+                    $insertResult = mysqli_query($conn, $insertSql);
+
+                    if ($insertResult) {
+                        $_SESSION['tenant_application_data'] = [
+                            'tenantID' => $tenantID,
+                            'shopName' => $formData['shopName'],
+                            'shopAddress' => $formData['shopAddress'],
+                            'ownerName' => $formData['ownerName'],
+                            'countryCode' => $formData['countryCode'],
+                            'contactNumber' => $formData['contactNumber'],
+                            'email' => $formData['email'],
+                            'subscriptionPlan' => $formData['subscriptionPlan'],
+                            'billingCycle' => $formData['billingCycle']
+                        ];
+
+                        header(
+                            'Location: clientdocumentrequirements.php?tenantID=' . urlencode($tenantID) .
+                            '&plan=' . urlencode($formData['subscriptionPlan']) .
+                            '&billingCycle=' . urlencode($formData['billingCycle'])
+                        );
+                        exit();
+                    } else {
+                        $errors[] = 'Unable to submit your application right now. Please try again.';
+                    }
                 }
             }
         }
     }
 }
+
 ?>
 <!DOCTYPE html>
 <html class="scroll-smooth" lang="en">
@@ -655,9 +743,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['createTenantApplicati
                         Register
                     </a>
 
-                    <a href="#application"
+                    <a href="clientlogin.php"
                         class="bg-primary text-on-primary px-5 py-2 rounded-lg text-sm font-bold tracking-tight hover:opacity-90 transition-all active:scale-95">
-                        Get Started
+                        Login
                     </a>
 
                 <?php endif; ?>
@@ -666,37 +754,117 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['createTenantApplicati
     </nav>
 
     <main class="pt-16">
-        <section class="relative min-h-[921px] flex items-center overflow-hidden py-20 px-6" id="application">
-            <div class="absolute inset-0 z-0 bg-gradient-to-br from-primary/5 to-transparent"></div>
+        <section
+            class="relative min-h-[921px] flex items-center overflow-hidden py-20 px-6 bg-gradient-to-br from-[#f8fbff] via-[#eef4ff] to-[#ffffff]"
+            id="application">
+
+            <!-- Decorative blue shape at the top right -->
+            <div class="absolute top-0 right-0 w-[760px] h-[360px] bg-[#1152d4] opacity-95 pointer-events-none"
+                style="clip-path: ellipse(65% 100% at 100% 0%);">
+            </div>
+
+            <!-- Decorative blue shape at the bottom left -->
+            <div class="absolute bottom-0 left-0 w-[560px] h-[190px] bg-[#1152d4] opacity-95 pointer-events-none"
+                style="clip-path: ellipse(70% 100% at 0% 100%);">
+            </div>
+
+            <!-- Soft patterned background -->
+            <div class="absolute inset-0 z-0 pointer-events-none">
+                <div class="absolute inset-0 bg-white/35"></div>
+                <div class="absolute -top-24 left-0 w-[700px] h-[700px] bg-blue-100 rounded-full blur-3xl opacity-50">
+                </div>
+                <div class="absolute top-40 right-20 w-[420px] h-[420px] bg-blue-200 rounded-full blur-3xl opacity-30">
+                </div>
+                <div class="absolute left-16 top-72 w-28 h-28 border-[6px] border-blue-200 rounded-full opacity-50">
+                </div>
+                <div class="absolute right-20 bottom-32 w-24 h-24 border-[6px] border-blue-200 rounded-full opacity-50">
+                </div>
+            </div>
 
             <div class="max-w-7xl mx-auto w-full grid grid-cols-1 lg:grid-cols-2 gap-16 items-center relative z-10">
-                <div class="space-y-8">
-                    <span
-                        class="inline-block px-3 py-1 bg-primary-container text-primary text-[10px] font-bold tracking-widest uppercase rounded">
-                        Operational Excellence
-                    </span>
+                <div class="space-y-8 flex flex-col justify-center items-start h-full relative">
 
-                    <h1 class="text-5xl md:text-6xl font-black tracking-tighter leading-[1.1] text-on-background">
-                        The Clinical Standard for <span class="text-primary">Modern Repair.</span>
-                    </h1>
 
-                    <p class="text-lg text-on-surface-variant max-w-lg leading-relaxed">
-                        High-fidelity operational tools designed for professional shop owners. Move beyond legacy
-                        systems with RapidRepairCo.'s architectural rigor and real-time fleet management.
-                    </p>
+                    <div class="relative z-10">
 
-                    <div class="flex items-center gap-4 text-sm font-semibold text-on-surface">
-                        <div class="flex -space-x-2">
-                            <div class="w-8 h-8 rounded-full border-2 border-white bg-slate-200"></div>
-                            <div class="w-8 h-8 rounded-full border-2 border-white bg-slate-300"></div>
-                            <div class="w-8 h-8 rounded-full border-2 border-white bg-slate-400"></div>
+                        <!-- Floating repair shop icons to fill the hero white space -->
+                        <div
+                            class="absolute -left-12 top-10 hidden xl:flex w-20 h-20 bg-white rounded-full shadow-xl items-center justify-center border border-blue-100 animate-bounce">
+                            <span class="material-symbols-outlined text-primary text-4xl">monitoring</span>
                         </div>
-                        <span>Trusted by 500+ premium auto shops nationwide.</span>
+
+                        <div
+                            class="absolute right-0 top-20 hidden xl:flex w-20 h-20 bg-white rounded-full shadow-xl items-center justify-center border border-blue-100 animate-pulse">
+                            <span class="material-symbols-outlined text-primary text-4xl">build</span>
+                        </div>
+
+                        <!-- Dotted pattern -->
+                        <div class="absolute top-6 right-36 hidden xl:grid grid-cols-4 gap-3 opacity-30">
+                            <?php for ($i = 0; $i < 16; $i++): ?>
+                                <div class="w-2 h-2 bg-primary rounded-full"></div>
+                            <?php endfor; ?>
+                        </div>
+
+                        <!-- Dashed line decoration -->
+                        <div
+                            class="absolute left-0 top-32 hidden xl:block w-[620px] h-[420px] border-2 border-dashed border-blue-400/60 rounded-full pointer-events-none">
+                        </div>
+
+                        <span
+                            class="inline-block px-4 py-2 bg-white/80 text-primary text-[11px] font-black tracking-[0.25em] uppercase rounded-full shadow-sm border border-blue-100">
+                            Operational Excellence
+                        </span>
+                        <div class="mt-2 mb-12 flex flex-col items-center text-center w-full">
+
+                            <div class="relative flex items-center justify-center mt-10">
+
+                                <!-- Glow behind the logo card -->
+                                <div class="absolute w-[500px] h-[500px] bg-blue-200 rounded-full blur-3xl opacity-35">
+                                </div>
+
+                                <!-- Main logo card -->
+                                <div class="relative p-2 rounded-[2rem] shadow-[0_25px_60px_rgba(17,82,212,0.25)]">
+                                    <img src="../pictures/RRlogo.png" alt="RapidRepair Logo"
+                                        class="w-[420px] h-auto select-none rounded-[1.5rem]">
+                                </div>
+                            </div>
+
+                            <div class="mt-6">
+                                <p class="text-sm font-black uppercase tracking-[0.45em] text-primary mb-3">
+                                    RAPIDREPAIRCO.
+                                </p>
+
+                                <p class="text-2xl font-bold text-slate-600 tracking-tight">
+                                    Car Repair Shop Management Digital Platform
+                                </p>
+                            </div>
+
+                        </div>
+
+                        <h1
+                            class="text-5xl md:text-6xl font-black tracking-tighter leading-[1.1] text-on-background max-w-2xl">
+                            The Clinical Standard for
+                            <span class="text-primary">Modern Repair.</span>
+                        </h1>
+
+                        <p class="text-lg text-on-surface-variant max-w-2xl leading-relaxed mt-8">
+                            Manage customer bookings, repair jobs, vehicle records, payments, inventory, and technician
+                            tasks all in one easy-to-use system designed for modern car repair shops
+                        </p>
+
+                        <div class="flex items-center gap-4 text-sm font-semibold text-on-surface mt-10">
+                            <div class="flex -space-x-2">
+                                <div class="w-8 h-8 rounded-full border-2 border-white bg-slate-200"></div>
+                                <div class="w-8 h-8 rounded-full border-2 border-white bg-slate-300"></div>
+                                <div class="w-8 h-8 rounded-full border-2 border-white bg-slate-400"></div>
+                            </div>
+                            <span>Trusted by 500+ premium auto shops nationwide.</span>
+                        </div>
                     </div>
                 </div>
 
                 <div
-                    class="bg-surface-container border border-outline rounded-xl p-8 shadow-sm relative ring-4 ring-primary/5">
+                    class="bg-white/95 backdrop-blur border border-blue-100 rounded-xl p-8 shadow-[0_20px_60px_rgba(15,23,42,0.08)] relative ring-4 ring-primary/5">
                     <div
                         class="absolute -left-12 top-1/2 -translate-y-1/2 hidden xl:flex flex-col items-center gap-2 text-primary animate-point-right">
                         <span
@@ -707,7 +875,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['createTenantApplicati
 
                     <div class="mb-8">
                         <h2 class="text-2xl font-bold tracking-tight mb-2">Application Form</h2>
-                        <p class="text-sm text-on-surface-variant">Initialize your digital operational environment.</p>
+                        <p class="text-sm text-on-surface-variant">Set up your repair shop account in just a few steps.
+                        </p>
                     </div>
 
                     <?php if ($successMessage !== ''): ?>
@@ -731,7 +900,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['createTenantApplicati
                         </div>
                     <?php endif; ?>
 
-                    <form class="space-y-5" method="post" action="" enctype="multipart/form-data">
+                    <form class="space-y-5" method="post" action="">
                         <input type="hidden" name="createTenantApplication" value="1" />
 
                         <fieldset <?php echo !$isClientLoggedIn ? 'disabled' : ''; ?>>
@@ -848,56 +1017,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['createTenantApplicati
                                         </select>
                                     </div>
                                 </div>
-
-                                <div class="rounded-xl border border-outline bg-surface-container-low p-5 space-y-4">
-                                    <div>
-                                        <h3 class="text-sm font-black tracking-tight text-on-surface">Required Documents
-                                        </h3>
-                                        <p class="text-xs text-on-surface-variant mt-1">
-                                            Upload clear image copies. Accepted formats: JPG, PNG, WEBP. Max size: 5MB
-                                            each.
-                                        </p>
-                                    </div>
-
-                                    <div class="space-y-1.5">
-                                        <label
-                                            class="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">
-                                            Business Permit
-                                        </label>
-                                        <input
-                                            class="w-full bg-surface-variant border-transparent rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent text-sm py-3 px-4"
-                                            type="file" name="business_permit_image"
-                                            accept="image/jpeg,image/png,image/webp" required />
-                                    </div>
-
-                                    <div class="space-y-1.5">
-                                        <label
-                                            class="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">
-                                            Valid Owner ID
-                                        </label>
-                                        <input
-                                            class="w-full bg-surface-variant border-transparent rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent text-sm py-3 px-4"
-                                            type="file" name="valid_id_image" accept="image/jpeg,image/png,image/webp"
-                                            required />
-                                    </div>
-
-                                    <div class="space-y-1.5">
-                                        <label
-                                            class="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">
-                                            BIR Certificate / Tax Registration
-                                        </label>
-                                        <input
-                                            class="w-full bg-surface-variant border-transparent rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent text-sm py-3 px-4"
-                                            type="file" name="bir_certificate_image"
-                                            accept="image/jpeg,image/png,image/webp" required />
-                                    </div>
-                                </div>
                             </div>
 
                             <button
-                                class="w-full bg-primary text-white font-bold py-4 rounded-lg tracking-tight hover:bg-primary/90 transition-all mt-4"
+                                class="w-full bg-primary text-white font-bold py-4 rounded-lg tracking-tight hover:bg-primary/90 transition-all mt-4 flex items-center justify-center gap-2"
                                 type="submit">
-                                Submit Application
+                                Next Step
+                                <span class="material-symbols-outlined text-[20px]">arrow_forward</span>
                             </button>
                         </fieldset>
                     </form>
@@ -908,9 +1034,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['createTenantApplicati
         <section class="py-24 bg-white" id="features">
             <div class="max-w-7xl mx-auto px-6">
                 <div class="text-center max-w-2xl mx-auto mb-20">
-                    <h2 class="text-3xl font-black tracking-tighter mb-4">Engineered for Precision</h2>
-                    <p class="text-on-surface-variant">Every module is built with a focus on data integrity and operator
-                        efficiency.</p>
+                    <h2 class="text-3xl font-black tracking-tighter mb-4">Tools That Help Your Shop Run Better</h2>
+                    <p class="text-on-surface-variant">Designed to make daily operations faster, easier, and more
+                        organized for your team.</p>
                 </div>
 
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
@@ -918,10 +1044,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['createTenantApplicati
                         <div class="w-12 h-12 bg-primary-container flex items-center justify-center rounded-lg mb-6">
                             <span class="material-symbols-outlined text-primary">monitoring</span>
                         </div>
-                        <h3 class="text-xl font-bold mb-3 tracking-tight">Real-time Analytics</h3>
+                        <h3 class="text-xl font-bold mb-3 tracking-tight">Shop Performance Overview</h3>
                         <p class="text-sm text-on-surface-variant leading-relaxed">
-                            Continuous data streaming provides instant visibility into shop throughput, technician
-                            efficiency, and margin performance.
+                            Quickly see your daily sales, ongoing repairs, completed jobs, and overall shop performance.
                         </p>
                     </div>
 
@@ -929,7 +1054,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['createTenantApplicati
                         <div class="w-12 h-12 bg-primary-container flex items-center justify-center rounded-lg mb-6">
                             <span class="material-symbols-outlined text-primary">account_tree</span>
                         </div>
-                        <h3 class="text-xl font-bold mb-3 tracking-tight">Unified Fleet Management</h3>
+                        <h3 class="text-xl font-bold mb-3 tracking-tight">Manage Shop Operations</h3>
                         <p class="text-sm text-on-surface-variant leading-relaxed">
                             Architectural control over multi-location operations. Sync inventory, staff, and billing
                             across your entire network effortlessly.
@@ -940,10 +1065,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['createTenantApplicati
                         <div class="w-12 h-12 bg-primary-container flex items-center justify-center rounded-lg mb-6">
                             <span class="material-symbols-outlined text-primary">architecture</span>
                         </div>
-                        <h3 class="text-xl font-bold mb-3 tracking-tight">Clinical Interface Design</h3>
+                        <h3 class="text-xl font-bold mb-3 tracking-tight">Clean and Easy-to-Use Design</h3>
                         <p class="text-sm text-on-surface-variant leading-relaxed">
-                            No clutter. No noise. A high-density professional UI that prioritizes critical information
-                            for high-stakes decision making.
+                            Simple and organized screens that help your staff work faster and avoid confusion.
                         </p>
                     </div>
                 </div>
@@ -953,7 +1077,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['createTenantApplicati
         <section class="py-24 bg-surface" id="pricing">
             <div class="max-w-7xl mx-auto px-6">
                 <div class="text-center mb-16">
-                    <h2 class="text-3xl font-black tracking-tighter mb-4">Scalable Architectures</h2>
+                    <h2 class="text-3xl font-black tracking-tighter mb-4">Choose the Right Plan for Your Shop</h2>
                     <p class="text-on-surface-variant">Pricing tiers designed to grow with your operation.</p>
                 </div>
 
@@ -1029,8 +1153,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['createTenantApplicati
                     </h2>
 
                     <p class="text-on-surface-variant leading-relaxed">
-                        RapidRepairCo. was born from the realization that while cars have become sophisticated
-                        computers on wheels, the tools used to manage their repair remained stuck in the 20th century.
+                        RapidRepairCo. was created to help car repair shops replace paper-based and manual processes
+                        with a faster and more organized digital system.
                     </p>
 
                     <p class="text-on-surface-variant leading-relaxed">
@@ -1041,13 +1165,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['createTenantApplicati
                     <div class="grid grid-cols-2 gap-8 pt-6">
                         <div>
                             <div class="text-3xl font-black text-primary">99.9%</div>
-                            <div class="text-xs font-bold uppercase tracking-wider text-on-surface-variant">Uptime SLA
+                            <div class="text-xs font-bold uppercase tracking-wider text-on-surface-variant">System
+                                Availability
                             </div>
                         </div>
 
                         <div>
                             <div class="text-3xl font-black text-primary">24ms</div>
-                            <div class="text-xs font-bold uppercase tracking-wider text-on-surface-variant">Sync Latency
+                            <div class="text-xs font-bold uppercase tracking-wider text-on-surface-variant">Fast System
+                                Response
                             </div>
                         </div>
                     </div>
@@ -1059,10 +1185,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['createTenantApplicati
             <div class="max-w-7xl mx-auto px-6">
                 <div class="grid grid-cols-1 lg:grid-cols-3 gap-16">
                     <div class="lg:col-span-1">
-                        <h2 class="text-3xl font-black tracking-tighter mb-6">Expert Support</h2>
+                        <h2 class="text-3xl font-black tracking-tighter mb-6">Need Help? We’re Here for You</h2>
                         <p class="text-on-surface-variant mb-8">
-                            Our engineering team is standing by to help you integrate RapidRepairCo. into your existing
-                            workflow.
+                            Our support team is ready to help you set up and use RapidRepairCo. for your repair shop.
                         </p>
 
                         <div class="space-y-4">
@@ -1076,11 +1201,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['createTenantApplicati
                             </div>
 
                             <div class="flex items-center gap-4 p-4 border border-outline rounded-lg">
-                                <span class="material-symbols-outlined text-primary">forum</span>
+                                <span class="material-symbols-outlined text-primary">call</span>
                                 <div>
-                                    <div class="text-xs font-bold uppercase tracking-wider text-on-surface-variant">Live
-                                        Chat</div>
-                                    <div class="text-sm font-semibold">Average wait: 2 mins</div>
+                                    <div class="text-xs font-bold uppercase tracking-wider text-on-surface-variant">
+                                        Contact Number
+                                    </div>
+                                    <div class="text-sm font-semibold">+63 912 345 6789</div>
                                 </div>
                             </div>
                         </div>
@@ -1088,26 +1214,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['createTenantApplicati
 
                     <div class="lg:col-span-2 space-y-4">
                         <div class="p-6 bg-surface rounded-xl border border-outline">
-                            <h3 class="font-bold mb-2">How long does migration take?</h3>
+                            <h3 class="font-bold mb-2">How long does setup take?</h3>
                             <p class="text-sm text-on-surface-variant">
-                                Most shops complete their data migration from legacy systems within 48 hours with our
-                                automated onboarding tool.
+                                Most repair shops can set up their account and start using the system within 1 to 2
+                                days.
                             </p>
                         </div>
 
                         <div class="p-6 bg-surface rounded-xl border border-outline">
-                            <h3 class="font-bold mb-2">Can I manage multiple franchises?</h3>
+                            <h3 class="font-bold mb-2">Can I manage my repair shop staff and daily operations?</h3>
                             <p class="text-sm text-on-surface-variant">
-                                Yes, our Unified Fleet Management module is built specifically for multi-location
-                                operations with hierarchical access controls.
+                                Yes, RapidRepair helps you manage appointments, repair jobs, mechanics, inventory,
+                                payments, and customer records in one system.
                             </p>
                         </div>
 
                         <div class="p-6 bg-surface rounded-xl border border-outline">
-                            <h3 class="font-bold mb-2">Is my data secure?</h3>
+                            <h3 class="font-bold mb-2">Is my shop information safe?</h3>
                             <p class="text-sm text-on-surface-variant">
-                                We use bank-level AES-256 encryption for all data at rest and TLS 1.3 for all data in
-                                transit.
+                                Yes, your customer records and shop information are protected and securely stored.
                             </p>
                         </div>
 
@@ -1133,7 +1258,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['createTenantApplicati
 
             <div class="flex flex-wrap justify-center gap-6">
                 <a class="font-['Inter'] text-xs text-slate-500 hover:text-[#1152d4] hover:underline transition-all"
-                    href="clientlogin.php">Partner Login</a>
+                    href="clientlogin.php">Shop Owner Login</a>
                 <a class="font-['Inter'] text-xs text-slate-500 hover:text-[#1152d4] hover:underline transition-all"
                     href="clientregister.php">Create Account</a>
                 <a class="font-['Inter'] text-xs text-slate-500 hover:text-[#1152d4] hover:underline transition-all"

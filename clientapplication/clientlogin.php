@@ -174,28 +174,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['loginClient'])) {
                     <div
                         class="inline-flex items-center px-3 py-1 bg-primary/20 border border-primary/30 backdrop-blur-md rounded-lg mb-6">
                         <span class="text-xs font-bold tracking-widest text-primary-fixed-dim uppercase">Operational
-                            Core</span>
+                            Excellence</span>
                     </div>
                     <h1 class="text-5xl text-white leading-tight tracking-tight mb-6 font-bold">
-                        The Clinical <br />Architect of Repair.
+                        The Clinical Standard for <br />Modern Repair.
                     </h1>
                     <p class="text-slate-400 text-lg leading-relaxed font-medium">
-                        Secure access to the global precision network. Monitor system health, manage high-density tenant
-                        data, and execute high-stakes operations.
+                        Easily manage appointments, repair jobs, customer records, payments, and daily shop activities in one organized system.
                     </p>
                 </div>
                 <div class="flex gap-8 border-t border-white/10 pt-8">
                     <div>
-                        <div class="text-2xl font-bold text-white">99.9%</div>
-                        <div class="text-xs text-slate-500 font-bold uppercase tracking-widest mt-1">Uptime SLA</div>
+                        <div class="text-2xl font-bold text-white">24/7</div>
+                        <div class="text-xs text-slate-500 font-bold uppercase tracking-widest mt-1">Available Anytime</div>
                     </div>
                     <div>
-                        <div class="text-2xl font-bold text-white">256-bit</div>
-                        <div class="text-xs text-slate-500 font-bold uppercase tracking-widest mt-1">Encryption</div>
+                        <div class="text-2xl font-bold text-white">Secure</div>
+                        <div class="text-xs text-slate-500 font-bold uppercase tracking-widest mt-1">Data Protection</div>
                     </div>
                     <div>
-                        <div class="text-2xl font-bold text-white">v4.0.2</div>
-                        <div class="text-xs text-slate-500 font-bold uppercase tracking-widest mt-1">Precision Core
+                        <div class="text-2xl font-bold text-white">Easy</div>
+                        <div class="text-xs text-slate-500 font-bold uppercase tracking-widest mt-1">To Use
                         </div>
                     </div>
                 </div>
@@ -218,7 +217,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['loginClient'])) {
                 </div>
                 <header class="mb-10">
                     <h2 class="text-3xl text-on-surface tracking-tight mb-2 font-bold">Log In</h2>
-                    <p class="text-on-surface-variant font-medium">Enter your credentials to enter the network.</p>
+                    <p class="text-on-surface-variant font-medium">Enter your login credentials.</p>
                 </header>
                 <?php if (count($errors) > 0): ?>
                     <div class="mb-6 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
@@ -233,7 +232,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['loginClient'])) {
                     <!-- Email Input -->
                     <div class="space-y-2">
                         <label class="text-xs font-bold text-on-surface-variant uppercase tracking-widest"
-                            for="email">Administrative Email</label>
+                            for="email">Email</label>
                         <div class="relative group">
                             <div
                                 class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-on-surface-variant group-focus-within:text-primary transition-colors">
@@ -241,7 +240,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['loginClient'])) {
                             </div>
                             <input
                                 class="block w-full pl-10 pr-4 py-3 bg-surface-variant border-transparent border-b-2 border-b-outline focus:border-b-primary focus:ring-0 text-sm font-semibold transition-all duration-200"
-                                id="email" name="email" placeholder="name@rapidrepairco.com" required=""
+                                id="email" name="email" placeholder="Enter your email address" required=""
                                 type="email" value="<?php echo htmlspecialchars($formData['email'], ENT_QUOTES, 'UTF-8'); ?>" />
                         </div>
                     </div>
@@ -249,7 +248,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['loginClient'])) {
                     <div class="space-y-2">
                         <div class="flex justify-between items-end">
                             <label class="text-xs font-bold text-on-surface-variant uppercase tracking-widest"
-                                for="password">Secure Passkey</label>
+                                for="password">Password</label>
                             <a class="text-[11px] font-bold text-primary hover:underline uppercase tracking-wider"
                                 href="#">Forgot Password?</a>
                         </div>
@@ -267,13 +266,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['loginClient'])) {
                     <div class="flex items-center">
                         <input class="h-4 w-4 text-primary border-outline-variant rounded-sm focus:ring-primary/20"
                             id="remember_me" name="remember_me" type="checkbox" />
-                        <label class="ml-2 block text-xs font-medium text-on-surface-variant" for="remember_me">Keep me
-                            logged in for 24 hours</label>
+                        <label class="ml-2 block text-xs font-medium text-on-surface-variant" for="remember_me">Keep me signed in</label>
                     </div>
                     <!-- Submit Button -->
                     <button
                         class="w-full flex justify-center items-center py-4 px-6 bg-primary text-white text-sm font-bold uppercase tracking-[0.2em] rounded-lg shadow-lg hover:shadow-primary/20 hover:translate-y-[-1px] active:translate-y-[1px] transition-all duration-300 group"
-                        type="submit">Authorize Access <span
+                        type="submit">Log In<span
                             class="material-symbols-outlined ml-3 text-[20px] group-hover:translate-x-1 transition-transform">arrow_forward</span></button>
                     <div class="text-center">
                         <span class="text-sm text-on-surface-variant">Don't have an account? </span>
@@ -287,18 +285,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['loginClient'])) {
                             <span class="material-symbols-outlined text-[18px]">verified_user</span>
                         </div>
                         <p class="text-[11px] leading-tight font-medium">
-                            Authorized personnel only. Access is monitored under <br /> <span
-                                class="text-on-surface font-bold">Policy Protocol 7-B</span>.
-                        </p>
+                            Your account and shop information are securely protected. <br /> <span
+                                class="text-primary font-bold">Learn more about our security measures.</span>
                     </div>
                     <div class="flex justify-between items-center mt-4">
                         <div class="flex gap-4">
                             <a class="text-[10px] text-on-surface-variant hover:text-primary font-bold uppercase tracking-tight"
-                                href="#">System Status</a>
+                                href="#">Help Center</a>
                             <a class="text-[10px] text-on-surface-variant hover:text-primary font-bold uppercase tracking-tight"
-                                href="#">Support Desk</a>
+                                href="#">Contact Support</a>
                         </div>
-                        <span class="text-[10px] text-outline-variant font-bold uppercase">v4.0.2-GA</span>
+                        <span class="text-[10px] text-outline-variant font-bold uppercase">RapidRepairCo.</span>
                     </div>
                 </footer>
             </div>

@@ -6,6 +6,10 @@ $pass = "rradmin123!";
 $db   = "rapidrepairs";
 $port = 3306;
 
+// Production domain configuration
+define('PRODUCTION_DOMAIN', 'rapidrepair-gygpcbczgyg0czek.southeastasia-01.azurewebsites.net');
+define('ALLOW_LOCALHOST_LINKS', true); // Set to false to always use production domain
+
 $conn = mysqli_init();
 
 if (!$conn) {

@@ -156,7 +156,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['registerClient'])) {
 <head>
     <meta charset="utf-8" />
     <meta content="width=device-width, initial-scale=1.0" name="viewport" />
-    <title>RapidRepairCo. - Create Account</title>
+    <title>RapidRepairCo. - Register Account</title>
     <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&amp;display=swap"
         rel="stylesheet" />
@@ -256,7 +256,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['registerClient'])) {
         </div>
         <a href="clientlogin.php"
             class="bg-primary text-on-primary px-4 py-2 rounded-lg text-[14px] font-bold active:opacity-80 transition-all inline-flex items-center">
-            Partner Login
+            Login
         </a>
     </nav>
     <!-- Main Registration Content -->
@@ -274,14 +274,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['registerClient'])) {
             <div class="relative z-10">
                 <div
                     class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primary/10 border border-primary/20 text-primary-fixed-dim text-[12px] font-bold tracking-widest uppercase mb-6">
-                    Partner Registration
+                    Register Account
                 </div>
                 <h1 class="text-[48px] font-black text-white leading-[1.1] tracking-tight mb-6">
-                    Join the Future of Shop Management
+                    Start Managing Your Repair Shop
                 </h1>
                 <p class="text-[18px] text-slate-400 max-w-lg leading-relaxed mb-12">
-                    RapidRepairCo. provides the high-fidelity operational tools required for top-tier repair networks.
-                    Secure your position in the architectural standard of vehicle maintenance.
+                    RapidRepairCo. helps car repair shops manage appointments, repair jobs, customer records, payments, and daily operations in one easy-to-use system.
                 </p>
                 <div class="grid grid-cols-1 gap-8">
                     <div class="flex items-start gap-4">
@@ -290,8 +289,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['registerClient'])) {
                             <span class="material-symbols-outlined">architecture</span>
                         </div>
                         <div>
-                            <h3 class="text-white font-bold">Rigor and Precision</h3>
-                            <p class="text-slate-500 text-sm">Engineered for high-stakes professional environments.</p>
+                            <h3 class="text-white font-bold">Organized Daily Operations</h3>
+                            <p class="text-slate-500 text-sm">Keep track of repair jobs, schedules, and customer records more easily.</p>
                         </div>
                     </div>
                     <div class="flex items-start gap-4">
@@ -300,9 +299,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['registerClient'])) {
                             <span class="material-symbols-outlined">network_node</span>
                         </div>
                         <div>
-                            <h3 class="text-white font-bold">Unified Ecosystem</h3>
-                            <p class="text-slate-500 text-sm">Connect seamlessly with the global Cobalt vehicle repair
-                                grid.</p>
+                            <h3 class="text-white font-bold">All-in-One Repair Shop System</h3>
+                            <p class="text-slate-500 text-sm">Manage appointments, mechanics, inventory, and payments in one platform.</p>
                         </div>
                     </div>
                 </div>
@@ -321,13 +319,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['registerClient'])) {
                 <div class="mb-10 lg:hidden">
                     <div class="text-[20px] font-black text-[#1152d4] uppercase tracking-tighter mb-2">RapidRepairCo.
                     </div>
-                    <h2 class="text-[24px] font-bold tracking-tight">Join the Future of Shop Management</h2>
+                    <h2 class="text-[24px] font-bold tracking-tight">Create Your Repair Shop Account</h2>
                 </div>
                 <div class="bg-white p-8 md:p-10 rounded-lg border border-slate-200 shadow-sm">
                     <div class="mb-8">
-                        <h2 class="text-[20px] font-bold text-on-surface mb-2 tracking-tight">Create Account</h2>
-                        <p class="text-on-surface-variant text-[14px]">Enter your shop details to begin the onboarding
-                            process.</p>
+                        <h2 class="text-[20px] font-bold text-on-surface mb-2 tracking-tight">Register Account</h2>
+                        <p class="text-on-surface-variant text-[14px]">Fill in your details to create your account.</p>
                     </div>
                     <?php if ($successMessage !== ''): ?>
                         <div class="mb-5 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">
@@ -450,7 +447,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['registerClient'])) {
                                 <input class="w-4 h-4 text-primary border-outline rounded focus:ring-primary mt-0.5 flex-shrink-0" id="terms"
                                     type="checkbox" required />
                                 <label class="text-[12px] text-on-surface-variant leading-relaxed" for="terms">I agree to the
-                                    <a class="text-primary font-bold hover:underline" href="#">Terms of Service</a> and <a
+                                    <a class="text-primary font-bold hover:underline" href="#">Terms and Conditionse</a> and <a
                                         class="text-primary font-bold hover:underline" href="#">Privacy Policy</a>.</label>
                             </div>
                             <button
@@ -466,7 +463,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['registerClient'])) {
                     </form>
                 </div>
                 <p class="mt-8 text-center text-[12px] text-on-surface-variant">
-                    Security verified by RapidRepairCo. Auth Services.
+                    Your account information is securely protected by RapidRepairCo.
                 </p>
             </div>
         </div>
@@ -486,7 +483,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['registerClient'])) {
             <a class="text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 transition-colors"
                 href="#">Terms of Service</a>
             <a class="text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 transition-colors"
-                href="#">Compliance</a>
+                href="#">Help Center</a>
             <a class="text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 transition-colors"
                 href="#">Support</a>
         </div>

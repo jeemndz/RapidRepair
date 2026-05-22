@@ -153,11 +153,18 @@ if ($ownerStmt) {
                                 <span class="material-symbols-outlined text-[18px]">palette</span>
                                 Website Customizer
                             </a>
-                            <a class="flex items-center gap-3 px-3 py-2.5 rounded-b-lg text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors text-sm border-t border-slate-100 dark:border-slate-700"
+                            <a class="flex items-center gap-3 px-3 py-2.5 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors text-sm border-t border-slate-100 dark:border-slate-700"
                                 href="settingsadmin.php">
                                 <span class="material-symbols-outlined text-[18px]">settings</span>
                                 Settings
                             </a>
+                            <?php if (canAccessModule('storage_managementadmin.php', $accessibleModules)): ?>
+                            <a class="flex items-center gap-3 px-3 py-2.5 rounded-b-lg text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors text-sm border-t border-slate-100 dark:border-slate-700"
+                                href="storage_managementadmin.php">
+                                <span class="material-symbols-outlined text-[18px]">storage</span>
+                                Storage Management
+                            </a>
+                            <?php endif; ?>
                         </div>
                     </div>
                 </div>
