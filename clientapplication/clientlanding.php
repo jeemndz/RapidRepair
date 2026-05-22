@@ -146,7 +146,7 @@ if (count($subscriptionPlans) === 0) {
             'plan_code' => 'starter',
             'plan_name' => 'Starter',
             'monthly_price' => 149,
-            'plan_features' => ['1 Location', 'Up to 5 Technicians', 'Basic Analytics'],
+            'plan_features' => ['1 Location', 'Up to 5 Technicians', 'Basic Reports'],
             'is_active' => 1
         ],
         [
@@ -154,7 +154,7 @@ if (count($subscriptionPlans) === 0) {
             'plan_code' => 'professional',
             'plan_name' => 'Professional',
             'monthly_price' => 399,
-            'plan_features' => ['Up to 3 Locations', 'Unlimited Technicians', 'Full Analytics Suite', 'SMS Notifications'],
+            'plan_features' => ['More staff accounts', 'Unlimited Technicians', 'Complete Reports', 'SMS Notifications'],
             'is_active' => 1
         ],
         [
@@ -162,7 +162,7 @@ if (count($subscriptionPlans) === 0) {
             'plan_code' => 'enterprise',
             'plan_name' => 'Enterprise',
             'monthly_price' => 0,
-            'plan_features' => ['Unlimited Locations', 'Custom API Access', 'Dedicated Success Manager', '24/7 Priority Support'],
+            'plan_features' => ['Custom shop setup', 'Custom system setup', 'Dedicated support assistant', '24/7 Support'],
             'is_active' => 1
         ]
     ];
@@ -536,7 +536,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['createTenantApplicati
 <head>
     <meta charset="utf-8" />
     <meta content="width=device-width, initial-scale=1.0" name="viewport" />
-    <title>RapidRepairCo. | Operational Excellence</title>
+    <title>RapidRepairCo. | Car Repair Shop Management</title>
     <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&amp;display=swap"
         rel="stylesheet" />
@@ -611,6 +611,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['createTenantApplicati
                     },
                 },
             },
+        }
+
+        function toggleMobileMenu() {
+            const mobileMenu = document.getElementById('mobileMenu');
+            if (mobileMenu) {
+                mobileMenu.classList.toggle('hidden');
+            }
         }
     </script>
 
@@ -708,6 +715,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['createTenantApplicati
 
             </div>
 
+            <button type="button"
+                class="md:hidden inline-flex items-center justify-center w-10 h-10 rounded-lg border border-slate-200 text-slate-700"
+                onclick="toggleMobileMenu()"
+                aria-label="Open menu">
+                <span class="material-symbols-outlined">menu</span>
+            </button>
+
             <div class="flex items-center gap-3">
                 <?php if ($isClientLoggedIn): ?>
 
@@ -751,11 +765,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['createTenantApplicati
                 <?php endif; ?>
             </div>
         </div>
+
+        <div id="mobileMenu" class="hidden md:hidden bg-white border-t border-slate-200 px-6 py-4">
+            <div class="flex flex-col gap-4">
+                <a class="text-sm font-semibold text-slate-700 hover:text-primary" href="clientlanding.php">Home</a>
+                <a class="text-sm font-semibold text-slate-700 hover:text-primary" href="#features">Features</a>
+                <a class="text-sm font-semibold text-slate-700 hover:text-primary" href="#pricing">Pricing</a>
+                <a class="text-sm font-semibold text-slate-700 hover:text-primary" href="#about">About</a>
+                <a class="text-sm font-semibold text-slate-700 hover:text-primary" href="#support">Support</a>
+            </div>
+        </div>
     </nav>
 
     <main class="pt-16">
         <section
-            class="relative min-h-[921px] flex items-center overflow-hidden py-20 px-6 bg-gradient-to-br from-[#f8fbff] via-[#eef4ff] to-[#ffffff]"
+            class="relative min-h-screen flex items-center overflow-hidden py-10 sm:py-16 lg:py-20 px-4 sm:px-6 bg-gradient-to-br from-[#f8fbff] via-[#eef4ff] to-[#ffffff]"
             id="application">
 
             <!-- Decorative blue shape at the top right -->
@@ -781,7 +805,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['createTenantApplicati
                 </div>
             </div>
 
-            <div class="max-w-7xl mx-auto w-full grid grid-cols-1 lg:grid-cols-2 gap-16 items-center relative z-10">
+            <div class="max-w-7xl mx-auto w-full grid grid-cols-1 lg:grid-cols-2 gap-10 lg:gap-16 items-center relative z-10">
                 <div class="space-y-8 flex flex-col justify-center items-start h-full relative">
 
 
@@ -812,20 +836,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['createTenantApplicati
 
                         <span
                             class="inline-block px-4 py-2 bg-white/80 text-primary text-[11px] font-black tracking-[0.25em] uppercase rounded-full shadow-sm border border-blue-100">
-                            Operational Excellence
+                            Made for Modern Car Repair Shops
                         </span>
-                        <div class="mt-2 mb-12 flex flex-col items-center text-center w-full">
+                        <div class="mt-2 mb-8 lg:mb-12 flex flex-col items-center text-center w-full">
 
                             <div class="relative flex items-center justify-center mt-10">
 
                                 <!-- Glow behind the logo card -->
-                                <div class="absolute w-[500px] h-[500px] bg-blue-200 rounded-full blur-3xl opacity-35">
+                                <div class="absolute w-[300px] h-[300px] sm:w-[420px] sm:h-[420px] lg:w-[500px] lg:h-[500px] bg-blue-200 rounded-full blur-3xl opacity-35">
                                 </div>
 
                                 <!-- Main logo card -->
                                 <div class="relative p-2 rounded-[2rem] shadow-[0_25px_60px_rgba(17,82,212,0.25)]">
                                     <img src="../pictures/RRlogo.png" alt="RapidRepair Logo"
-                                        class="w-[420px] h-auto select-none rounded-[1.5rem]">
+                                        class="w-[250px] sm:w-[340px] lg:w-[420px] h-auto select-none rounded-[1.5rem]">
                                 </div>
                             </div>
 
@@ -834,37 +858,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['createTenantApplicati
                                     RAPIDREPAIRCO.
                                 </p>
 
-                                <p class="text-2xl font-bold text-slate-600 tracking-tight">
-                                    Car Repair Shop Management Digital Platform
+                                <p class="text-lg sm:text-xl lg:text-2xl font-bold text-slate-600 tracking-tight">
+                                    Car Repair Shop Management System
                                 </p>
                             </div>
 
                         </div>
 
                         <h1
-                            class="text-5xl md:text-6xl font-black tracking-tighter leading-[1.1] text-on-background max-w-2xl">
-                            The Clinical Standard for
-                            <span class="text-primary">Modern Repair.</span>
+                            class="text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-black tracking-tighter leading-[1.1] text-on-background max-w-2xl text-center lg:text-left">
+                            Everything Your Car Repair Shop
+                            <span class="text-primary">Needs in One Place.</span>
                         </h1>
 
-                        <p class="text-lg text-on-surface-variant max-w-2xl leading-relaxed mt-8">
-                            Manage customer bookings, repair jobs, vehicle records, payments, inventory, and technician
-                            tasks all in one easy-to-use system designed for modern car repair shops
+                        <p class="text-base sm:text-lg text-on-surface-variant max-w-2xl leading-relaxed mt-6 lg:mt-8 text-center lg:text-left">
+                            Easily manage appointments, customer vehicles, repair updates, payments, parts inventory, and mechanic tasks with a simple and organized system.
                         </p>
 
-                        <div class="flex items-center gap-4 text-sm font-semibold text-on-surface mt-10">
+                        <div class="flex items-center justify-center lg:justify-start gap-4 text-sm font-semibold text-on-surface mt-8 lg:mt-10">
                             <div class="flex -space-x-2">
                                 <div class="w-8 h-8 rounded-full border-2 border-white bg-slate-200"></div>
                                 <div class="w-8 h-8 rounded-full border-2 border-white bg-slate-300"></div>
                                 <div class="w-8 h-8 rounded-full border-2 border-white bg-slate-400"></div>
                             </div>
-                            <span>Trusted by 500+ premium auto shops nationwide.</span>
+                            <span>Built for car repair shops that want faster and easier daily operations.</span>
                         </div>
                     </div>
                 </div>
 
                 <div
-                    class="bg-white/95 backdrop-blur border border-blue-100 rounded-xl p-8 shadow-[0_20px_60px_rgba(15,23,42,0.08)] relative ring-4 ring-primary/5">
+                    class="bg-white/95 backdrop-blur border border-blue-100 rounded-xl p-5 sm:p-8 shadow-[0_20px_60px_rgba(15,23,42,0.08)] relative ring-4 ring-primary/5">
                     <div
                         class="absolute -left-12 top-1/2 -translate-y-1/2 hidden xl:flex flex-col items-center gap-2 text-primary animate-point-right">
                         <span
@@ -927,7 +950,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['createTenantApplicati
                                         value="<?php echo htmlspecialchars($formData['shopAddress'], ENT_QUOTES, 'UTF-8'); ?>" />
                                 </div>
 
-                                <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+                                <div class="grid grid-cols-1 sm:grid-cols-2 gap-5">
                                     <div class="space-y-1.5">
                                         <label
                                             class="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">
@@ -981,7 +1004,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['createTenantApplicati
                                         value="<?php echo htmlspecialchars($formData['email'], ENT_QUOTES, 'UTF-8'); ?>" />
                                 </div>
 
-                                <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+                                <div class="grid grid-cols-1 sm:grid-cols-2 gap-5">
                                     <div class="space-y-1.5">
                                         <label
                                             class="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">
@@ -1034,7 +1057,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['createTenantApplicati
         <section class="py-24 bg-white" id="features">
             <div class="max-w-7xl mx-auto px-6">
                 <div class="text-center max-w-2xl mx-auto mb-20">
-                    <h2 class="text-3xl font-black tracking-tighter mb-4">Tools That Help Your Shop Run Better</h2>
+                    <h2 class="text-2xl sm:text-3xl font-black tracking-tighter mb-4">Tools That Help Your Shop Run Better</h2>
                     <p class="text-on-surface-variant">Designed to make daily operations faster, easier, and more
                         organized for your team.</p>
                 </div>
@@ -1056,8 +1079,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['createTenantApplicati
                         </div>
                         <h3 class="text-xl font-bold mb-3 tracking-tight">Manage Shop Operations</h3>
                         <p class="text-sm text-on-surface-variant leading-relaxed">
-                            Architectural control over multi-location operations. Sync inventory, staff, and billing
-                            across your entire network effortlessly.
+                            Manage appointments, repair jobs, mechanics, parts inventory, payments, and customer records in one place.
                         </p>
                     </div>
 
@@ -1077,17 +1099,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['createTenantApplicati
         <section class="py-24 bg-surface" id="pricing">
             <div class="max-w-7xl mx-auto px-6">
                 <div class="text-center mb-16">
-                    <h2 class="text-3xl font-black tracking-tighter mb-4">Choose the Right Plan for Your Shop</h2>
-                    <p class="text-on-surface-variant">Pricing tiers designed to grow with your operation.</p>
+                    <h2 class="text-2xl sm:text-3xl font-black tracking-tighter mb-4">Choose the Right Plan for Your Shop</h2>
+                    <p class="text-on-surface-variant">Flexible plans for small, growing, and large car repair shops.</p>
                 </div>
 
                 <div
-                    class="grid grid-cols-1 md:grid-cols-<?php echo count($subscriptionPlans); ?> gap-0 border border-outline rounded-xl overflow-hidden shadow-sm">
+                    class="grid grid-cols-1 md:grid-cols-<?php echo count($subscriptionPlans); ?> gap-4 md:gap-0 border md:border-outline border-transparent rounded-xl overflow-hidden md:shadow-sm">
                     <?php foreach ($subscriptionPlans as $index => $plan):
                         $isLast = $index === count($subscriptionPlans) - 1;
                         $isRecommended = count($subscriptionPlans) > 1 && $index === 1;
                         ?>
-                        <div class="relative bg-white <?php echo !$isLast ? 'border-r border-outline' : ''; ?> p-10 flex flex-col cursor-pointer hover:shadow-md transition-shadow group hover:border-primary/30 <?php echo $isRecommended ? 'bg-primary-container' : ''; ?>"
+                        <div class="relative bg-white border border-outline p-6 sm:p-10 flex flex-col cursor-pointer hover:shadow-md transition-shadow group hover:border-primary/30 rounded-xl md:rounded-none <?php echo $isRecommended ? 'bg-primary-container' : ''; ?>"
                             onclick="selectPlanAndScroll('<?php echo htmlspecialchars($plan['plan_code'], ENT_QUOTES, 'UTF-8'); ?>')">
 
                             <?php if ($isRecommended): ?>
@@ -1149,7 +1171,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['createTenantApplicati
 
                 <div class="space-y-6">
                     <h2 class="text-3xl font-black tracking-tighter leading-tight">
-                        Modernizing the Foundation of Automotive Repair.
+                        Helping Car Repair Shops Work Smarter
                     </h2>
 
                     <p class="text-on-surface-variant leading-relaxed">
@@ -1158,8 +1180,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['createTenantApplicati
                     </p>
 
                     <p class="text-on-surface-variant leading-relaxed">
-                        Our mission is to provide shop owners with high-fidelity operational tools that match the
-                        engineering excellence of the vehicles they service.
+                        Our goal is to help repair shop owners manage their business more efficiently and provide better service to customers.
                     </p>
 
                     <div class="grid grid-cols-2 gap-8 pt-6">
@@ -1238,7 +1259,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['createTenantApplicati
 
                         <a class="inline-flex items-center gap-2 text-primary text-sm font-bold hover:underline"
                             href="clientlogin.php">
-                            View full documentation and FAQ
+                            View help guide and frequently asked questions
                             <span class="material-symbols-outlined text-sm">arrow_forward</span>
                         </a>
                     </div>
