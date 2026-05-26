@@ -170,6 +170,104 @@ function fetchRows(mysqli $conn, string $sql, string $types, array $params)
     return $rows;
 }
 
+function getLoggedInAuditUser(mysqli $conn, int $tenantID): array
+{
+    $userType = $_SESSION['userType'] ?? 'owner';
+
+    if ($userType === 'staff') {
+        $roleId = (int) ($_SESSION['userId'] ?? 0);
+
+        if ($roleId > 0) {
+            $stmt = $conn->prepare(
+                "SELECT role_id, first_name, last_name, username, role_name
+                 FROM roles
+                 WHERE role_id = ?
+                   AND tenantID = ?
+                   AND is_active = 1
+                   AND status = 'Active'
+                 LIMIT 1"
+            );
+
+            if ($stmt) {
+                $stmt->bind_param('ii', $roleId, $tenantID);
+                $stmt->execute();
+                $result = $stmt->get_result();
+                $role = $result ? $result->fetch_assoc() : null;
+                $stmt->close();
+
+                if ($role) {
+                    $fullName = trim((string) ($role['first_name'] ?? '') . ' ' . (string) ($role['last_name'] ?? ''));
+
+                    return [
+                        'user_id' => (int) $role['role_id'],
+                        'user_name' => $fullName !== '' ? $fullName : (string) ($role['username'] ?? 'Staff User'),
+                        'user_role' => (string) ($role['role_name'] ?? 'Staff Member')
+                    ];
+                }
+            }
+        }
+
+        $fallbackName = trim((string) ($_SESSION['firstName'] ?? '') . ' ' . (string) ($_SESSION['lastName'] ?? ''));
+
+        return [
+            'user_id' => $roleId,
+            'user_name' => $fallbackName !== '' ? $fallbackName : (string) ($_SESSION['username'] ?? 'Staff User'),
+            'user_role' => (string) ($_SESSION['userRole'] ?? 'Staff Member')
+        ];
+    }
+
+    return [
+        'user_id' => $tenantID,
+        'user_name' => (string) ($_SESSION['shopName'] ?? 'Shop Owner'),
+        'user_role' => 'Administrator'
+    ];
+}
+
+function logTenantAuditEvent(mysqli $conn, int $tenantID, string $action, string $entityType, $entityId, string $details): void
+{
+    if ($tenantID <= 0) {
+        return;
+    }
+
+    $auditUser = getLoggedInAuditUser($conn, $tenantID);
+
+    $userId = (int) $auditUser['user_id'];
+    $userName = (string) $auditUser['user_name'];
+    $userRole = (string) $auditUser['user_role'];
+
+    $entityIdValue = is_null($entityId) ? null : (int) $entityId;
+    $ipAddress = (string) ($_SERVER['REMOTE_ADDR'] ?? '');
+    $userAgent = (string) ($_SERVER['HTTP_USER_AGENT'] ?? '');
+
+    $stmt = $conn->prepare(
+        "INSERT INTO system_logs
+            (tenantID, user_id, user_name, user_role, action, entity_type, entity_id, details, ip_address, user_agent, created_at)
+         VALUES
+            (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())"
+    );
+
+    if (!$stmt) {
+        return;
+    }
+
+    $stmt->bind_param(
+        'iissssisss',
+        $tenantID,
+        $userId,
+        $userName,
+        $userRole,
+        $action,
+        $entityType,
+        $entityIdValue,
+        $details,
+        $ipAddress,
+        $userAgent
+    );
+
+    $stmt->execute();
+    $stmt->close();
+}
+
 $loggedInUserName = '';
 $loggedInUserRole = '';
 
@@ -177,12 +275,28 @@ if (($_SESSION['userType'] ?? '') === 'owner') {
     $loggedInUserName = $_SESSION['shopName'] ?? 'Shop Owner';
     $loggedInUserRole = 'Administrator';
 } else {
-    $loggedInUserName = trim(($_SESSION['firstName'] ?? '') . ' ' . ($_SESSION['lastName'] ?? ''));
-    $loggedInUserName = $loggedInUserName !== '' ? $loggedInUserName : 'User';
-    $loggedInUserRole = $_SESSION['userRole'] ?? 'Staff Member';
+    $currentAuditUser = getLoggedInAuditUser($conn, $tenantID);
+    $loggedInUserName = $currentAuditUser['user_name'] ?? 'Staff User';
+    $loggedInUserRole = $currentAuditUser['user_role'] ?? 'Staff Member';
 }
 
 $shopName = $_SESSION['shopName'] ?? 'Repair Shop';
+
+
+$logoPath = '';
+$logoStmt = mysqli_prepare($conn, "SELECT logo_path FROM tenant_customizations WHERE tenantID = ? LIMIT 1");
+
+if ($logoStmt) {
+    mysqli_stmt_bind_param($logoStmt, 'i', $tenantID);
+    mysqli_stmt_execute($logoStmt);
+    $logoResult = mysqli_stmt_get_result($logoStmt);
+    $logoRow = $logoResult ? mysqli_fetch_assoc($logoResult) : null;
+    mysqli_stmt_close($logoStmt);
+
+    if (!empty($logoRow['logo_path'])) {
+        $logoPath = '../pictures/' . ltrim($logoRow['logo_path'], '/');
+    }
+}
 $ownerRow = fetchSingleRow(
     $conn,
     'SELECT shopName FROM owners WHERE tenantID = ? LIMIT 1',
@@ -227,8 +341,9 @@ if (!in_array($appointmentStatusFilter, $validAppointmentStatuses, true)) {
     $appointmentStatusFilter = '';
 }
 
-log_event(
+logTenantAuditEvent(
     $conn,
+    $tenantID,
     'VIEW Reports',
     'report',
     null,
@@ -596,11 +711,42 @@ $jobStatusValues = array_map('intval', array_column($jobStatusData, 'total'));
     <aside id="sidebar" class="fixed md:fixed left-0 top-0 h-screen w-64 flex flex-col bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 z-40 -translate-x-full md:translate-x-0 transition-transform duration-300 ease-in-out md:transition-none pt-16 md:pt-0 overflow-y-auto">
         <div class="p-6">
             <div class="flex items-center gap-3 mb-8">
-                <div class="bg-primary rounded-lg p-2 text-white">
-                    <span class="material-symbols-outlined">directions_car</span>
-                </div>
+                
+<?php if ($logoPath !== ''): ?>
+
+    <div class="h-14 w-14 overflow-hidden flex items-center justify-center">
+        <img
+            src="<?php echo h($logoPath); ?>"
+            alt="<?php echo h($shopName); ?> logo"
+            class="w-full h-full object-contain">
+    </div>
+
+<?php else: ?>
+
+    <div class="bg-primary rounded-2xl p-3 text-white shadow-lg">
+        <span class="material-symbols-outlined text-3xl">
+            directions_car
+        </span>
+    </div>
+
+<?php endif; ?>
+
                 <div>
-                    <h1 class="text-lg font-bold leading-none"><?php echo h($shopName); ?></h1>
+                    
+<?php
+$shopParts = explode(' ', trim($shopName), 2);
+?>
+
+<h1 class="text-xl font-black leading-none tracking-tight">
+    <span class="text-slate-900 dark:text-white">
+        <?php echo htmlspecialchars($shopParts[0] ?? 'Rapid'); ?>
+    </span>
+
+    <span class="text-primary">
+        <?php echo htmlspecialchars($shopParts[1] ?? 'Repair'); ?>
+    </span>
+</h1>
+
                     <p class="text-xs text-slate-500 mt-1">Your Repair Shop</p>
                 </div>
             </div>
@@ -711,7 +857,7 @@ $jobStatusValues = array_map('intval', array_column($jobStatusData, 'total'));
                 </div>
                 <form method="post" action="../logout/logout.php" class="inline">
                     <input type="hidden" name="action" value="confirm" />
-                    <button type="submit" class="text-slate-400 hover:text-error transition-colors" title="Logout">
+                    <button type="submit" class="text-slate-400 hover:text-red-500 transition-colors" title="Logout">
                         <span class="material-symbols-outlined text-xl">logout</span>
                     </button>
                 </form>
@@ -735,9 +881,8 @@ $jobStatusValues = array_map('intval', array_column($jobStatusData, 'total'));
         <div class="p-8 max-w-none">
             <div class="flex flex-col xl:flex-row xl:items-end justify-between gap-4 mb-8 no-print">
                 <div>
-                    <h1 class="text-[30px] font-black text-on-background tracking-tight">Performance Reports</h1>
+                    <h1 class="text-[30px] font-black text-on-background tracking-tight">Shop Performance Reports</h1>
                     <p class="text-on-surface-variant font-medium mt-1">
-                        Generate visual PDF reports from appointments, payments, and repair jobs.
                     </p>
                 </div>
                 <div class="flex flex-wrap gap-2">
@@ -850,11 +995,10 @@ $jobStatusValues = array_map('intval', array_column($jobStatusData, 'total'));
                     <div class="flex items-start justify-between gap-4">
                         <div>
                             <h2 class="text-2xl font-black tracking-tight"><?php echo h($shopName); ?> Performance Report</h2>
-                            <p class="text-blue-100 text-sm mt-1">Report period: <?php echo h($startDateStr); ?> to <?php echo h($endDateStr); ?></p>
+                        
                         </div>
                         <div class="text-right text-xs text-blue-100">
-                            <p>Generated by: <?php echo h($loggedInUserName); ?></p>
-                            <p>Date generated: <?php echo date('Y-m-d h:i A'); ?></p>
+                            <p><?php echo h($loggedInUserName); ?></p>
                         </div>
                     </div>
                 </div>
@@ -862,7 +1006,7 @@ $jobStatusValues = array_map('intval', array_column($jobStatusData, 'total'));
                 <div class="p-6 bg-slate-50 border-b border-slate-200">
                     <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
                         <div class="report-card bg-white border border-slate-200 rounded-xl p-5">
-                            <p class="text-[10px] font-black uppercase tracking-widest text-slate-400">Collected Revenue</p>
+                            <p class="text-[10px] font-black uppercase tracking-widest text-slate-400">Total Sales</p>
                             <h3 class="text-2xl font-black text-slate-900 mt-1"><?php echo money($paymentMetrics['collected_total'] ?? 0); ?></h3>
                             <?php $revenueChange = percentChange($paymentMetrics['collected_total'] ?? 0, $prevPaymentMetrics['collected_total'] ?? 0); ?>
                             <p class="text-xs font-bold mt-2 <?php echo $revenueChange >= 0 ? 'text-emerald-600' : 'text-red-600'; ?>">
@@ -961,7 +1105,7 @@ $jobStatusValues = array_map('intval', array_column($jobStatusData, 'total'));
                 <div class="grid grid-cols-1 xl:grid-cols-2 gap-6 px-6 pb-6">
                     <?php if (in_array('revenue', $exportSections, true)): ?>
                     <div class="report-card bg-white border border-slate-200 rounded-xl p-5">
-                        <h3 class="text-sm font-black uppercase tracking-widest text-slate-900 mb-4">Revenue Bar Graph</h3>
+                        <h3 class="text-sm font-black uppercase tracking-widest text-slate-900 mb-4">Total Sales Bar Graph</h3>
                         <div class="chart-box">
                             <canvas id="monthlyRevenueChart"></canvas>
                         </div>
@@ -998,7 +1142,7 @@ $jobStatusValues = array_map('intval', array_column($jobStatusData, 'total'));
 
                 <?php if (in_array('revenue', $exportSections, true)): ?>
                 <div class="p-6 report-card border-t border-slate-200">
-                    <h3 class="text-sm font-black uppercase tracking-widest text-slate-900 mb-4">Monthly Revenue Analysis</h3>
+                    <h3 class="text-sm font-black uppercase tracking-widest text-slate-900 mb-4">Monthly Sales Analysis</h3>
                     <div class="overflow-x-auto">
                         <table class="report-table w-full border-collapse text-left">
                             <thead>
@@ -1012,7 +1156,7 @@ $jobStatusValues = array_map('intval', array_column($jobStatusData, 'total'));
                             </thead>
                             <tbody>
                                 <?php if (count($monthlyRevenue) === 0): ?>
-                                    <tr><td colspan="5" class="text-center">No revenue records found.</td></tr>
+                                    <tr><td colspan="5" class="text-center">No sales records found.</td></tr>
                                 <?php endif; ?>
                                 <?php foreach ($monthlyRevenue as $row): ?>
                                     <?php $rowRate = (float) $row['billed'] > 0 ? round(((float) $row['collected'] / (float) $row['billed']) * 100, 1) : 0; ?>
@@ -1153,7 +1297,7 @@ $jobStatusValues = array_map('intval', array_column($jobStatusData, 'total'));
                                     <th>Total Jobs</th>
                                     <th>Completed Jobs</th>
                                     <th>Completion Rate</th>
-                                    <th>Revenue Generated</th>
+                                    <th>Sales Generated</th>
                                     <th>Average Hours</th>
                                 </tr>
                             </thead>

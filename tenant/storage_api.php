@@ -34,6 +34,37 @@ function folderSize($dir) {
     return $size;
 }
 
+function countTenantRecords($conn, $table, $tenantID) {
+    $allowedTables = [
+        'users',
+        'vehicleinformation',
+        'appointments',
+        'repair_jobs',
+        'diagnostic_reports',
+        'inventory_items',
+        'payments'
+    ];
+
+    if (!in_array($table, $allowedTables, true)) {
+        return 0;
+    }
+
+    $sql = "SELECT COUNT(*) AS total FROM `$table` WHERE tenantID = ?";
+    $stmt = $conn->prepare($sql);
+
+    if (!$stmt) {
+        return 0;
+    }
+
+    $stmt->bind_param("i", $tenantID);
+    $stmt->execute();
+
+    $result = $stmt->get_result();
+    $row = $result->fetch_assoc();
+
+    return (int)($row['total'] ?? 0);
+}
+
 $sql = "
     SELECT 
         o.tenantID,
@@ -80,15 +111,23 @@ if (!is_array($features)) {
     $features = [];
 }
 
+/*
+Supports this format:
+{
+  "storage_gb": 8,
+  "record_limit": 10000
+}
+*/
 $storageGB = isset($features['storage_gb']) ? (float)$features['storage_gb'] : 1;
+$recordLimit = isset($features['record_limit']) ? $features['record_limit'] : null;
 
 $storageLimitBytes = $storageGB * 1024 * 1024 * 1024;
 
 /*
-Recommended tenant upload path:
-uploads/tenants/{tenantID}/
+Folder path if storage_api.php is inside /tenant folder:
+RapidRepair/uploads/tenants/{tenantID}/
 */
-$tenantFolder = __DIR__ . "/uploads/tenants/" . $tenantID;
+$tenantFolder = __DIR__ . "/../uploads/tenants/" . $tenantID;
 
 $usedBytes = folderSize($tenantFolder);
 
@@ -100,10 +139,44 @@ if ($percentage > 100) {
     $percentage = 100;
 }
 
+/*
+Database record usage per tenant.
+Services table is removed.
+*/
+$recordUsage = [
+    "customers" => countTenantRecords($conn, "users", $tenantID),
+    "vehicles" => countTenantRecords($conn, "vehicleinformation", $tenantID),
+    "appointments" => countTenantRecords($conn, "appointments", $tenantID),
+    "repair_jobs" => countTenantRecords($conn, "repair_jobs", $tenantID),
+    "diagnostics" => countTenantRecords($conn, "diagnostic_reports", $tenantID),
+    "inventory_items" => countTenantRecords($conn, "inventory_items", $tenantID),
+    "payments" => countTenantRecords($conn, "payments", $tenantID)
+];
+
+$totalRecords = array_sum($recordUsage);
+
+$recordPercentage = null;
+$recordIsWarning = false;
+$recordIsFull = false;
+
+if (is_numeric($recordLimit) && (int)$recordLimit > 0) {
+    $recordLimit = (int)$recordLimit;
+    $recordPercentage = round(($totalRecords / $recordLimit) * 100, 2);
+
+    if ($recordPercentage > 100) {
+        $recordPercentage = 100;
+    }
+
+    $recordIsWarning = $recordPercentage >= 80;
+    $recordIsFull = $totalRecords >= $recordLimit;
+}
+
 echo json_encode([
     "success" => true,
+
     "tenantID" => $tenantID,
     "shopName" => $data['shopName'],
+
     "plan_name" => $data['plan_name'],
     "plan_code" => $data['plan_code'],
     "billing_cycle" => $data['billing_cycle'],
@@ -120,5 +193,12 @@ echo json_encode([
 
     "percentage" => $percentage,
     "is_warning" => $percentage >= 80,
-    "is_full" => $usedBytes >= $storageLimitBytes
+    "is_full" => $usedBytes >= $storageLimitBytes,
+
+    "record_usage" => $recordUsage,
+    "total_records" => $totalRecords,
+    "record_limit" => $recordLimit,
+    "record_percentage" => $recordPercentage,
+    "record_is_warning" => $recordIsWarning,
+    "record_is_full" => $recordIsFull
 ]);

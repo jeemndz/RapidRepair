@@ -60,6 +60,22 @@ if (!$owner) {
 // Re-store correct slug in session
 $_SESSION['login_slug'] = $loginSlug;
 $shopName = isset($owner['shopName']) && $owner['shopName'] !== '' ? $owner['shopName'] : 'AutoFix Pro';
+
+
+$logoPath = '';
+$logoStmt = mysqli_prepare($conn, "SELECT logo_path FROM tenant_customizations WHERE tenantID = ? LIMIT 1");
+
+if ($logoStmt) {
+    mysqli_stmt_bind_param($logoStmt, 'i', $tenantID);
+    mysqli_stmt_execute($logoStmt);
+    $logoResult = mysqli_stmt_get_result($logoStmt);
+    $logoRow = $logoResult ? mysqli_fetch_assoc($logoResult) : null;
+    mysqli_stmt_close($logoStmt);
+
+    if (!empty($logoRow['logo_path'])) {
+        $logoPath = '../pictures/' . ltrim($logoRow['logo_path'], '/');
+    }
+}
 $shopSlug = $loginSlug;
 $shopQuery = urlencode($loginSlug);
 
@@ -1270,7 +1286,7 @@ if ($historyStmt) {
     </style>
 </head>
 
-<body class="bg-white text-black antialiased">
+<body class="bg-slate-100 text-black antialiased">
     <!-- Mobile Menu Toggle -->
     <div class="md:hidden fixed top-0 left-0 right-0 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-4 py-3 z-50 flex items-center justify-between">
         <button id="sidebarToggle" type="button" class="inline-flex items-center justify-center w-10 h-10 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
@@ -1283,11 +1299,42 @@ if ($historyStmt) {
     <aside id="sidebar" class="fixed md:static md:flex left-0 top-0 h-screen md:h-screen w-64 md:w-64 flex-shrink-0 border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex flex-col overflow-y-auto z-40 -translate-x-full md:translate-x-0 transition-transform duration-300 ease-in-out md:transition-none pt-16 md:pt-0">
         <div class="p-6 flex-1">
             <div class="flex items-center gap-3 mb-8">
-                <div class="bg-primary rounded-lg p-2 text-white">
-                    <span class="material-symbols-outlined">directions_car</span>
-                </div>
+                
+<?php if ($logoPath !== ''): ?>
+
+    <div class="h-14 w-14 overflow-hidden flex items-center justify-center">
+        <img
+            src="<?php echo h($logoPath); ?>"
+            alt="<?php echo h($shopName); ?> logo"
+            class="w-full h-full object-contain">
+    </div>
+
+<?php else: ?>
+
+    <div class="bg-primary rounded-2xl p-3 text-white shadow-lg">
+        <span class="material-symbols-outlined text-3xl">
+            directions_car
+        </span>
+    </div>
+
+<?php endif; ?>
+
                 <div>
-                    <h1 class="text-lg font-bold leading-none"><?php echo h($shopName); ?></h1>
+                    
+<?php
+$shopParts = explode(' ', trim($shopName), 2);
+?>
+
+<h1 class="text-xl font-black leading-none tracking-tight">
+    <span class="text-slate-900 dark:text-white">
+        <?php echo htmlspecialchars($shopParts[0] ?? 'Rapid'); ?>
+    </span>
+
+    <span class="text-primary">
+        <?php echo htmlspecialchars($shopParts[1] ?? 'Repair'); ?>
+    </span>
+</h1>
+
                     <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Your Repair Shop</p>
                 </div>
             </div>
@@ -1376,7 +1423,7 @@ if ($historyStmt) {
     </aside>
 
     <main class="flex-1 overflow-y-auto">
-        <header class="sticky top-0 z-40 w-full border-b border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md flex items-center justify-between px-8 h-16">
+         <header class="sticky top-0 z-40 w-full border-b border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md flex items-center justify-between px-8 h-16">
             <h2 class="text-lg font-black text-slate-900 dark:text-white tracking-tight">Appointment Management</h2>
             <div class="flex items-center gap-4">
                 <button class="p-2 text-slate-500 hover:text-primary transition-all">

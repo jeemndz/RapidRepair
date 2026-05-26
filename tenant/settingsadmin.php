@@ -25,6 +25,59 @@ function h($value) {
 }
 
 
+
+function parseFeatureLimitFromPlan($planFeaturesRaw, $target)
+{
+    $features = json_decode((string) $planFeaturesRaw, true);
+
+    if (!is_array($features)) {
+        return null;
+    }
+
+    $target = strtolower($target);
+
+    if ($target === 'admin') {
+        $keys = ['admin_accounts', 'admin_account', 'admin_limit', 'admin_account_limit', 'max_admin_accounts'];
+        $words = ['admin', 'administrator'];
+    } else {
+        $keys = ['employee_accounts', 'employee_account', 'employee_limit', 'employee_account_limit', 'max_employee_accounts', 'staff_accounts', 'staff_limit', 'max_staff'];
+        $words = ['employee', 'staff'];
+    }
+
+    foreach ($keys as $key) {
+        if (isset($features[$key]) && is_numeric($features[$key])) {
+            return max(0, (int) $features[$key]);
+        }
+    }
+
+    foreach ($features as $feature) {
+        if (is_string($feature)) {
+            foreach ($words as $word) {
+                if (stripos($feature, $word) !== false && preg_match('/(\d+)/', $feature, $matches)) {
+                    return max(0, (int) $matches[1]);
+                }
+            }
+        }
+    }
+
+    return null;
+}
+
+function formatAccountLimitText($used, $limit)
+{
+    if ($limit === null) {
+        return number_format((int) $used) . ' / Unlimited';
+    }
+
+    return number_format((int) $used) . ' / ' . number_format((int) $limit);
+}
+
+function isAccountLimitFull($used, $limit)
+{
+    return $limit !== null && (int) $used >= (int) $limit;
+}
+
+
 function seedDefaultServices($conn, $tenantID) {
     $defaultServices = [
         [
@@ -417,6 +470,102 @@ if ($ownerStmt) {
     }
     mysqli_stmt_close($ownerStmt);
 }
+
+/*
+|--------------------------------------------------------------------------
+| Subscription plan account limits
+|--------------------------------------------------------------------------
+| Supports plan_features as either:
+| ["5 Admin Account","10 Employee Accounts","8 GB Storage"]
+| or:
+| {"admin_accounts":5,"employee_accounts":10,"storage_gb":8}
+*/
+$activePlanName = 'No Active Plan';
+$activePlanFeaturesRaw = '';
+$adminAccountLimit = null;
+$employeeAccountLimit = null;
+
+$planLimitStmt = mysqli_prepare($conn, "
+    SELECT 
+        sp.plan_name,
+        sp.plan_features
+    FROM subscriptions s
+    INNER JOIN subscription_plans sp ON sp.plan_id = s.plan_id
+    WHERE s.tenantID = ?
+      AND s.status = 'active'
+    ORDER BY s.subscription_id DESC
+    LIMIT 1
+");
+
+if ($planLimitStmt) {
+    $tenantIDString = (string) $tenantID;
+    mysqli_stmt_bind_param($planLimitStmt, 's', $tenantIDString);
+    mysqli_stmt_execute($planLimitStmt);
+    $planLimitResult = mysqli_stmt_get_result($planLimitStmt);
+
+    if ($planLimitResult && $planLimitRow = mysqli_fetch_assoc($planLimitResult)) {
+        $activePlanName = $planLimitRow['plan_name'] ?: 'Active Plan';
+        $activePlanFeaturesRaw = $planLimitRow['plan_features'] ?? '';
+        $adminAccountLimit = parseFeatureLimitFromPlan($activePlanFeaturesRaw, 'admin');
+        $employeeAccountLimit = parseFeatureLimitFromPlan($activePlanFeaturesRaw, 'employee');
+    }
+
+    mysqli_stmt_close($planLimitStmt);
+}
+
+$activeAdminAccounts = 0;
+$activeEmployeeAccounts = 0;
+
+$adminCountStmt = mysqli_prepare($conn, "
+    SELECT COUNT(*) AS total
+    FROM roles
+    WHERE tenantID = ?
+      AND is_active = 1
+      AND status = 'Active'
+      AND (
+          LOWER(role_name) LIKE '%admin%'
+          OR LOWER(access_scope) LIKE '%settings%'
+          OR LOWER(access_scope) LIKE '%billing%'
+      )
+");
+
+if ($adminCountStmt) {
+    mysqli_stmt_bind_param($adminCountStmt, 'i', $tenantID);
+    mysqli_stmt_execute($adminCountStmt);
+    $adminCountResult = mysqli_stmt_get_result($adminCountStmt);
+    if ($adminCountResult && $adminCountRow = mysqli_fetch_assoc($adminCountResult)) {
+        $activeAdminAccounts = (int) $adminCountRow['total'];
+    }
+    mysqli_stmt_close($adminCountStmt);
+}
+
+$employeeCountStmt = mysqli_prepare($conn, "
+    SELECT COUNT(*) AS total
+    FROM roles
+    WHERE tenantID = ?
+      AND is_active = 1
+      AND status = 'Active'
+      AND NOT (
+          LOWER(role_name) LIKE '%admin%'
+          OR LOWER(access_scope) LIKE '%settings%'
+          OR LOWER(access_scope) LIKE '%billing%'
+      )
+");
+
+if ($employeeCountStmt) {
+    mysqli_stmt_bind_param($employeeCountStmt, 'i', $tenantID);
+    mysqli_stmt_execute($employeeCountStmt);
+    $employeeCountResult = mysqli_stmt_get_result($employeeCountStmt);
+    if ($employeeCountResult && $employeeCountRow = mysqli_fetch_assoc($employeeCountResult)) {
+        $activeEmployeeAccounts = (int) $employeeCountRow['total'];
+    }
+    mysqli_stmt_close($employeeCountStmt);
+}
+
+$adminLimitFull = isAccountLimitFull($activeAdminAccounts, $adminAccountLimit);
+$employeeLimitFull = isAccountLimitFull($activeEmployeeAccounts, $employeeAccountLimit);
+$allAccountLimitsFull = $adminLimitFull && $employeeLimitFull;
+
 ?>
 <!DOCTYPE html>
 <html class="light" lang="en">
@@ -706,13 +855,64 @@ if ($ownerStmt) {
                 </div>
             </div>
 
+            <section class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                <div class="bg-white border border-slate-200 rounded-lg p-5 shadow-sm">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-xs font-black uppercase tracking-widest text-slate-400">Current Plan</p>
+                            <h3 class="text-xl font-black text-slate-900 mt-1"><?php echo h($activePlanName); ?></h3>
+                        </div>
+                        <div class="p-2 bg-blue-50 rounded-lg">
+                            <span class="material-symbols-outlined text-primary">workspace_premium</span>
+                        </div>
+                    </div>
+                    <p class="text-xs text-slate-500 mt-3">User creation is limited based on your subscription features.</p>
+                </div>
+
+                <div class="bg-white border border-slate-200 rounded-lg p-5 shadow-sm <?php echo $adminLimitFull ? 'border-red-200 bg-red-50/30' : ''; ?>">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-xs font-black uppercase tracking-widest text-slate-400">Admin Accounts</p>
+                            <h3 class="text-2xl font-black <?php echo $adminLimitFull ? 'text-red-600' : 'text-slate-900'; ?> mt-1">
+                                <?php echo h(formatAccountLimitText($activeAdminAccounts, $adminAccountLimit)); ?>
+                            </h3>
+                        </div>
+                        <div class="p-2 <?php echo $adminLimitFull ? 'bg-red-100' : 'bg-blue-50'; ?> rounded-lg">
+                            <span class="material-symbols-outlined <?php echo $adminLimitFull ? 'text-red-600' : 'text-primary'; ?>">admin_panel_settings</span>
+                        </div>
+                    </div>
+                    <p class="text-xs <?php echo $adminLimitFull ? 'text-red-600 font-semibold' : 'text-slate-500'; ?> mt-3">
+                        <?php echo $adminLimitFull ? 'Admin account limit reached.' : 'Accounts with Settings/Billing access are counted as admin accounts.'; ?>
+                    </p>
+                </div>
+
+                <div class="bg-white border border-slate-200 rounded-lg p-5 shadow-sm <?php echo $employeeLimitFull ? 'border-red-200 bg-red-50/30' : ''; ?>">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-xs font-black uppercase tracking-widest text-slate-400">Employee Accounts</p>
+                            <h3 class="text-2xl font-black <?php echo $employeeLimitFull ? 'text-red-600' : 'text-slate-900'; ?> mt-1">
+                                <?php echo h(formatAccountLimitText($activeEmployeeAccounts, $employeeAccountLimit)); ?>
+                            </h3>
+                        </div>
+                        <div class="p-2 <?php echo $employeeLimitFull ? 'bg-red-100' : 'bg-blue-50'; ?> rounded-lg">
+                            <span class="material-symbols-outlined <?php echo $employeeLimitFull ? 'text-red-600' : 'text-primary'; ?>">badge</span>
+                        </div>
+                    </div>
+                    <p class="text-xs <?php echo $employeeLimitFull ? 'text-red-600 font-semibold' : 'text-slate-500'; ?> mt-3">
+                        <?php echo $employeeLimitFull ? 'Employee account limit reached.' : 'Accounts without Settings/Billing access are counted as employee accounts.'; ?>
+                    </p>
+                </div>
+            </section>
+
             <section class="space-y-4">
                 <div class="flex items-center justify-between">
                     <div>
                         <h3 class="text-xl font-bold text-slate-900 tracking-tight">User Role Management</h3>
                         <p class="text-sm text-slate-500">Manage permissions and access levels for shop technicians and office staff.</p>
                     </div>
-                    <button id="addRoleBtn" class="bg-primary text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 hover:bg-blue-800 transition-colors shadow-sm">
+                    <button id="addRoleBtn"
+                            <?php echo $allAccountLimitsFull ? 'disabled' : ''; ?>
+                            class="bg-primary text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 hover:bg-blue-800 transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed">
                         <span class="material-symbols-outlined text-sm">add</span>
                         Add New User
                     </button>
@@ -1063,6 +1263,16 @@ if ($ownerStmt) {
                 </div>
             </div>
 
+            <div class="rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-blue-800">
+                <div class="flex gap-3">
+                    <span class="material-symbols-outlined text-blue-700">info</span>
+                    <div>
+                        <p class="font-bold">Account limit rule</p>
+                        <p class="mt-1">Users with <strong>Settings</strong> or <strong>Billing</strong> access are counted as Admin Accounts. Other users are counted as Employee Accounts.</p>
+                    </div>
+                </div>
+            </div>
+
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                     <label for="roleStatus" class="block text-sm font-semibold text-slate-700 mb-2">Status</label>
@@ -1091,6 +1301,53 @@ if ($ownerStmt) {
 </div>
 
 <script>
+const PLAN_ACCOUNT_LIMITS = {
+    adminLimit: <?php echo $adminAccountLimit === null ? 'null' : (int) $adminAccountLimit; ?>,
+    employeeLimit: <?php echo $employeeAccountLimit === null ? 'null' : (int) $employeeAccountLimit; ?>,
+    activeAdminAccounts: <?php echo (int) $activeAdminAccounts; ?>,
+    activeEmployeeAccounts: <?php echo (int) $activeEmployeeAccounts; ?>,
+    adminLimitFull: <?php echo $adminLimitFull ? 'true' : 'false'; ?>,
+    employeeLimitFull: <?php echo $employeeLimitFull ? 'true' : 'false'; ?>
+};
+
+function classifyAccountTypeByModulesAndRole(checkedModules, roleName) {
+    const role = (roleName || '').toLowerCase();
+
+    if (
+        role.includes('admin') ||
+        checkedModules.includes('Settings') ||
+        checkedModules.includes('Billing')
+    ) {
+        return 'admin';
+    }
+
+    return 'employee';
+}
+
+function getAccountLimitMessage(accountType) {
+    if (accountType === 'admin') {
+        if (PLAN_ACCOUNT_LIMITS.adminLimit === null) {
+            return null;
+        }
+
+        if (PLAN_ACCOUNT_LIMITS.activeAdminAccounts >= PLAN_ACCOUNT_LIMITS.adminLimit) {
+            return `Admin account limit reached. Your current plan allows only ${PLAN_ACCOUNT_LIMITS.adminLimit} admin account(s).`;
+        }
+
+        return null;
+    }
+
+    if (PLAN_ACCOUNT_LIMITS.employeeLimit === null) {
+        return null;
+    }
+
+    if (PLAN_ACCOUNT_LIMITS.activeEmployeeAccounts >= PLAN_ACCOUNT_LIMITS.employeeLimit) {
+        return `Employee account limit reached. Your current plan allows only ${PLAN_ACCOUNT_LIMITS.employeeLimit} employee account(s).`;
+    }
+
+    return null;
+}
+
 class StatsManager {
     async loadStats() {
         try {
@@ -1281,6 +1538,11 @@ class RoleManager {
     }
 
     openModal(roleId = null) {
+        if (!roleId && PLAN_ACCOUNT_LIMITS.adminLimitFull && PLAN_ACCOUNT_LIMITS.employeeLimitFull) {
+            this.showError('User account limit reached. Please upgrade your subscription plan or deactivate an existing user.');
+            return;
+        }
+
         this.form.reset();
         this.roleId.value = '';
         document.getElementById('passwordStrengthContainer').classList.add('hidden');
@@ -1411,6 +1673,16 @@ class RoleManager {
         if (!isEditing && !data.password) {
             this.showError('Password is required when creating a user role');
             return;
+        }
+
+        if (!isEditing) {
+            const accountType = classifyAccountTypeByModulesAndRole(checkedModules, data.role_name);
+            const limitMessage = getAccountLimitMessage(accountType);
+
+            if (limitMessage) {
+                this.showError(limitMessage);
+                return;
+            }
         }
 
         try {

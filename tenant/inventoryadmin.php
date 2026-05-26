@@ -75,6 +75,22 @@ if (!$owner) {
 
 $_SESSION['login_slug'] = $loginSlug;
 $shopName = !empty($owner['shopName']) ? $owner['shopName'] : 'AutoFix Pro';
+
+
+$logoPath = '';
+$logoStmt = mysqli_prepare($conn, "SELECT logo_path FROM tenant_customizations WHERE tenantID = ? LIMIT 1");
+
+if ($logoStmt) {
+    mysqli_stmt_bind_param($logoStmt, 'i', $tenantID);
+    mysqli_stmt_execute($logoStmt);
+    $logoResult = mysqli_stmt_get_result($logoStmt);
+    $logoRow = $logoResult ? mysqli_fetch_assoc($logoResult) : null;
+    mysqli_stmt_close($logoStmt);
+
+    if (!empty($logoRow['logo_path'])) {
+        $logoPath = '../pictures/' . ltrim($logoRow['logo_path'], '/');
+    }
+}
 $shopQuery = urlencode($loginSlug);
 $currentScript = basename($_SERVER['PHP_SELF']);
 if (!isset($_GET['shop']) || trim((string) $_GET['shop']) !== $loginSlug) {
@@ -825,9 +841,26 @@ $lastRow = min($offset + $perPage, $filteredTotal);
             class="w-64 flex-shrink-0 border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 h-screen sticky top-0 flex flex-col overflow-y-auto">
             <div class="p-6 flex-1">
                 <div class="flex items-center gap-3 mb-8">
-                    <div class="bg-primary rounded-lg p-2 text-white">
-                        <span class="material-symbols-outlined">directions_car</span>
-                    </div>
+                    
+<?php if ($logoPath !== ''): ?>
+
+    <div class="h-14 w-14 overflow-hidden flex items-center justify-center">
+        <img
+            src="<?php echo h($logoPath); ?>"
+            alt="<?php echo h($shopName); ?> logo"
+            class="w-full h-full object-contain">
+    </div>
+
+<?php else: ?>
+
+    <div class="bg-primary rounded-2xl p-3 text-white shadow-lg">
+        <span class="material-symbols-outlined text-3xl">
+            directions_car
+        </span>
+    </div>
+
+<?php endif; ?>
+
                     <div>
                         <h1 class="text-lg font-bold leading-none">
                             <?php echo htmlspecialchars($shopName, ENT_QUOTES, 'UTF-8'); ?></h1>

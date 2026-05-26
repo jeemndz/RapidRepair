@@ -74,6 +74,14 @@ $shopName = isset($owner['shopName']) && $owner['shopName'] !== '' ? $owner['sho
 // Load website customizations
 $customization = getWebsiteCustomization($conn, $tenantID);
 
+$primaryColor = '#1152d4';
+
+if (isset($customization['primaryColor']) && preg_match('/^#[0-9A-Fa-f]{6}$/', trim((string)$customization['primaryColor']))) {
+    $primaryColor = trim((string)$customization['primaryColor']);
+} elseif (isset($customization['primary_color']) && preg_match('/^#[0-9A-Fa-f]{6}$/', trim((string)$customization['primary_color']))) {
+    $primaryColor = trim((string)$customization['primary_color']);
+}
+
 function rrAssetUrl($path) {
     $path = trim((string)$path);
     if ($path === '') {
@@ -196,7 +204,7 @@ $qrCodeUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=' . 
             theme: {
                 extend: {
                     "colors": {
-                        "primary": "<?php echo isset($customization['primaryColor']) ? htmlspecialchars($customization['primaryColor']) : '#1152d4'; ?>",
+                        "primary": "<?php echo htmlspecialchars($primaryColor, ENT_QUOTES, 'UTF-8'); ?>",
                         "secondary-fixed-dim": "#cbd5e1",
                         "on-surface": "#0f172a",
                         "on-background": "#0f172a",
@@ -205,10 +213,10 @@ $qrCodeUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=' . 
                         "error": "#ef4444",
                         "primary-fixed-dim": "#bfdbfe",
                         "surface-container-low": "#ffffff",
-                        "on-secondary-fixed-variant": "#1152d4",
+                        "on-secondary-fixed-variant": "<?php echo htmlspecialchars($primaryColor, ENT_QUOTES, 'UTF-8'); ?>",
                         "tertiary": "#B8860B",
                         "inverse-on-surface": "#f8fafc",
-                        "secondary": "#1152d4",
+                        "secondary": "<?php echo htmlspecialchars($primaryColor, ENT_QUOTES, 'UTF-8'); ?>",
                         "on-secondary": "#ffffff",
                         "background": "#f6f6f8",
                         "on-tertiary-fixed": "#7c2d12",
@@ -218,15 +226,15 @@ $qrCodeUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=' . 
                         "secondary-container": "#f1f5f9",
                         "surface-container-highest": "#ffffff",
                         "surface-bright": "#ffffff",
-                        "inverse-surface": "#1152d4",
+                        "inverse-surface": "<?php echo htmlspecialchars($primaryColor, ENT_QUOTES, 'UTF-8'); ?>",
                         "on-primary-fixed-variant": "#1d4ed8",
                         "on-error": "#ffffff",
                         "outline": "#e2e8f0",
                         "primary-fixed": "#dbeafe",
                         "secondary-fixed": "#e2e8f0",
                         "tertiary-fixed-dim": "#fed7aa",
-                        "on-secondary-container": "#1152d4",
-                        "surface-tint": "#1152d4",
+                        "on-secondary-container": "<?php echo htmlspecialchars($primaryColor, ENT_QUOTES, 'UTF-8'); ?>",
+                        "surface-tint": "<?php echo htmlspecialchars($primaryColor, ENT_QUOTES, 'UTF-8'); ?>",
                         "on-primary-fixed": "#1e3a8a",
                         "tertiary-container": "#fef3c7",
                         "surface-dim": "#d9d9e4",
@@ -236,12 +244,12 @@ $qrCodeUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=' . 
                         "surface-container-high": "#ffffff",
                         "surface-container": "#ffffff",
                         "surface-variant": "#f1f5f9",
-                        "on-surface-variant": "#1152d4",
+                        "on-surface-variant": "#64748b",
                         "on-secondary-fixed": "#0f172a",
                         "error-container": "#fee2e2",
                         "on-primary": "#ffffff",
                         "on-tertiary-fixed-variant": "#9a3412",
-                        "on-primary-container": "#1152d4",
+                        "on-primary-container": "<?php echo htmlspecialchars($primaryColor, ENT_QUOTES, 'UTF-8'); ?>",
                         "on-tertiary-container": "#92400e"
                     },
                     "borderRadius": {
@@ -268,8 +276,40 @@ $qrCodeUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=' . 
             scroll-behavior: smooth;
         }
 
+        :root {
+            --brand-primary: <?php echo htmlspecialchars($primaryColor, ENT_QUOTES, 'UTF-8'); ?>;
+        }
+
         body {
             font-family: 'Inter', sans-serif;
+        }
+
+        .brand-text {
+            color: var(--brand-primary) !important;
+        }
+
+        .brand-border {
+            border-color: var(--brand-primary) !important;
+        }
+
+        .brand-bg {
+            background-color: var(--brand-primary) !important;
+        }
+
+        .brand-hover:hover {
+            color: var(--brand-primary) !important;
+        }
+
+        .brand-ring {
+            box-shadow: 0 0 0 4px color-mix(in srgb, var(--brand-primary) 14%, transparent);
+        }
+
+        .brand-soft-bg {
+            background-color: color-mix(in srgb, var(--brand-primary) 12%, white);
+        }
+
+        .brand-gradient-overlay {
+            background: linear-gradient(90deg, rgba(26,42,42,0.98), rgba(26,42,42,0.78), color-mix(in srgb, var(--brand-primary) 28%, transparent));
         }
     </style>
 </head>
@@ -289,34 +329,34 @@ $qrCodeUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=' . 
                         <?php echo htmlspecialchars(strtoupper(substr($shopName, 0, 1))); ?>
                     </div>
                 <?php endif; ?>
-                <div class="text-xl font-black tracking-tighter text-[#0F4B3C] truncate max-w-[220px] md:max-w-[280px]">
+                <div class="text-xl font-black tracking-tighter brand-text truncate max-w-[220px] md:max-w-[280px]">
                     <?php echo htmlspecialchars($shopName); ?>
                 </div>
             </a>
             <div class="hidden md:flex items-center space-x-8 font-['Inter'] tracking-tight text-sm font-medium">
-                <a data-nav-link class="nav-link text-[#0F4B3C] border-b-2 border-[#0F4B3C] pb-1 transition-colors" href="#home">Home</a>
-                <a data-nav-link class="nav-link text-slate-600 border-b-2 border-transparent pb-1 hover:text-[#0F4B3C] transition-colors" href="#services">Services</a>
-                <a data-nav-link class="nav-link text-slate-600 border-b-2 border-transparent pb-1 hover:text-[#0F4B3C] transition-colors" href="#mobile-app">Mobile App</a>
-                <a data-nav-link class="nav-link text-slate-600 border-b-2 border-transparent pb-1 hover:text-[#0F4B3C] transition-colors" href="#about">About</a>
-                <a data-nav-link class="nav-link text-slate-600 border-b-2 border-transparent pb-1 hover:text-[#0F4B3C] transition-colors" href="#contact">Contact</a>
+                <a data-nav-link class="nav-link brand-text border-b-2 brand-border pb-1 transition-colors" href="#home">Home</a>
+                <a data-nav-link class="nav-link text-slate-600 border-b-2 border-transparent pb-1 hover:brand-text transition-colors" href="#services">Services</a>
+                <a data-nav-link class="nav-link text-slate-600 border-b-2 border-transparent pb-1 hover:brand-text transition-colors" href="#mobile-app">Mobile App</a>
+                <a data-nav-link class="nav-link text-slate-600 border-b-2 border-transparent pb-1 hover:brand-text transition-colors" href="#about">About</a>
+                <a data-nav-link class="nav-link text-slate-600 border-b-2 border-transparent pb-1 hover:brand-text transition-colors" href="#contact">Contact</a>
             </div>
             <div class="flex items-center gap-3">
                 <a href="#about"
                     class="hidden sm:inline-flex items-center bg-primary text-on-primary px-5 py-2 lg rounded-lg font-semibold text-sm transition-all active:opacity-80 active:scale-[0.98] hover:opacity-90">
                     Learn More
                 </a>
-                <button id="mobileMenuButton" type="button" class="md:hidden inline-flex items-center justify-center w-10 h-10 rounded-lg border border-slate-200 text-[#0F4B3C] bg-white hover:bg-slate-50" aria-label="Open navigation menu" aria-expanded="false">
+                <button id="mobileMenuButton" type="button" class="md:hidden inline-flex items-center justify-center w-10 h-10 rounded-lg border border-slate-200 brand-text bg-white hover:bg-slate-50" aria-label="Open navigation menu" aria-expanded="false">
                     <span class="material-symbols-outlined">menu</span>
                 </button>
             </div>
         </nav>
         <div id="mobileMenu" class="md:hidden hidden border-t border-slate-200 bg-white px-6 py-4 shadow-sm">
             <div class="flex flex-col gap-3 text-sm font-semibold">
-                <a data-nav-link class="nav-link text-[#0F4B3C] border-l-4 border-[#0F4B3C] pl-3 py-2 transition-colors" href="#home">Home</a>
-                <a data-nav-link class="nav-link text-slate-600 border-l-4 border-transparent pl-3 py-2 hover:text-[#0F4B3C] transition-colors" href="#services">Services</a>
-                <a data-nav-link class="nav-link text-slate-600 border-l-4 border-transparent pl-3 py-2 hover:text-[#0F4B3C] transition-colors" href="#mobile-app">Mobile App</a>
-                <a data-nav-link class="nav-link text-slate-600 border-l-4 border-transparent pl-3 py-2 hover:text-[#0F4B3C] transition-colors" href="#about">About</a>
-                <a data-nav-link class="nav-link text-slate-600 border-l-4 border-transparent pl-3 py-2 hover:text-[#0F4B3C] transition-colors" href="#contact">Contact</a>
+                <a data-nav-link class="nav-link brand-text border-l-4 brand-border pl-3 py-2 transition-colors" href="#home">Home</a>
+                <a data-nav-link class="nav-link text-slate-600 border-l-4 border-transparent pl-3 py-2 hover:brand-text transition-colors" href="#services">Services</a>
+                <a data-nav-link class="nav-link text-slate-600 border-l-4 border-transparent pl-3 py-2 hover:brand-text transition-colors" href="#mobile-app">Mobile App</a>
+                <a data-nav-link class="nav-link text-slate-600 border-l-4 border-transparent pl-3 py-2 hover:brand-text transition-colors" href="#about">About</a>
+                <a data-nav-link class="nav-link text-slate-600 border-l-4 border-transparent pl-3 py-2 hover:brand-text transition-colors" href="#contact">Contact</a>
             </div>
         </div>
     </header>
@@ -327,11 +367,17 @@ $qrCodeUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=' . 
                     data-alt="dramatic interior of a clean professional auto repair shop with blue neon lighting and high-tech diagnostic equipment on tool benches"
                     src="<?php echo isset($customization['heroBackground']) && $customization['heroBackground'] ? htmlspecialchars(rrAssetUrl($customization['heroBackground'])) : 'https://lh3.googleusercontent.com/aida-public/AB6AXuAEtRZx2VtJU_zvHyWwsPzD6V-hQgNfAn2ej099PlXa6HKYmZqm9u0Cl5K4y-AzSzT4KPlh897GoHs2N4t_PifJp3y-dT-rj5YsB98I9Dnp799aPfP0rZ-vQZhqRNpq_Ll2qyR361GWZxFHoYgrFfUTBzh8STIl_1B0aQTSEGfgyxNhO7ix91KeXhv26XzL0sHPtMcsrGNRwCP_RGCYJ8Ny0heOO9T8o7EUb9hcDp1dSNVs5Fja1CgIgUO3RtwhBFeHSdHhfk06o3Lo'; ?>" />
             </div>
-            <div class="absolute inset-0 bg-gradient-to-r from-[#1A2A2A] via-[#1A2A2A]/80 to-transparent"></div>
+            <div class="absolute inset-0 brand-gradient-overlay"></div>
             <div class="relative z-10 max-w-7xl mx-auto px-6 md:px-12">
                 <div class="max-w-2xl">
                     <h1 class="text-white text-5xl md:text-6xl font-black tracking-tight mb-6">
-                        <?php echo isset($customization['heroHeading']) && $customization['heroHeading'] ? htmlspecialchars($customization['heroHeading']) : 'Precision Engineering. <br /><span class="text-primary">Absolute Reliability.</span>'; ?>
+                        <?php
+                        if (isset($customization['heroHeading']) && trim((string)$customization['heroHeading']) !== '') {
+                            echo nl2br(htmlspecialchars($customization['heroHeading'], ENT_QUOTES, 'UTF-8'));
+                        } else {
+                            echo 'Precision Engineering. <br /><span class="text-primary">Absolute Reliability.</span>';
+                        }
+                        ?>
                     </h1>
                     <p class="text-slate-300 text-lg mb-8 font-medium leading-relaxed">
                         <?php echo isset($customization['heroSubtext']) && $customization['heroSubtext'] ? htmlspecialchars($customization['heroSubtext']) : 'Experience clinical-grade automotive care. Our master technicians leverage advanced diagnostics to ensure your vehicle performs at its architectural peak.'; ?>
@@ -590,16 +636,42 @@ $qrCodeUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=' . 
                                 <div class="text-xl font-bold leading-none">Download Here</div>
                             </div>
                         </a>
-
-                        <a class="bg-white text-primary border border-primary rounded-xl px-6 py-3 flex items-center gap-3 hover:bg-primary hover:text-white transition-all"
-                            href="?shop=<?php echo urlencode($login_slug); ?>&download=guide" download>
-                            <span class="material-symbols-outlined" data-icon="description">description</span>
-                            <div class="text-left">
-                                <div class="text-[10px] uppercase font-bold opacity-90 leading-none">Setup Guide</div>
-                                <div class="text-xl font-bold leading-none">Read Instructions</div>
-                            </div>
-                        </a>
                     </div>
+
+                    <?php if (!empty($owner['invite_code'])): ?>
+                    <div class="mt-8 bg-white/10 border border-white/10 backdrop-blur-sm rounded-2xl p-6 max-w-md">
+                        <div class="flex items-center gap-3 mb-3">
+                            <div class="w-12 h-12 rounded-xl bg-primary flex items-center justify-center">
+                                <span class="material-symbols-outlined text-white">vpn_key</span>
+                            </div>
+
+                            <div>
+                                <div class="text-xs uppercase tracking-[0.25em] text-slate-400 font-bold">
+                                    Shop Invite Code
+                                </div>
+
+                                <div class="text-white text-sm">
+                                    Use this code when registering in the mobile app
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="bg-slate-950/40 border border-white/10 rounded-2xl px-6 py-5 flex items-center justify-between gap-4">
+                            <div>
+                                <div class="text-3xl font-black tracking-[0.35em] text-primary">
+                                    <?php echo htmlspecialchars($owner['invite_code']); ?>
+                                </div>
+                            </div>
+
+                            <button
+                                type="button"
+                                onclick="copyInviteCode()"
+                                class="bg-primary hover:opacity-90 text-white px-4 py-3 rounded-xl text-sm font-bold transition-all">
+                                Copy
+                            </button>
+                        </div>
+                    </div>
+                    <?php endif; ?>
 
                     <div class="mt-8 inline-block bg-white rounded-2xl p-5 shadow-lg text-center">
                         <img
@@ -761,13 +833,13 @@ $qrCodeUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=' . 
                     reserved.</div>
             </div>
             <div class="flex flex-wrap justify-center gap-8 font-['Inter'] text-xs font-regular">
-                <a class="text-slate-500 hover:text-[#0F4B3C] underline underline-offset-4 transition-all"
+                <a class="text-slate-500 hover:brand-text underline underline-offset-4 transition-all"
                     href="#home">Privacy Policy</a>
-                <a class="text-slate-500 hover:text-[#0F4B3C] underline underline-offset-4 transition-all"
+                <a class="text-slate-500 hover:brand-text underline underline-offset-4 transition-all"
                     href="#services">Terms of Service</a>
-                <a class="text-slate-500 hover:text-[#0F4B3C] underline underline-offset-4 transition-all"
+                <a class="text-slate-500 hover:brand-text underline underline-offset-4 transition-all"
                     href="#contact">Contact Support</a>
-                <a class="text-slate-500 hover:text-[#0F4B3C] underline underline-offset-4 transition-all"
+                <a class="text-slate-500 hover:brand-text underline underline-offset-4 transition-all"
                     href="#mobile-app">Careers</a>
             </div>
             <div class="mt-8 md:mt-0 flex gap-4">
@@ -796,16 +868,16 @@ $qrCodeUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=' . 
                 navLinks.forEach(link => {
                     const isActive = link.getAttribute('href') === '#' + sectionId;
 
-                    link.classList.toggle('text-[#0F4B3C]', isActive);
+                    link.classList.toggle('brand-text', isActive);
                     link.classList.toggle('text-slate-600', !isActive);
 
                     if (link.classList.contains('border-b-2')) {
-                        link.classList.toggle('border-[#0F4B3C]', isActive);
+                        link.classList.toggle('brand-border', isActive);
                         link.classList.toggle('border-transparent', !isActive);
                     }
 
                     if (link.classList.contains('border-l-4')) {
-                        link.classList.toggle('border-[#0F4B3C]', isActive);
+                        link.classList.toggle('brand-border', isActive);
                         link.classList.toggle('border-transparent', !isActive);
                     }
                 });
@@ -872,6 +944,21 @@ $qrCodeUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=' . 
             }
         });
     </script>
+
+
+<script>
+function copyInviteCode() {
+    const inviteCode = <?php echo json_encode($owner['invite_code'] ?? ''); ?>;
+
+    if (!inviteCode) return;
+
+    navigator.clipboard.writeText(inviteCode).then(() => {
+        alert('Invite code copied successfully.');
+    }).catch(() => {
+        alert('Unable to copy invite code.');
+    });
+}
+</script>
 
 </body>
 

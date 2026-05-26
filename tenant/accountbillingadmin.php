@@ -31,6 +31,104 @@ function format_currency($amount)
     return '₱' . number_format((float) $amount, 2);
 }
 
+function get_first_existing_column(mysqli $conn, string $tableName, array $possibleColumns): string
+{
+    $columns = [];
+    $safeTableName = preg_replace('/[^a-zA-Z0-9_]/', '', $tableName);
+    $result = mysqli_query($conn, "SHOW COLUMNS FROM `$safeTableName`");
+
+    if ($result) {
+        while ($row = mysqli_fetch_assoc($result)) {
+            $columns[] = $row['Field'];
+        }
+    }
+
+    foreach ($possibleColumns as $column) {
+        if (in_array($column, $columns, true)) {
+            return $column;
+        }
+    }
+
+    return '';
+}
+
+function get_plan_amount(array $plan, string $billingCycle): float
+{
+    if ($billingCycle === 'yearly') {
+        foreach (['yearly_price', 'annual_price', 'year_price', 'price_yearly'] as $column) {
+            if (isset($plan[$column]) && $plan[$column] !== '') {
+                return (float) $plan[$column];
+            }
+        }
+
+        foreach (['monthly_price', 'price', 'amount', 'plan_price'] as $column) {
+            if (isset($plan[$column]) && $plan[$column] !== '') {
+                return (float) $plan[$column] * 12;
+            }
+        }
+    }
+
+    foreach (['monthly_price', 'price', 'amount', 'plan_price'] as $column) {
+        if (isset($plan[$column]) && $plan[$column] !== '') {
+            return (float) $plan[$column];
+        }
+    }
+
+    return 0.00;
+}
+
+function get_plan_features(array $plan): array
+{
+    $features = [];
+
+    if (!empty($plan['plan_features'])) {
+        $decodedFeatures = json_decode((string) $plan['plan_features'], true);
+    } elseif (!empty($plan['features'])) {
+        $decodedFeatures = json_decode((string) $plan['features'], true);
+        if (is_array($decodedFeatures)) {
+            foreach ($decodedFeatures as $feature) {
+                if (is_array($feature)) {
+                    $featureText = $feature['text'] ?? $feature['name'] ?? $feature['feature'] ?? '';
+                    if (trim((string) $featureText) !== '') {
+                        $features[] = trim((string) $featureText);
+                    }
+                } elseif (trim((string) $feature) !== '') {
+                    $features[] = trim((string) $feature);
+                }
+            }
+        }
+    }
+
+    foreach (['max_employees', 'employee_limit', 'max_staff', 'staff_limit'] as $column) {
+        if (isset($plan[$column]) && $plan[$column] !== '') {
+            $features[] = 'Up to ' . (int) $plan[$column] . ' employee accounts';
+            break;
+        }
+    }
+
+    foreach (['max_admins', 'admin_limit', 'admin_accounts'] as $column) {
+        if (isset($plan[$column]) && $plan[$column] !== '') {
+            $features[] = 'Up to ' . (int) $plan[$column] . ' admin accounts';
+            break;
+        }
+    }
+
+    foreach (['storage_limit_mb', 'storage_mb', 'storage_limit'] as $column) {
+        if (isset($plan[$column]) && $plan[$column] !== '') {
+            $features[] = 'Storage limit: ' . (float) $plan[$column] . ' MB';
+            break;
+        }
+    }
+
+    if (count($features) === 0) {
+        $features[] = 'Appointment, repair job, customer, payment, and inventory tools';
+        $features[] = 'Tenant website and mobile app support';
+        $features[] = 'Reports and billing management';
+    }
+
+    return array_slice(array_unique($features), 0, 6);
+}
+
 $loggedInUserName = '';
 $loggedInUserRole = '';
 
@@ -81,6 +179,20 @@ if (!$owner) {
 $_SESSION['login_slug'] = $loginSlug;
 
 $shopName = !empty($owner['shopName']) ? $owner['shopName'] : 'AutoFix Pro';
+
+$logoPath = '';
+$logoStmt = mysqli_prepare($conn, "SELECT logo_path FROM tenant_customizations WHERE tenantID = ? LIMIT 1");
+if ($logoStmt) {
+    mysqli_stmt_bind_param($logoStmt, 'i', $tenantID);
+    mysqli_stmt_execute($logoStmt);
+    $logoResult = mysqli_stmt_get_result($logoStmt);
+    $logoRow = $logoResult ? mysqli_fetch_assoc($logoResult) : null;
+    mysqli_stmt_close($logoStmt);
+    if (!empty($logoRow['logo_path'])) {
+        $logoPath = '../pictures/' . ltrim($logoRow['logo_path'], '/');
+    }
+}
+
 $shopSlug = $loginSlug;
 $shopQuery = urlencode($loginSlug);
 
@@ -135,6 +247,39 @@ $billingAmount = ($ownerSubscription && isset($ownerSubscription['amount']))
 $billingPlanName = $ownerSubscription
     ? ($ownerSubscription['subscription_plan'] . ' Subscription')
     : 'RapidRepairCo. Subscription';
+
+/*
+|--------------------------------------------------------------------------
+| Available subscription plans
+|--------------------------------------------------------------------------
+*/
+$availablePlans = [];
+
+$planNameColumn = get_first_existing_column($conn, 'subscription_plans', ['plan_name', 'name', 'title']);
+if ($planNameColumn === '') {
+    $planNameColumn = 'plan_name';
+}
+
+$planStatusColumn = get_first_existing_column($conn, 'subscription_plans', ['status', 'is_active']);
+
+$planWhereSql = '';
+if ($planStatusColumn === 'is_active') {
+    $planWhereSql = " WHERE is_active = 1";
+} elseif ($planStatusColumn === 'status') {
+    $planWhereSql = " WHERE status IN ('Active', 'active', 'Published', 'published')";
+}
+
+$planOrderColumn = get_first_existing_column($conn, 'subscription_plans', ['sort_order', 'display_order', 'monthly_price', 'price', 'amount', 'plan_id']);
+$planOrderSql = $planOrderColumn !== '' ? " ORDER BY `$planOrderColumn` ASC" : " ORDER BY plan_id ASC";
+
+$plansResult = mysqli_query($conn, "SELECT * FROM subscription_plans" . $planWhereSql . $planOrderSql);
+if ($plansResult) {
+    while ($plan = mysqli_fetch_assoc($plansResult)) {
+        $availablePlans[] = $plan;
+    }
+}
+
+$selectedBillingCycle = isset($_GET['billing_cycle']) && $_GET['billing_cycle'] === 'yearly' ? 'yearly' : 'monthly';
 
 /*
 |--------------------------------------------------------------------------
@@ -295,12 +440,23 @@ if ($invoiceStmt) {
 
     <aside id="sidebar" class="fixed md:fixed left-0 top-0 bottom-0 w-64 border-r border-slate-200 bg-white z-40 flex flex-col h-full -translate-x-full md:translate-x-0 transition-transform duration-300 ease-in-out md:transition-none pt-16 md:pt-0 overflow-y-auto">
         <div class="p-6">
-            <div class="flex items-center gap-3 mb-8">
-                <div class="bg-blue-700 rounded-lg p-2 text-white">
-                    <span class="material-symbols-outlined">directions_car</span>
-                </div>
+            <div class="flex items-center gap-4 mb-8">
+                <?php if ($logoPath !== ''): ?>
+                    <div class="h-14 w-14 overflow-hidden flex items-center justify-center">
+                        <img src="<?php echo h($logoPath); ?>" alt="<?php echo h($shopName); ?> logo" class="w-full h-full object-contain">
+                    </div>
+                <?php else: ?>
+                    <div class="bg-blue-700 rounded-2xl p-3 text-white shadow-lg">
+                        <span class="material-symbols-outlined text-3xl">directions_car</span>
+                    </div>
+                <?php endif; ?>
+
                 <div>
-                    <h1 class="text-lg font-bold leading-none"><?php echo h($shopName); ?></h1>
+                    <?php $shopParts = explode(' ', trim($shopName), 2); ?>
+                    <h1 class="text-xl font-black leading-none tracking-tight">
+                        <span class="text-black"><?php echo htmlspecialchars($shopParts[0] ?? 'Rapid'); ?></span>
+                        <span class="text-blue-600"><?php echo htmlspecialchars($shopParts[1] ?? 'Repair'); ?></span>
+                    </h1>
                     <p class="text-xs text-slate-500 mt-1">Your Repair Shop</p>
                 </div>
             </div>
@@ -363,44 +519,46 @@ if ($invoiceStmt) {
                 <?php endif; ?>
 
                 <div class="pt-4 mt-4 border-t border-slate-100">
-                    <div class="relative group">
-                        <button class="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-blue-50 text-blue-700 transition-colors w-full text-left settings-dropdown-btn">
-                            <span class="material-symbols-outlined text-[22px]">settings</span>
-                            <span>Settings</span>
-                            <span class="material-symbols-outlined text-[16px] ml-auto">expand_more</span>
-                        </button>
+                    <button type="button"
+                            id="settingsDropdownBtn"
+                            class="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-blue-50 text-blue-700 font-bold w-full transition-colors">
+                        <span class="material-symbols-outlined text-[22px]">settings</span>
+                        <span class="flex-1 text-left">Settings</span>
+                        <span id="settingsDropdownIcon" class="material-symbols-outlined text-[18px]">expand_less</span>
+                    </button>
 
-                        <div class="absolute left-0 top-full mt-1 w-full bg-white border border-slate-200 rounded-lg shadow-lg hidden z-50 settings-dropdown">
-                            <?php if (canAccessModule('accountbillingadmin.php', $accessibleModules)): ?>
-                                <a class="flex items-center gap-3 px-3 py-2.5 rounded-t-lg text-blue-700 bg-blue-50 transition-colors text-sm"
-                                    href="accountbillingadmin.php?shop=<?php echo h($shopQuery); ?>">
-                                    <span class="material-symbols-outlined text-[18px]">receipt_long</span>
-                                    Account Billing
-                                </a>
-                            <?php endif; ?>
-                            <a class="flex items-center gap-3 px-3 py-2.5 text-slate-600 hover:bg-blue-50 transition-colors text-sm border-t border-slate-100"
-                                href="websitecustomadmin.php?shop=<?php echo h($shopQuery); ?>">
-                                <span class="material-symbols-outlined text-[18px]">palette</span>
-                                Website Customizer
+                    <div id="settingsDropdownMenu" class="mt-1 ml-8 space-y-1">
+                        <?php if (canAccessModule('storage_managementadmin.php', $accessibleModules)): ?>
+                            <a class="flex items-center gap-2 px-3 py-2 rounded-lg text-slate-600 hover:bg-blue-50 transition-colors text-sm"
+                               href="storage_managementadmin.php?shop=<?php echo h($shopQuery); ?>">
+                                <span class="material-symbols-outlined text-[18px]">cloud</span>
+                                Storage Management
                             </a>
-                            <?php if (canAccessModule('settingsadmin.php', $accessibleModules)): ?>
-                                <a class="flex items-center gap-3 px-3 py-2.5 text-slate-600 hover:bg-blue-50 transition-colors text-sm border-t border-slate-100"
-                                    href="settingsadmin.php?shop=<?php echo h($shopQuery); ?>">
-                                    <span class="material-symbols-outlined text-[18px]">settings</span>
-                                    Settings
-                                </a>
-                            <?php endif; ?>
-                            <?php if (canAccessModule('storage_managementadmin.php', $accessibleModules)): ?>
-                                <a class="flex items-center gap-3 px-3 py-2.5 rounded-b-lg text-slate-600 hover:bg-blue-50 transition-colors text-sm border-t border-slate-100"
-                                    href="storage_managementadmin.php?shop=<?php echo h($shopQuery); ?>">
-                                    <span class="material-symbols-outlined text-[18px]">storage</span>
-                                    Storage Management
-                                </a>
-                            <?php endif; ?>
-                        </div>
+                        <?php endif; ?>
+
+                        <?php if (canAccessModule('accountbillingadmin.php', $accessibleModules)): ?>
+                            <a class="flex items-center gap-2 px-3 py-2 rounded-lg bg-blue-50 text-blue-700 font-bold text-sm"
+                               href="accountbillingadmin.php?shop=<?php echo h($shopQuery); ?>">
+                                <span class="material-symbols-outlined text-[18px]">receipt_long</span>
+                                Account Billing
+                            </a>
+                        <?php endif; ?>
+
+                        <a class="flex items-center gap-2 px-3 py-2 rounded-lg text-slate-600 hover:bg-blue-50 transition-colors text-sm"
+                           href="websitecustomadmin.php?shop=<?php echo h($shopQuery); ?>">
+                            <span class="material-symbols-outlined text-[18px]">palette</span>
+                            Website Customizer
+                        </a>
+
+                        <?php if (canAccessModule('settingsadmin.php', $accessibleModules)): ?>
+                            <a class="flex items-center gap-2 px-3 py-2 rounded-lg text-slate-600 hover:bg-blue-50 transition-colors text-sm"
+                               href="settingsadmin.php?shop=<?php echo h($shopQuery); ?>">
+                                <span class="material-symbols-outlined text-[18px]">tune</span>
+                                Settings
+                            </a>
+                        <?php endif; ?>
                     </div>
-                </div>
-            </nav>
+                </div>            </nav>
         </div>
 
         <div class="mt-auto w-full p-4 border-t border-slate-200">
@@ -426,7 +584,7 @@ if ($invoiceStmt) {
         </div>
     </aside>
 
-    <main class="ml-64 min-h-screen bg-slate-50">
+    <main class="md:ml-64 min-h-screen bg-slate-50">
         <header class="sticky top-0 z-40 w-full border-b border-slate-200 bg-white/90 backdrop-blur-md flex items-center justify-between px-8 h-16">
             <h2 class="text-lg font-black text-slate-900 tracking-tight">Account Billing</h2>
 
@@ -522,9 +680,9 @@ if ($invoiceStmt) {
                             <div class="text-sm text-slate-600 py-4">
                                 <p class="mb-4">No active subscription plan. Choose a plan to get started.</p>
 
-                                <button class="w-full bg-blue-700 text-white font-bold text-sm py-2 rounded-lg hover:bg-blue-800 transition-colors">
+                                <a href="#change-plan" class="block text-center w-full bg-blue-700 text-white font-bold text-sm py-2 rounded-lg hover:bg-blue-800 transition-colors">
                                     Browse Plans
-                                </button>
+                                </a>
                             </div>
                         <?php endif; ?>
                     </div>
@@ -621,6 +779,111 @@ if ($invoiceStmt) {
                     </div>
                 </div>
 
+                <div id="change-plan" class="col-span-12 bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+                    <div class="p-6 border-b border-slate-100 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                        <div>
+                            <h3 class="text-xl font-bold tracking-tight text-slate-900">Change Subscription Plan</h3>
+                            <p class="text-sm text-slate-600 mt-1">Choose a plan and complete the payment through PayMongo.</p>
+                        </div>
+
+                        <div class="inline-flex bg-slate-100 rounded-xl p-1">
+                            <a href="accountbillingadmin.php?shop=<?php echo h($shopQuery); ?>&billing_cycle=monthly"
+                               class="px-4 py-2 rounded-lg text-sm font-bold <?php echo $selectedBillingCycle === 'monthly' ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-600 hover:text-blue-700'; ?>">
+                                Monthly
+                            </a>
+                            <a href="accountbillingadmin.php?shop=<?php echo h($shopQuery); ?>&billing_cycle=yearly"
+                               class="px-4 py-2 rounded-lg text-sm font-bold <?php echo $selectedBillingCycle === 'yearly' ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-600 hover:text-blue-700'; ?>">
+                                Yearly
+                            </a>
+                        </div>
+                    </div>
+
+                    <div class="p-6">
+                        <?php if (!empty($availablePlans)): ?>
+                            <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
+                                <?php foreach ($availablePlans as $plan): ?>
+                                    <?php
+                                    $planId = (int) ($plan['plan_id'] ?? 0);
+                                    $planName = $plan[$planNameColumn] ?? ('Plan #' . $planId);
+                                    $selectedAmount = get_plan_amount($plan, $selectedBillingCycle);
+                                    $selectedAmountCentavos = (int) round($selectedAmount * 100);
+                                    $isCurrentPlan = $ownerSubscription && (int) ($ownerSubscription['plan_id'] ?? 0) === $planId;
+                                    $isCurrentCycle = $ownerSubscription && strtolower((string) ($ownerSubscription['billing_cycle'] ?? 'monthly')) === $selectedBillingCycle;
+                                    $planFeatures = get_plan_features($plan);
+                                    ?>
+
+                                    <div class="rounded-2xl border <?php echo $isCurrentPlan ? 'border-blue-200 bg-blue-50/40' : 'border-slate-200 bg-white'; ?> p-5 flex flex-col">
+                                        <div class="flex items-start justify-between gap-3">
+                                            <div>
+                                                <h4 class="text-lg font-black text-slate-900"><?php echo h($planName); ?></h4>
+                                                <?php if ($isCurrentPlan): ?>
+                                                    <span class="inline-flex mt-2 rounded-full bg-blue-100 text-blue-700 px-2.5 py-1 text-[11px] font-black uppercase tracking-wide">Current Plan</span>
+                                                <?php endif; ?>
+                                            </div>
+                                            <span class="material-symbols-outlined text-blue-700">workspace_premium</span>
+                                        </div>
+
+                                        <div class="mt-5">
+                                            <span class="text-3xl font-black text-slate-900"><?php echo format_currency($selectedAmount); ?></span>
+                                            <span class="text-sm text-slate-500">/ <?php echo h($selectedBillingCycle); ?></span>
+                                        </div>
+
+                                        <ul class="mt-5 space-y-2 flex-1">
+                                            <?php foreach ($planFeatures as $feature): ?>
+                                                <li class="flex gap-2 text-sm text-slate-600">
+                                                    <span class="material-symbols-outlined text-green-600 text-[18px] mt-0.5">check_circle</span>
+                                                    <span><?php echo h($feature); ?></span>
+                                                </li>
+                                            <?php endforeach; ?>
+                                        </ul>
+
+                                        <?php if ($selectedAmountCentavos > 0 && $planId > 0): ?>
+                                            <form method="POST" action="../clientapplication/paymongo/create_checkout.php" class="mt-6">
+                                                <input type="hidden" name="payment_source" value="accountbillingadmin_plan_change">
+                                                <input type="hidden" name="tenant_id" value="<?php echo h($tenantID); ?>">
+                                                <input type="hidden" name="plan_id" value="<?php echo h($planId); ?>">
+                                                <input type="hidden" name="billingCycle" value="<?php echo h($selectedBillingCycle); ?>">
+                                                <input type="hidden" name="amount" value="<?php echo h($selectedAmountCentavos); ?>">
+                                                <input type="hidden" name="plan_name" value="<?php echo h($planName . ' Subscription'); ?>">
+                                                <input type="hidden" name="name" value="<?php echo h($shopName); ?>">
+                                                <input type="hidden" name="email" value="<?php echo h($owner['email'] ?? 'test@example.com'); ?>">
+                                                <input type="hidden" name="phone" value="<?php echo h($owner['contactNumber'] ?? '09171234567'); ?>">
+
+                                                <button type="submit"
+                                                        class="w-full rounded-xl px-4 py-3 text-sm font-black transition-colors <?php echo ($isCurrentPlan && $isCurrentCycle) ? 'bg-slate-200 text-slate-500 cursor-not-allowed' : 'bg-blue-700 text-white hover:bg-blue-800'; ?>"
+                                                        <?php echo ($isCurrentPlan && $isCurrentCycle) ? 'disabled' : ''; ?>>
+                                                    <?php
+                                                    if ($isCurrentPlan && $isCurrentCycle) {
+                                                        echo 'Current Subscription';
+                                                    } elseif ($isCurrentPlan) {
+                                                        echo 'Switch Billing Cycle';
+                                                    } elseif ($ownerSubscription && $selectedAmount > (float) ($ownerSubscription['amount'] ?? 0)) {
+                                                        echo 'Upgrade Plan';
+                                                    } else {
+                                                        echo 'Choose This Plan';
+                                                    }
+                                                    ?>
+                                                </button>
+                                            </form>
+                                        <?php else: ?>
+                                            <div class="mt-6 rounded-xl bg-slate-100 text-slate-500 text-sm font-bold text-center py-3">Price not configured</div>
+                                        <?php endif; ?>
+                                    </div>
+                                <?php endforeach; ?>
+                            </div>
+
+                            <div class="mt-6 rounded-xl bg-amber-50 border border-amber-100 p-4 text-sm text-amber-800">
+                                <strong>Note:</strong> The plan will be changed after successful PayMongo payment and webhook/success confirmation updates the subscription record.
+                            </div>
+                        <?php else: ?>
+                            <div class="rounded-xl bg-slate-50 border border-slate-200 p-6 text-center text-sm text-slate-600">
+                                No subscription plans found. Add records in your <code class="font-bold">subscription_plans</code> table first.
+                            </div>
+                        <?php endif; ?>
+                    </div>
+                </div>
+
+
                 <div class="col-span-12 bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
                     <div class="p-6 border-b border-slate-100 flex justify-between items-center">
                         <h3 class="text-xl font-bold tracking-tight text-slate-900">Payment History</h3>
@@ -697,24 +960,21 @@ if ($invoiceStmt) {
     </main>
 
     <script>
-        document.querySelectorAll('.settings-dropdown-btn').forEach(button => {
-            button.addEventListener('click', function(e) {
-                e.preventDefault();
-                const dropdown = document.querySelector('.settings-dropdown');
-                if (dropdown) {
-                    dropdown.classList.toggle('hidden');
+        const settingsDropdownBtn = document.getElementById('settingsDropdownBtn');
+        const settingsDropdownMenu = document.getElementById('settingsDropdownMenu');
+        const settingsDropdownIcon = document.getElementById('settingsDropdownIcon');
+
+        if (settingsDropdownBtn && settingsDropdownMenu && settingsDropdownIcon) {
+            settingsDropdownBtn.addEventListener('click', function () {
+                settingsDropdownMenu.classList.toggle('hidden');
+
+                if (settingsDropdownMenu.classList.contains('hidden')) {
+                    settingsDropdownIcon.innerText = 'expand_more';
+                } else {
+                    settingsDropdownIcon.innerText = 'expand_less';
                 }
             });
-        });
-
-        document.addEventListener('click', function(e) {
-            const dropdownBtn = document.querySelector('.settings-dropdown-btn');
-            const dropdown = document.querySelector('.settings-dropdown');
-
-            if (dropdown && dropdownBtn && !dropdownBtn.contains(e.target) && !dropdown.contains(e.target)) {
-                dropdown.classList.add('hidden');
-            }
-        });
+        }
     </script>
 
     <script>

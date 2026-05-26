@@ -250,7 +250,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['loginClient'])) {
                             <label class="text-xs font-bold text-on-surface-variant uppercase tracking-widest"
                                 for="password">Password</label>
                             <a class="text-[11px] font-bold text-primary hover:underline uppercase tracking-wider"
-                                href="#">Forgot Password?</a>
+                                href="clientforgot_password.php">Forgot Password?</a>
                         </div>
                         <div class="relative group">
                             <div

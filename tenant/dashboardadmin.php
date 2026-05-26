@@ -340,19 +340,27 @@ foreach ($weekChart as $chartDay) {
 
 $activityStmt = mysqli_prepare(
     $conn,
-    "SELECT action, entity_type, details, user_name, created_at
+    "SELECT 
+        action,
+        entity_type,
+        details,
+        user_name,
+        created_at
      FROM system_logs
      WHERE tenantID = ?
      ORDER BY created_at DESC
      LIMIT 6"
 );
+
 if ($activityStmt) {
     mysqli_stmt_bind_param($activityStmt, 'i', $tenantID);
     mysqli_stmt_execute($activityStmt);
     $activityResult = mysqli_stmt_get_result($activityStmt);
+
     while ($activityResult && $activityRow = mysqli_fetch_assoc($activityResult)) {
         $recentActivities[] = $activityRow;
     }
+
     mysqli_stmt_close($activityStmt);
 }
 
@@ -448,17 +456,40 @@ if ($repairTableStmt) {
         <aside id="sidebar"
             class="fixed md:static md:flex left-0 top-0 h-screen md:h-screen w-64 md:w-64 flex-shrink-0 border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex flex-col overflow-y-auto z-40 -translate-x-full md:translate-x-0 transition-transform duration-300 ease-in-out md:transition-none pt-16 md:pt-0">
             <div class="p-6 flex-1">
-                <div class="flex items-center gap-3 mb-8">
-                    <div class="bg-primary rounded-lg p-2 text-white">
-                        <?php if ($logoPath !== ''): ?>
-                            <img src="<?php echo h($logoPath); ?>" alt="<?php echo h($shopName); ?> logo" class="h-6 w-6 object-contain" />
-                        <?php else: ?>
-                            <span class="material-symbols-outlined">directions_car</span>
-                        <?php endif; ?>
-                    </div>
+                <div class="flex items-center gap-4 mb-8">
+                    <?php if ($logoPath !== ''): ?>
+
+                        <div class="h-14 w-14 overflow-hidden flex items-center justify-center">
+                            <img
+                                src="<?php echo h($logoPath); ?>"
+                                alt="<?php echo h($shopName); ?> logo"
+                                class="w-full h-full object-contain">
+                        </div>
+
+                    <?php else: ?>
+
+                        <div class="bg-primary rounded-2xl p-3 text-white shadow-lg">
+                            <span class="material-symbols-outlined text-3xl">
+                                directions_car
+                            </span>
+                        </div>
+
+                    <?php endif; ?>
                     <div>
-                        <h1 class="text-lg font-bold leading-none"><?php echo htmlspecialchars($shopName, ENT_QUOTES, 'UTF-8'); ?></h1>
-                        <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Your Repair Shop</p>
+                        <?php
+                        $shopParts = explode(' ', trim($shopName), 2);
+                        ?>
+
+                        <h1 class="text-xl font-black leading-none tracking-tight">
+                            <span class="text-slate-900 dark:text-white">
+                                <?php echo htmlspecialchars($shopParts[0] ?? 'Rapid'); ?>
+                            </span>
+
+                            <span class="text-primary">
+                                <?php echo htmlspecialchars($shopParts[1] ?? 'Repair'); ?>
+                            </span>
+                        </h1>
+                        <p class="text-xs text-slate-500 dark:text-slate-400 mt-1 tracking-wide uppercase font-semibold">Your Repair Shop</p>
                     </div>
                 </div>
                 <nav class="space-y-1">
@@ -680,7 +711,10 @@ if ($repairTableStmt) {
 
                     <div class="bg-white dark:bg-slate-900 p-6 rounded-xl border border-slate-200 dark:border-slate-800 flex flex-col">
                         <div class="flex items-center justify-between mb-6">
-                            <h3 class="text-lg font-bold">Recent Activity</h3>
+                            <div>
+                                <h3 class="text-lg font-bold">Recent Activity</h3>
+                                <p class="text-xs text-slate-500 mt-1">Showing logs for this repair shop only</p>
+                            </div>
                             <a href="tenantslogs.php?shop=<?php echo $shopQuery; ?>" class="text-xs text-primary font-semibold hover:underline">View All</a>
                         </div>
                         <div class="space-y-6 flex-1">
@@ -696,7 +730,7 @@ if ($repairTableStmt) {
                                     </div>
                                 <?php endforeach; ?>
                             <?php else: ?>
-                                <div class="text-sm text-slate-500">No recent activity found for this tenant yet.</div>
+                                <div class="text-sm text-slate-500">No recent activity found for this repair shop yet.</div>
                             <?php endif; ?>
                         </div>
                         <a href="reportsadmin.php?shop=<?php echo $shopQuery; ?>" class="w-full py-2.5 mt-6 border border-slate-200 dark:border-slate-800 rounded-lg text-sm font-semibold hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors text-center block">

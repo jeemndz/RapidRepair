@@ -168,6 +168,17 @@ if (count($subscriptionPlans) === 0) {
     ];
 }
 
+$subscriptionPlansForJs = [];
+
+foreach ($subscriptionPlans as $planForJs) {
+    $subscriptionPlansForJs[$planForJs['plan_code']] = [
+        'name' => $planForJs['plan_name'],
+        'price' => (float) $planForJs['monthly_price'],
+        'features' => array_values($planForJs['plan_features'])
+    ];
+}
+
+
 function generateSlugForApplication($conn, $shopName)
 {
     $slug = strtolower(trim((string) $shopName));
@@ -627,6 +638,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['createTenantApplicati
 
             if (planSelect) {
                 planSelect.value = planKey;
+                planSelect.dispatchEvent(new Event('change'));
             }
 
             const applicationSection = document.getElementById('application');
@@ -649,6 +661,89 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['createTenantApplicati
                 }
             }
         }
+    </script>
+
+    <script>
+        const subscriptionPlanDetails = <?php echo json_encode($subscriptionPlansForJs, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE); ?>;
+
+        function formatPeso(amount, billingCycle) {
+            const numericAmount = Number(amount || 0);
+
+            if (numericAmount <= 0) {
+                return 'Custom pricing';
+            }
+
+            const cycleMultipliers = {
+                monthly: 1,
+                quarterly: 3,
+                yearly: 12
+            };
+
+            const cycleLabels = {
+                monthly: 'month',
+                quarterly: 'quarter',
+                yearly: 'year'
+            };
+
+            const multiplier = cycleMultipliers[billingCycle] || 1;
+            const label = cycleLabels[billingCycle] || 'month';
+            const finalAmount = numericAmount * multiplier;
+
+            return '₱' + finalAmount.toLocaleString('en-PH') + ' / ' + label;
+        }
+
+        function updateSelectedPlanFeatures() {
+            const planSelect = document.querySelector('select[name="subscriptionPlan"]');
+            const billingCycleSelect = document.querySelector('select[name="billingCycle"]');
+            const planBox = document.getElementById('selectedPlanFeatures');
+            const planName = document.getElementById('selectedPlanName');
+            const planPrice = document.getElementById('selectedPlanPrice');
+            const planFeatureList = document.getElementById('selectedPlanFeatureList');
+
+            if (!planSelect || !billingCycleSelect || !planBox || !planName || !planPrice || !planFeatureList) {
+                return;
+            }
+
+            const selectedPlan = subscriptionPlanDetails[planSelect.value];
+            const selectedBillingCycle = billingCycleSelect.value;
+
+            if (!selectedPlan) {
+                planBox.classList.add('hidden');
+                planFeatureList.innerHTML = '';
+                return;
+            }
+
+            planName.textContent = selectedPlan.name;
+            planPrice.textContent = formatPeso(selectedPlan.price, selectedBillingCycle);
+            planFeatureList.innerHTML = '';
+
+            selectedPlan.features.forEach(function (feature) {
+                const item = document.createElement('li');
+                item.className = 'flex items-start gap-2 text-sm text-slate-700';
+                item.innerHTML = `
+                    <span class="material-symbols-outlined text-primary text-[18px] mt-0.5" style="font-variation-settings: 'FILL' 1;">check_circle</span>
+                    <span>${feature}</span>
+                `;
+                planFeatureList.appendChild(item);
+            });
+
+            planBox.classList.remove('hidden');
+        }
+
+        document.addEventListener('DOMContentLoaded', function () {
+            const planSelect = document.querySelector('select[name="subscriptionPlan"]');
+            const billingCycleSelect = document.querySelector('select[name="billingCycle"]');
+
+            if (planSelect) {
+                planSelect.addEventListener('change', updateSelectedPlanFeatures);
+            }
+
+            if (billingCycleSelect) {
+                billingCycleSelect.addEventListener('change', updateSelectedPlanFeatures);
+            }
+
+            updateSelectedPlanFeatures();
+        });
     </script>
 
     <style>
@@ -681,10 +776,291 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['createTenantApplicati
         .animate-point-right {
             animation: point-right 1.5s ease-in-out infinite;
         }
+
+        .section-card {
+            background: rgba(255, 255, 255, 0.92);
+            border: 1px solid rgba(226, 232, 240, 0.95);
+            box-shadow: 0 24px 70px rgba(15, 23, 42, 0.08);
+        }
+
+        .soft-grid-bg {
+            background-image:
+                linear-gradient(rgba(17,82,212,0.06) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(17,82,212,0.06) 1px, transparent 1px);
+            background-size: 34px 34px;
+        }
+
+        .feature-pill {
+            box-shadow: 0 18px 40px rgba(17, 82, 212, 0.12);
+        }
+
+        .hover-lift {
+            transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease;
+        }
+
+        .hover-lift:hover {
+            transform: translateY(-6px);
+            box-shadow: 0 28px 70px rgba(15, 23, 42, 0.12);
+            border-color: rgba(17, 82, 212, 0.35);
+        }
+
+    
+        .floating-shape {
+            position: absolute;
+            border-radius: 9999px;
+            pointer-events: none;
+            opacity: 0.18;
+            filter: blur(1px);
+        }
+
+        .shape-rotate {
+            animation: rotateShape 18s linear infinite;
+        }
+
+        .shape-float {
+            animation: floatShape 6s ease-in-out infinite;
+        }
+
+        @keyframes rotateShape {
+            from {
+                transform: rotate(0deg);
+            }
+
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        @keyframes floatShape {
+            0%, 100% {
+                transform: translateY(0px);
+            }
+
+            50% {
+                transform: translateY(-12px);
+            }
+        }
+
+    
+        .pattern-dots {
+            background-image:
+                radial-gradient(circle at 1px 1px, rgba(17,82,212,0.10) 1px, transparent 0);
+            background-size: 28px 28px;
+        }
+
+        .pattern-grid {
+            background-image:
+                linear-gradient(rgba(17,82,212,0.06) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(17,82,212,0.06) 1px, transparent 1px);
+            background-size: 38px 38px;
+        }
+
+        .pattern-lines {
+            background-image:
+                repeating-linear-gradient(
+                    135deg,
+                    rgba(17,82,212,0.05),
+                    rgba(17,82,212,0.05) 2px,
+                    transparent 2px,
+                    transparent 18px
+                );
+        }
+
+        .pattern-circles {
+            background-image:
+                radial-gradient(circle, rgba(17,82,212,0.08) 2px, transparent 2px);
+            background-size: 42px 42px;
+        }
+
+    
+        .workflow-road {
+            position: absolute;
+            left: 10%;
+            right: 6%;
+            top: 22%;
+            height: 10px;
+            border-radius: 999px;
+            background: repeating-linear-gradient(
+                90deg,
+                rgba(17,82,212,0.22) 0px,
+                rgba(17,82,212,0.22) 28px,
+                transparent 28px,
+                transparent 48px
+            );
+            overflow: hidden;
+        }
+
+        .workflow-car {
+            position: absolute;
+            top: calc(22% - 70px);
+            left: 10%;
+            width: 74px;
+            height: 54px;
+            border-radius: 24px 28px 18px 18px;
+            background: #1152d4;
+            box-shadow: 0 18px 35px rgba(17,82,212,0.25);
+            animation: driveWorkflow 8s ease-in-out infinite;
+            z-index: 20;
+        }
+
+        .workflow-car::before {
+            content: "";
+            position: absolute;
+            top: 10px;
+            left: 16px;
+            width: 42px;
+            height: 18px;
+            border-radius: 16px 16px 6px 6px;
+            background: rgba(255,255,255,0.9);
+        }
+
+        .workflow-car::after {
+            content: "";
+            position: absolute;
+            bottom: -8px;
+            left: 12px;
+            width: 14px;
+            height: 14px;
+            border-radius: 999px;
+            background: #0f172a;
+            box-shadow: 36px 0 #0f172a;
+        }
+
+        .workflow-car-light {
+            position: absolute;
+            right: -8px;
+            top: 26px;
+            width: 14px;
+            height: 8px;
+            border-radius: 999px;
+            background: #fef3c7;
+            box-shadow: 0 0 18px rgba(250,204,21,0.9);
+        }
+
+        .workflow-bubble {
+            position: absolute;
+            top: 15%;
+            width: 46px;
+            height: 46px;
+            border-radius: 999px;
+            background: white;
+            border: 1px solid rgba(17,82,212,0.18);
+            display: flex;
+            transform: translateX(-50%);
+            align-items: center;
+            justify-content: center;
+            color: #1152d4;
+            box-shadow: 0 14px 35px rgba(15,23,42,0.08);
+            animation: popWorkflow 8s ease-in-out infinite;
+            z-index: 15;
+        }
+
+        .workflow-bubble:nth-child(1) { left: 10%; animation-delay: 0s; }
+        .workflow-bubble:nth-child(2) { left: 38%; animation-delay: 1.6s; }
+        .workflow-bubble:nth-child(3) { left: 66%; animation-delay: 3.2s; }
+        .workflow-bubble:nth-child(4) { left: 94%; animation-delay: 4.8s; }
+
+        @keyframes driveWorkflow {
+            0%, 10% {
+                left: 10%;
+                transform: translateX(-50%) translateY(0) rotate(0deg);
+            }
+
+            20%, 30% {
+                left: 38%;
+                transform: translateX(-50%) translateY(-2px) rotate(-1deg);
+            }
+
+            40%, 50% {
+                left: 66%;
+                transform: translateX(-50%) translateY(2px) rotate(1deg);
+            }
+
+            60%, 72% {
+                left: 94%;
+                transform: translateX(-50%) translateY(-2px) rotate(-1deg);
+            }
+
+            86%, 100% {
+                left: 10%;
+                transform: translateX(-50%) translateY(0) rotate(0deg);
+            }
+        }
+
+        @keyframes popWorkflow {
+            0%, 22%, 100% {
+                transform: translateX(-50%) translateY(0) scale(1);
+                box-shadow: 0 14px 35px rgba(15,23,42,0.08);
+            }
+
+            8%, 14% {
+                transform: translateX(-50%) translateY(-16px) scale(1.18);
+                box-shadow: 0 18px 45px rgba(17,82,212,0.22);
+            }
+        }
+
+        .workflow-card-animated {
+            position: relative;
+            z-index: 25;
+        }
+
+        .workflow-card-animated::after {
+            content: "";
+            position: absolute;
+            inset: -1px;
+            border-radius: 1.5rem;
+            border: 2px solid transparent;
+            animation: workflowGlow 8s ease-in-out infinite;
+            pointer-events: none;
+        }
+
+        .workflow-card-animated:nth-child(1)::after { animation-delay: 0s; }
+        .workflow-card-animated:nth-child(2)::after { animation-delay: 1.6s; }
+        .workflow-card-animated:nth-child(3)::after { animation-delay: 3.2s; }
+        .workflow-card-animated:nth-child(4)::after { animation-delay: 4.8s; }
+
+        @keyframes workflowGlow {
+            0%, 22%, 100% {
+                border-color: transparent;
+                box-shadow: none;
+            }
+
+            8%, 14% {
+                border-color: rgba(17,82,212,0.65);
+                box-shadow: 0 0 0 8px rgba(17,82,212,0.08), 0 22px 55px rgba(17,82,212,0.16);
+            }
+        }
+
+        @media (max-width: 1024px) {
+            .workflow-road,
+            .workflow-car,
+            .workflow-bubble {
+                display: none;
+            }
+        }
+
     </style>
 </head>
 
-<body class="bg-surface text-on-surface">
+<body class="bg-surface text-on-surface overflow-x-hidden relative">
+
+    <!-- Global Decorative Shapes -->
+    <div class="floating-shape shape-float top-[120px] left-[40px] w-24 h-24 border-[8px] border-blue-300"></div>
+
+    <div class="floating-shape shape-rotate top-[320px] right-[60px] w-32 h-32 border-[10px] border-blue-200"></div>
+
+    <div class="floating-shape shape-float top-[900px] left-[8%] w-16 h-16 bg-blue-300 rounded-[2rem] rotate-12"></div>
+
+    <div class="floating-shape shape-rotate top-[1450px] right-[12%] w-20 h-20 bg-blue-200 rounded-[1rem]"></div>
+
+    <div class="floating-shape shape-float top-[2100px] left-[14%] w-32 h-32 border-[10px] border-blue-100"></div>
+
+    <div class="floating-shape shape-rotate top-[2800px] right-[6%] w-24 h-24 bg-blue-300 rounded-full"></div>
+
+    <div class="floating-shape shape-float bottom-[900px] left-[5%] w-28 h-28 bg-blue-100 rounded-[2rem] rotate-45"></div>
+
+    <div class="floating-shape shape-rotate bottom-[300px] right-[8%] w-40 h-40 border-[12px] border-blue-200"></div>
+
     <nav
         class="fixed top-0 w-full z-50 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-none">
         <div class="max-w-7xl mx-auto flex justify-between items-center px-6 py-3">
@@ -1012,7 +1388,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['createTenantApplicati
                                         </label>
                                         <select
                                             class="w-full bg-surface-variant border-transparent rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent text-sm py-3 px-4"
-                                            name="subscriptionPlan" required>
+                                            name="subscriptionPlan" id="subscriptionPlanSelect" required>
                                             <option value="" <?php echo $formData['subscriptionPlan'] === '' ? 'selected' : ''; ?>>
                                                 Select a plan
                                             </option>
@@ -1040,6 +1416,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['createTenantApplicati
                                         </select>
                                     </div>
                                 </div>
+
+                                <div id="selectedPlanFeatures"
+                                    class="hidden rounded-xl border border-blue-100 bg-blue-50/70 p-5 shadow-sm">
+                                    <div class="flex items-start justify-between gap-4 mb-4">
+                                        <div>
+                                            <p class="text-[10px] font-black uppercase tracking-widest text-primary mb-1">
+                                                Selected Plan
+                                            </p>
+                                            <h3 id="selectedPlanName" class="text-lg font-black text-slate-900"></h3>
+                                        </div>
+
+                                        <div class="text-right">
+                                            <p class="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">
+                                                Price
+                                            </p>
+                                            <p id="selectedPlanPrice" class="text-sm font-black text-primary"></p>
+                                        </div>
+                                    </div>
+
+                                    <ul id="selectedPlanFeatureList" class="grid grid-cols-1 gap-2"></ul>
+                                </div>
                             </div>
 
                             <button
@@ -1054,7 +1451,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['createTenantApplicati
             </div>
         </section>
 
-        <section class="py-24 bg-white" id="features">
+        <section class="py-24 bg-white relative overflow-hidden" id="features">
+            <div class="absolute top-10 left-10 w-40 h-40 bg-blue-100 rounded-full blur-3xl opacity-40"></div>
+            <div class="absolute bottom-10 right-10 w-56 h-56 bg-blue-200 rounded-full blur-3xl opacity-30"></div>
+            <div class="absolute top-1/2 left-1/2 -translate-x-1/2 w-[700px] h-[700px] border border-blue-100 rounded-full opacity-50"></div>
             <div class="max-w-7xl mx-auto px-6">
                 <div class="text-center max-w-2xl mx-auto mb-20">
                     <h2 class="text-2xl sm:text-3xl font-black tracking-tighter mb-4">Tools That Help Your Shop Run Better</h2>
@@ -1096,7 +1496,214 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['createTenantApplicati
             </div>
         </section>
 
-        <section class="py-24 bg-surface" id="pricing">
+
+        <section class="relative py-24 overflow-hidden bg-gradient-to-br from-white via-blue-50/40 to-white pattern-dots" id="workflow">
+            <div class="absolute inset-0 soft-grid-bg opacity-70"></div>
+            <div class="absolute -top-40 -right-28 w-[420px] h-[420px] bg-primary/10 rounded-full blur-3xl"></div>
+            <div class="absolute -bottom-40 -left-28 w-[420px] h-[420px] bg-blue-200/30 rounded-full blur-3xl"></div>
+
+            <div class="relative max-w-7xl mx-auto px-6">
+                <div class="text-center max-w-3xl mx-auto mb-16">
+                    <span class="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white border border-blue-100 text-primary text-[11px] font-black uppercase tracking-[0.25em] shadow-sm">
+                        <span class="material-symbols-outlined text-[16px]">route</span>
+                        Shop Workflow
+                    </span>
+
+                    <h2 class="text-3xl sm:text-4xl font-black tracking-tighter mt-6 mb-4">
+                        From Booking to Payment, Everything is Organized
+                    </h2>
+
+                    <p class="text-on-surface-variant leading-relaxed">
+                        RapidRepairCo. helps your repair shop follow a clear daily process so staff can work faster and customers can stay updated.
+                    </p>
+                </div>
+
+                <div class="relative pt-52 lg:pt-64">
+                    <div class="workflow-road"></div>
+
+                    <div class="hidden lg:grid absolute left-0 right-0 top-[28%] grid-cols-4 text-center text-[10px] font-black uppercase tracking-widest text-primary/60">
+                        <span>Booking</span>
+                        <span>Repair</span>
+                        <span>Parts</span>
+                        <span>Payment</span>
+                    </div>
+
+                    <div class="workflow-car">
+                        <span class="workflow-car-light"></span>
+                    </div>
+
+                    <div class="workflow-bubble-wrap">
+                        <div class="workflow-bubble">
+                            <span class="material-symbols-outlined text-[22px]">event_available</span>
+                        </div>
+                        <div class="workflow-bubble">
+                            <span class="material-symbols-outlined text-[22px]">car_repair</span>
+                        </div>
+                        <div class="workflow-bubble">
+                            <span class="material-symbols-outlined text-[22px]">inventory_2</span>
+                        </div>
+                        <div class="workflow-bubble">
+                            <span class="material-symbols-outlined text-[22px]">payments</span>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-4 gap-5">
+                        <div class="section-card workflow-card-animated rounded-3xl p-6 hover-lift">
+                            <div class="w-14 h-14 rounded-2xl bg-blue-50 text-primary flex items-center justify-center mb-6">
+                                <span class="material-symbols-outlined text-3xl">event_available</span>
+                            </div>
+                            <p class="text-[11px] font-black uppercase tracking-widest text-primary mb-2">Step 01</p>
+                            <h3 class="text-xl font-black tracking-tight mb-3">Book Appointment</h3>
+                            <p class="text-sm text-on-surface-variant leading-relaxed">
+                                Customers can request a schedule while your shop keeps bookings organized.
+                            </p>
+                        </div>
+
+                        <div class="section-card workflow-card-animated rounded-3xl p-6 hover-lift">
+                            <div class="w-14 h-14 rounded-2xl bg-blue-50 text-primary flex items-center justify-center mb-6">
+                                <span class="material-symbols-outlined text-3xl">car_repair</span>
+                            </div>
+                            <p class="text-[11px] font-black uppercase tracking-widest text-primary mb-2">Step 02</p>
+                            <h3 class="text-xl font-black tracking-tight mb-3">Track Repair Job</h3>
+                            <p class="text-sm text-on-surface-variant leading-relaxed">
+                                Staff can monitor repair status from diagnosis up to completion.
+                            </p>
+                        </div>
+
+                        <div class="section-card workflow-card-animated rounded-3xl p-6 hover-lift">
+                            <div class="w-14 h-14 rounded-2xl bg-blue-50 text-primary flex items-center justify-center mb-6">
+                                <span class="material-symbols-outlined text-3xl">inventory_2</span>
+                            </div>
+                            <p class="text-[11px] font-black uppercase tracking-widest text-primary mb-2">Step 03</p>
+                            <h3 class="text-xl font-black tracking-tight mb-3">Use Parts</h3>
+                            <p class="text-sm text-on-surface-variant leading-relaxed">
+                                Parts used during repairs can be monitored with inventory records.
+                            </p>
+                        </div>
+
+                        <div class="section-card workflow-card-animated rounded-3xl p-6 hover-lift">
+                            <div class="w-14 h-14 rounded-2xl bg-blue-50 text-primary flex items-center justify-center mb-6">
+                                <span class="material-symbols-outlined text-3xl">payments</span>
+                            </div>
+                            <p class="text-[11px] font-black uppercase tracking-widest text-primary mb-2">Step 04</p>
+                            <h3 class="text-xl font-black tracking-tight mb-3">Settle Payment</h3>
+                            <p class="text-sm text-on-surface-variant leading-relaxed">
+                                Service totals, labor, parts, and payment records are easier to manage.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="py-28 bg-white border-y border-outline relative overflow-hidden pattern-circles" id="modules">
+            <div class="absolute inset-0 bg-gradient-to-br from-white via-blue-50/40 to-white"></div>
+
+            <!-- Decorative shapes -->
+            <div class="absolute top-16 left-10 w-40 h-40 bg-primary/10 rounded-full blur-3xl"></div>
+            <div class="absolute bottom-12 right-16 w-56 h-56 bg-blue-200/40 rounded-full blur-3xl"></div>
+            <div class="absolute top-1/2 left-[45%] w-[720px] h-[720px] border border-blue-100 rounded-full -translate-y-1/2 opacity-70"></div>
+            <div class="absolute top-24 right-[12%] grid grid-cols-5 gap-3 opacity-30">
+                <?php for ($i = 0; $i < 25; $i++): ?>
+                    <div class="w-2 h-2 rounded-full bg-primary"></div>
+                <?php endfor; ?>
+            </div>
+
+            <div class="relative z-10 max-w-7xl mx-auto px-6">
+                <div class="grid grid-cols-1 lg:grid-cols-[0.78fr_1.22fr] gap-14 items-center">
+
+                    <div class="relative">
+                        <div class="absolute -top-10 -left-8 w-24 h-24 rounded-[2rem] bg-blue-100 rotate-12 opacity-80"></div>
+                        <div class="absolute -bottom-10 right-10 w-20 h-20 rounded-full border-[10px] border-blue-100 opacity-80"></div>
+
+                        <div class="relative section-card rounded-[2rem] p-8 md:p-10 overflow-hidden">
+                            <div class="absolute top-0 right-0 w-44 h-44 bg-primary/10 rounded-bl-[5rem]"></div>
+
+                            <span class="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-blue-50 text-primary text-[11px] font-black uppercase tracking-[0.25em] border border-blue-100">
+                                <span class="material-symbols-outlined text-[16px]">dashboard_customize</span>
+                                Main Modules
+                            </span>
+
+                            <h2 class="text-3xl sm:text-5xl font-black tracking-tighter mt-7 mb-5 leading-tight">
+                                Built for Real Repair Shop
+                                <span class="text-primary">Operations.</span>
+                            </h2>
+
+                            <p class="text-on-surface-variant leading-relaxed mb-8">
+                                Each section is designed around common repair shop tasks such as customer records,
+                                vehicle records, repair progress, inventory, billing, and reports.
+                            </p>
+
+                            <div class="grid grid-cols-2 gap-4">
+                                <div class="rounded-2xl bg-blue-50 border border-blue-100 p-5">
+                                    <p class="text-3xl font-black text-primary">6</p>
+                                    <p class="text-xs font-bold text-slate-500 uppercase tracking-wider mt-1">Core Modules</p>
+                                </div>
+
+                                <div class="rounded-2xl bg-slate-50 border border-outline p-5">
+                                    <p class="text-3xl font-black text-primary">1</p>
+                                    <p class="text-xs font-bold text-slate-500 uppercase tracking-wider mt-1">Shop System</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="relative">
+                        <div class="absolute -inset-6 bg-gradient-to-br from-blue-100/60 to-white rounded-[3rem] blur-2xl"></div>
+
+                        <div class="relative grid grid-cols-1 sm:grid-cols-2 gap-5">
+                            <?php
+                            $modules = [
+                                ['icon' => 'calendar_month', 'title' => 'Appointment Scheduling', 'desc' => 'Organize bookings and prevent confusion in shop schedules.'],
+                                ['icon' => 'directions_car', 'title' => 'Vehicle Records', 'desc' => 'Keep customer vehicle details and service history in one place.'],
+                                ['icon' => 'engineering', 'title' => 'Mechanic Tasks', 'desc' => 'Assign and monitor jobs handled by your repair staff.'],
+                                ['icon' => 'fact_check', 'title' => 'Diagnostics Reports', 'desc' => 'Record findings, recommendations, and repair estimates.'],
+                                ['icon' => 'inventory', 'title' => 'Parts Inventory', 'desc' => 'Monitor parts stock and parts used in repair jobs.'],
+                                ['icon' => 'receipt_long', 'title' => 'Billing Records', 'desc' => 'Track labor, parts, balances, and payment status.'],
+                            ];
+                            ?>
+
+                            <?php foreach ($modules as $index => $module): ?>
+                                <div class="group relative rounded-[2rem] p-[1px] bg-gradient-to-br from-blue-100 via-slate-100 to-white hover:from-primary/40 hover:to-blue-100 transition-all">
+                                    <div class="relative h-full rounded-[2rem] p-6 bg-white/90 backdrop-blur border border-white overflow-hidden hover-lift">
+                                        <div class="absolute top-0 right-0 w-24 h-24 bg-blue-50 rounded-bl-[3rem] group-hover:bg-primary/10 transition-all"></div>
+
+                                        <div class="relative z-10">
+                                            <div class="flex items-center justify-between mb-7">
+                                                <div class="w-14 h-14 rounded-2xl bg-white border border-blue-100 text-primary flex items-center justify-center feature-pill group-hover:scale-110 transition-transform">
+                                                    <span class="material-symbols-outlined text-3xl">
+                                                        <?php echo htmlspecialchars($module['icon'], ENT_QUOTES, 'UTF-8'); ?>
+                                                    </span>
+                                                </div>
+
+                                                <span class="text-[10px] font-black text-blue-200 tracking-widest">
+                                                    0<?php echo $index + 1; ?>
+                                                </span>
+                                            </div>
+
+                                            <h3 class="text-lg font-black tracking-tight mb-3">
+                                                <?php echo htmlspecialchars($module['title'], ENT_QUOTES, 'UTF-8'); ?>
+                                            </h3>
+
+                                            <p class="text-sm text-on-surface-variant leading-relaxed">
+                                                <?php echo htmlspecialchars($module['desc'], ENT_QUOTES, 'UTF-8'); ?>
+                                            </p>
+                                        </div>
+                                    </div>
+                                </div>
+                            <?php endforeach; ?>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+        </section>
+
+        <section class="py-24 bg-surface relative overflow-hidden pattern-grid" id="pricing">
+            <div class="absolute inset-0 bg-gradient-to-br from-white/60 via-transparent to-blue-50/60"></div>
+            <div class="relative z-10">
+            <div class="absolute -top-32 right-0 w-[420px] h-[420px] bg-blue-100 rounded-full blur-3xl opacity-50"></div>
+            <div class="absolute bottom-0 left-0 w-[320px] h-[320px] bg-blue-200 rounded-full blur-3xl opacity-30"></div>
             <div class="max-w-7xl mx-auto px-6">
                 <div class="text-center mb-16">
                     <h2 class="text-2xl sm:text-3xl font-black tracking-tighter mb-4">Choose the Right Plan for Your Shop</h2>
@@ -1165,8 +1772,58 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['createTenantApplicati
         <section class="py-24 overflow-hidden" id="about">
             <div class="max-w-7xl mx-auto px-6 grid grid-cols-1 lg:grid-cols-2 gap-20 items-center">
                 <div class="relative">
-                    <div class="aspect-square bg-slate-200 rounded-xl overflow-hidden shadow-xl"></div>
-                    <div class="absolute -bottom-10 -right-10 w-64 h-64 bg-primary rounded-xl -z-10 opacity-10"></div>
+                    <div class="absolute -top-8 -left-8 w-44 h-44 bg-primary/10 rounded-full blur-2xl"></div>
+                    <div class="absolute -bottom-10 -right-10 w-64 h-64 bg-primary rounded-[2rem] -z-10 opacity-10"></div>
+
+                    <div class="section-card rounded-[2rem] p-6 relative overflow-hidden">
+                        <div class="flex items-center justify-between mb-6">
+                            <div>
+                                <p class="text-[10px] font-black uppercase tracking-widest text-primary">Shop Dashboard</p>
+                                <h3 class="text-xl font-black tracking-tight mt-1">Today’s Overview</h3>
+                            </div>
+                            <div class="w-11 h-11 rounded-2xl bg-blue-50 text-primary flex items-center justify-center">
+                                <span class="material-symbols-outlined">monitoring</span>
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-2 gap-4 mb-5">
+                            <div class="rounded-2xl bg-slate-50 p-5 border border-outline">
+                                <p class="text-xs text-slate-500 font-bold">Active Jobs</p>
+                                <p class="text-3xl font-black text-primary mt-2">18</p>
+                            </div>
+
+                            <div class="rounded-2xl bg-slate-50 p-5 border border-outline">
+                                <p class="text-xs text-slate-500 font-bold">Completed</p>
+                                <p class="text-3xl font-black text-primary mt-2">42</p>
+                            </div>
+                        </div>
+
+                        <div class="space-y-3">
+                            <div class="flex items-center justify-between rounded-2xl bg-white border border-outline p-4">
+                                <div class="flex items-center gap-3">
+                                    <span class="w-3 h-3 rounded-full bg-blue-500"></span>
+                                    <span class="text-sm font-bold">Engine Diagnosis</span>
+                                </div>
+                                <span class="text-xs font-black text-primary">In Progress</span>
+                            </div>
+
+                            <div class="flex items-center justify-between rounded-2xl bg-white border border-outline p-4">
+                                <div class="flex items-center gap-3">
+                                    <span class="w-3 h-3 rounded-full bg-amber-500"></span>
+                                    <span class="text-sm font-bold">Brake Service</span>
+                                </div>
+                                <span class="text-xs font-black text-amber-600">Waiting Parts</span>
+                            </div>
+
+                            <div class="flex items-center justify-between rounded-2xl bg-white border border-outline p-4">
+                                <div class="flex items-center gap-3">
+                                    <span class="w-3 h-3 rounded-full bg-green-500"></span>
+                                    <span class="text-sm font-bold">Full PMS</span>
+                                </div>
+                                <span class="text-xs font-black text-green-600">Ready</span>
+                            </div>
+                        </div>
+                    </div>
                 </div>
 
                 <div class="space-y-6">
@@ -1200,9 +1857,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['createTenantApplicati
                     </div>
                 </div>
             </div>
+                </div>
         </section>
 
-        <section class="py-24 bg-white border-t border-outline" id="support">
+        <section class="py-24 bg-white border-t border-outline relative overflow-hidden pattern-lines" id="support">
+            <div class="absolute inset-0 bg-white/75"></div>
+            <div class="relative z-10">
+            <div class="absolute top-20 right-20 w-52 h-52 border-[14px] border-blue-100 rounded-full opacity-40"></div>
+            <div class="absolute bottom-10 left-10 w-32 h-32 bg-blue-100 rounded-[2rem] rotate-12 opacity-40"></div>
             <div class="max-w-7xl mx-auto px-6">
                 <div class="grid grid-cols-1 lg:grid-cols-3 gap-16">
                     <div class="lg:col-span-1">
@@ -1265,8 +1927,39 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['createTenantApplicati
                     </div>
                 </div>
             </div>
+                </div>
         </section>
     </main>
+
+
+        <section class="relative py-24 bg-gradient-to-br from-primary to-blue-700 overflow-hidden">
+            <div class="absolute inset-0 pattern-grid opacity-20"></div>
+            <div class="absolute inset-0 pattern-lines opacity-10"></div>
+            <div class="absolute inset-0 soft-grid-bg opacity-20"></div>
+            <div class="absolute -top-28 -right-20 w-96 h-96 bg-white/10 rounded-full blur-3xl"></div>
+            <div class="absolute -bottom-28 -left-20 w-96 h-96 bg-white/10 rounded-full blur-3xl"></div>
+
+            <div class="relative max-w-5xl mx-auto px-6 text-center text-white">
+                <span class="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/15 border border-white/20 text-[11px] font-black uppercase tracking-[0.25em]">
+                    <span class="material-symbols-outlined text-[16px]">rocket_launch</span>
+                    Start Your Shop Setup
+                </span>
+
+                <h2 class="text-3xl sm:text-5xl font-black tracking-tighter mt-6 mb-5">
+                    Ready to Make Your Repair Shop More Organized?
+                </h2>
+
+                <p class="text-white/80 max-w-2xl mx-auto leading-relaxed mb-10">
+                    Create your shop account, upload your business documents, choose a plan, and start setting up your repair shop system.
+                </p>
+
+                <a href="#application"
+                    class="inline-flex items-center justify-center gap-2 bg-white text-primary px-8 py-4 rounded-2xl font-black shadow-2xl hover:scale-[1.02] transition-all">
+                    Go to Application Form
+                    <span class="material-symbols-outlined">arrow_upward</span>
+                </a>
+            </div>
+        </section>
 
     <footer class="w-full bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800">
         <div class="max-w-7xl mx-auto px-6 py-12 flex flex-col md:flex-row justify-between items-center gap-8">

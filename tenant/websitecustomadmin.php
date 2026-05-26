@@ -4,18 +4,28 @@ include __DIR__ . '/../db.php';
 include __DIR__ . '/../session_security.php';
 include __DIR__ . '/../log_helper.php';
 
+// Safe fallback if access helper variables/functions are not loaded on this page
+$accessibleModules = $accessibleModules ?? [];
+
+if (!function_exists('canAccessModule')) {
+    function canAccessModule($moduleName, $accessibleModules = [])
+    {
+        return true;
+    }
+}
+
 // Check if tenant is logged in
 if (!isset($_SESSION['tenantID'])) {
     header('Location: tenantlogin.php');
     exit;
 }
 
-$tenantID = (int) $_SESSION['tenantID'];
+$tenantID = (string) $_SESSION['tenantID'];
 
 // Get logged-in user information
 $loggedInUserName = '';
 $loggedInUserRole = '';
-if ($_SESSION['userType'] === 'owner') {
+if (($_SESSION['userType'] ?? 'owner') === 'owner') {
     $loggedInUserName = isset($_SESSION['shopName']) ? $_SESSION['shopName'] : 'Shop Owner';
     $loggedInUserRole = 'Administrator';
 } else {
@@ -28,7 +38,7 @@ if ($_SESSION['userType'] === 'owner') {
 $shopName = 'RapidRepair';
 $ownerStmt = mysqli_prepare($conn, 'SELECT shopName FROM owners WHERE tenantID = ? LIMIT 1');
 if ($ownerStmt) {
-    mysqli_stmt_bind_param($ownerStmt, 'i', $tenantID);
+    mysqli_stmt_bind_param($ownerStmt, 's', $tenantID);
     mysqli_stmt_execute($ownerStmt);
     $ownerResult = mysqli_stmt_get_result($ownerStmt);
     if ($ownerResult && $row = mysqli_fetch_assoc($ownerResult)) {
@@ -149,7 +159,7 @@ if ($ownerStmt) {
                                 Account Billing
                             </a>
                             <a class="flex items-center gap-3 px-3 py-2.5 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors text-sm border-t border-slate-100 dark:border-slate-700"
-                                href="websitecustomadmin.php">
+                                href="websitecustomeadmin.php">
                                 <span class="material-symbols-outlined text-[18px]">palette</span>
                                 Website Customizer
                             </a>
@@ -181,7 +191,7 @@ if ($ownerStmt) {
                 </div>
                 <form method="post" action="../logout/logout.php" class="inline">
                     <input type="hidden" name="action" value="confirm" />
-                    <button type="submit" class="text-slate-400 hover:text-error transition-colors" title="Logout">
+                    <button type="submit" class="text-slate-400 hover:text-red-500 transition-colors" title="Logout">
                         <span class="material-symbols-outlined text-xl">logout</span>
                     </button>
                 </form>
@@ -237,12 +247,38 @@ if ($ownerStmt) {
                                         class="flex-1 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white rounded-lg text-sm font-mono focus:ring-primary focus:border-primary dark:focus:ring-primary"
                                         id="primaryColorInput" type="text" value="#1152d4" />
                                 </div>
-                                <div class="flex gap-2 pt-1">
-                                    <button type="button" class="h-6 w-6 rounded-full bg-[#1152d4] cursor-pointer border border-slate-200" data-color="#1152d4" aria-label="Use #1152d4"></button>
-                                    <button type="button" class="h-6 w-6 rounded-full bg-[#d41111] cursor-pointer border border-slate-200" data-color="#d41111" aria-label="Use #d41111"></button>
-                                    <button type="button" class="h-6 w-6 rounded-full bg-[#11d441] cursor-pointer border border-slate-200" data-color="#11d441" aria-label="Use #11d441"></button>
-                                    <button type="button" class="h-6 w-6 rounded-full bg-[#000000] cursor-pointer border border-slate-200" data-color="#000000" aria-label="Use #000000"></button>
-                                    <button type="button" class="h-6 w-6 rounded-full bg-[#6366f1] cursor-pointer border border-slate-200" data-color="#6366f1" aria-label="Use #6366f1"></button>
+                                <div class="grid grid-cols-7 gap-2 pt-2">
+                                    <button type="button" class="h-7 w-7 rounded-full bg-[#1152d4] hover:scale-110 transition-transform border-2 border-white shadow" data-color="#1152d4" title="Royal Blue"></button>
+                                    <button type="button" class="h-7 w-7 rounded-full bg-[#2563eb] hover:scale-110 transition-transform border-2 border-white shadow" data-color="#2563eb" title="Blue"></button>
+                                    <button type="button" class="h-7 w-7 rounded-full bg-[#7c3aed] hover:scale-110 transition-transform border-2 border-white shadow" data-color="#7c3aed" title="Purple"></button>
+                                    <button type="button" class="h-7 w-7 rounded-full bg-[#ec4899] hover:scale-110 transition-transform border-2 border-white shadow" data-color="#ec4899" title="Pink"></button>
+                                    <button type="button" class="h-7 w-7 rounded-full bg-[#ef4444] hover:scale-110 transition-transform border-2 border-white shadow" data-color="#ef4444" title="Red"></button>
+                                    <button type="button" class="h-7 w-7 rounded-full bg-[#f97316] hover:scale-110 transition-transform border-2 border-white shadow" data-color="#f97316" title="Orange"></button>
+                                    <button type="button" class="h-7 w-7 rounded-full bg-[#eab308] hover:scale-110 transition-transform border-2 border-white shadow" data-color="#eab308" title="Yellow"></button>
+
+                                    <button type="button" class="h-7 w-7 rounded-full bg-[#22c55e] hover:scale-110 transition-transform border-2 border-white shadow" data-color="#22c55e" title="Green"></button>
+                                    <button type="button" class="h-7 w-7 rounded-full bg-[#14b8a6] hover:scale-110 transition-transform border-2 border-white shadow" data-color="#14b8a6" title="Teal"></button>
+                                    <button type="button" class="h-7 w-7 rounded-full bg-[#06b6d4] hover:scale-110 transition-transform border-2 border-white shadow" data-color="#06b6d4" title="Cyan"></button>
+                                    <button type="button" class="h-7 w-7 rounded-full bg-[#0f172a] hover:scale-110 transition-transform border-2 border-white shadow" data-color="#0f172a" title="Dark Navy"></button>
+                                    <button type="button" class="h-7 w-7 rounded-full bg-[#000000] hover:scale-110 transition-transform border-2 border-white shadow" data-color="#000000" title="Black"></button>
+                                    <button type="button" class="h-7 w-7 rounded-full bg-[#64748b] hover:scale-110 transition-transform border-2 border-white shadow" data-color="#64748b" title="Slate"></button>
+                                    <button type="button" class="h-7 w-7 rounded-full bg-gradient-to-r from-pink-500 via-red-500 to-yellow-500 hover:scale-110 transition-transform border-2 border-white shadow" data-color="#ec4899" title="Gradient Pink"></button>
+                                </div>
+
+                                <div class="mt-4">
+                                    <label class="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-2">
+                                        Custom Color Picker
+                                    </label>
+                                    <div class="flex items-center gap-3">
+                                        <input type="color"
+                                            id="advancedColorPicker"
+                                            value="#1152d4"
+                                            class="h-12 w-20 rounded-lg border border-slate-200 cursor-pointer bg-transparent">
+
+                                        <div class="text-xs text-slate-500 dark:text-slate-400">
+                                            Choose any custom color for your website branding.
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -572,7 +608,7 @@ if ($ownerStmt) {
     <script>
         // Customization System
         const customizationSystem = {
-            tenantID: <?php echo $tenantID; ?>,
+            tenantID: <?php echo json_encode($tenantID); ?>,
             shopName: <?php echo json_encode($shopName); ?>,
             defaultHeroImage: 'https://lh3.googleusercontent.com/aida-public/AB6AXuAEtRZx2VtJU_zvHyWwsPzD6V-hQgNfAn2ej099PlXa6HKYmZqm9u0Cl5K4y-AzSzT4KPlh897GoHs2N4t_PifJp3y-dT-rj5YsB98I9Dnp799aPfP0rZ-vQZhqRNpq_Ll2qyR361GWZxFHoYgrFfUTBzh8STIl_1B0aQTSEGfgyxNhO7ix91KeXhv26XzL0sHPtMcsrGNRwCP_RGCYJ8Ny0heOO9T8o7EUb9hcDp1dSNVs5Fja1CgIgUO3RtwhBFeHSdHhfk06o3Lo',
             placeholderThumb: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="600" height="400"><rect width="100%" height="100%" fill="#f1f5f9"/><text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" fill="#64748b" font-family="Arial" font-size="24">Image preview unavailable</text></svg>'),
@@ -610,14 +646,13 @@ if ($ownerStmt) {
                     previewCarouselMain: document.getElementById('previewCarouselMain'),
                     previewHeroHeading: document.getElementById('previewHeroHeading'),
                     previewHeroSubtext: document.getElementById('previewHeroSubtext'),
-                    previewHeroCta: document.getElementById('previewHeroCta'),
-                    previewCarouselMain: document.getElementById('previewCarouselMain')
+                    previewHeroCta: document.getElementById('previewHeroCta')
                 };
             },
 
             async loadCustomization() {
                 try {
-                    const response = await fetch('customization_handler.php?action=get_customization');
+                    const response = await fetch('customization_handler.php?action=get_customization', { credentials: 'same-origin' });
                     const result = await response.json();
 
                     if (result.status === 'success' && result.data) {
@@ -662,9 +697,24 @@ if ($ownerStmt) {
                 document.querySelectorAll('[data-color]').forEach(circle => {
                     circle.addEventListener('click', () => {
                         this.el.primaryColorInput.value = circle.dataset.color;
+
+                        const advancedPicker = document.getElementById('advancedColorPicker');
+                        if (advancedPicker) {
+                            advancedPicker.value = circle.dataset.color;
+                        }
+
                         this.updatePreview();
                     });
                 });
+
+                const advancedPicker = document.getElementById('advancedColorPicker');
+
+                if (advancedPicker) {
+                    advancedPicker.addEventListener('input', (e) => {
+                        this.el.primaryColorInput.value = e.target.value;
+                        this.updatePreview();
+                    });
+                }
 
                 this.attachDropZone(this.el.logoZone, 'logo');
                 this.attachDropZone(this.el.heroZone, 'hero');
@@ -713,6 +763,19 @@ if ($ownerStmt) {
             },
 
             async uploadImage(file, type) {
+                const maxSize = 2 * 1024 * 1024;
+                const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/svg+xml'];
+
+                if (!allowedTypes.includes(file.type)) {
+                    this.showNotification('Only JPG, PNG, WEBP, or SVG images are allowed.', 'error');
+                    return;
+                }
+
+                if (file.size > maxSize) {
+                    this.showNotification('Image must not exceed 2MB.', 'error');
+                    return;
+                }
+
                 const formData = new FormData();
                 formData.append('image', file);
                 formData.append('type', type);
@@ -720,7 +783,8 @@ if ($ownerStmt) {
                 try {
                     const response = await fetch('customization_handler.php?action=upload_image', {
                         method: 'POST',
-                        body: formData
+                        body: formData,
+                        credentials: 'same-origin'
                     });
                     const result = await response.json();
                     if (result.status !== 'success') {
@@ -865,7 +929,8 @@ if ($ownerStmt) {
                     const response = await fetch('customization_handler.php?action=save_customization', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(customizationData)
+                        body: JSON.stringify(customizationData),
+                        credentials: 'same-origin'
                     });
                     const result = await response.json();
                     if (result.status === 'success') {

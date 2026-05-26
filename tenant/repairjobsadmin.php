@@ -133,6 +133,27 @@ if (!$owner) {
 
 $_SESSION['login_slug'] = $loginSlug;
 $shopName = !empty($owner['shopName']) ? $owner['shopName'] : 'AutoFix Pro';
+
+$logoPath = '';
+
+$logoStmt = mysqli_prepare(
+    $conn,
+    "SELECT logo_path FROM tenant_customizations WHERE tenantID = ? LIMIT 1"
+);
+
+if ($logoStmt) {
+    mysqli_stmt_bind_param($logoStmt, 'i', $tenantID);
+    mysqli_stmt_execute($logoStmt);
+
+    $logoResult = mysqli_stmt_get_result($logoStmt);
+    $logoRow = $logoResult ? mysqli_fetch_assoc($logoResult) : null;
+
+    mysqli_stmt_close($logoStmt);
+
+    if (!empty($logoRow['logo_path'])) {
+        $logoPath = '../pictures/' . ltrim($logoRow['logo_path'], '/');
+    }
+}
 $shopQuery = urlencode($loginSlug);
 
 $currentScript = basename($_SERVER['PHP_SELF']);
@@ -2452,17 +2473,53 @@ if ($historyStmt) {
 <div class="flex h-screen overflow-hidden pt-16 md:pt-0">
     <aside id="sidebar" class="fixed md:static md:flex left-0 top-0 h-screen md:h-screen w-64 md:w-64 flex-shrink-0 border-r border-slate-200 bg-white flex flex-col overflow-y-auto z-40 -translate-x-full md:translate-x-0 transition-transform duration-300 ease-in-out md:transition-none pt-16 md:pt-0">
         <div class="p-6">
-            <div class="flex items-center gap-3 mb-8">
-                <div class="bg-blue-700 rounded-lg p-2 text-white">
-                    <span class="material-symbols-outlined">directions_car</span>
-                </div>
-                <div>
-                    <h1 class="text-lg font-bold leading-none"><?php echo h($shopName); ?></h1>
-                    <p class="text-xs text-slate-500 mt-1">Your Repair Shop</p>
-                </div>
-            </div>
+            <div class="flex items-center gap-4 mb-8">
 
-            <nav class="space-y-1">
+    <?php if ($logoPath !== ''): ?>
+
+        <div class="h-14 w-14 overflow-hidden flex items-center justify-center">
+            <img
+                src="<?php echo h($logoPath); ?>"
+                alt="<?php echo h($shopName); ?> logo"
+                class="w-full h-full object-contain">
+        </div>
+
+    <?php else: ?>
+
+        <div class="bg-primary rounded-2xl p-3 text-white shadow-lg">
+            <span class="material-symbols-outlined text-3xl">
+                directions_car
+            </span>
+        </div>
+
+    <?php endif; ?>
+
+    <div>
+
+        <?php
+        $shopParts = explode(' ', trim($shopName), 2);
+        ?>
+
+        <h1 class="text-xl font-black leading-none tracking-tight">
+
+            <span class="text-slate-900 dark:text-white">
+                <?php echo htmlspecialchars($shopParts[0] ?? 'Rapid'); ?>
+            </span>
+
+            <span class="text-primary">
+                <?php echo htmlspecialchars($shopParts[1] ?? 'Repair'); ?>
+            </span>
+
+        </h1>
+
+        <p class="text-xs text-slate-500 mt-1">
+            Your Repair Shop
+        </p>
+
+    </div>
+
+</div>
+<nav class="space-y-1">
                 <?php if (canAccessModule('dashboardadmin.php', $accessibleModules)): ?>
                     <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 hover:bg-slate-100 transition-colors font-medium"
                        href="dashboardadmin.php?shop=<?php echo h($shopQuery); ?>">

@@ -958,6 +958,77 @@ function ownersColumnExists($conn, $columnName)
     return $check && mysqli_num_rows($check) > 0;
 }
 
+
+function tenantDocumentsTableExists($conn)
+{
+    $check = mysqli_query($conn, "SHOW TABLES LIKE 'tenant_documents'");
+    return $check && mysqli_num_rows($check) > 0;
+}
+
+function loadTenantDocumentsForReview($conn, $tenantID)
+{
+    $documents = [];
+
+    if (!tenantDocumentsTableExists($conn)) {
+        return $documents;
+    }
+
+    // Match exact tenantID first, but also allow 004 and 4 to match the same tenant.
+    // This prevents the review modal from showing documents as missing when one table
+    // stores a padded tenant ID and the other stores a non-padded tenant ID.
+    $sql = "SELECT document_id, tenantID, registration_type, document_type, file_name, file_path, file_extension, mime_type, file_size, verification_status, remarks, uploaded_at
+            FROM tenant_documents
+            WHERE tenantID = ? OR CAST(tenantID AS UNSIGNED) = CAST(? AS UNSIGNED)
+            ORDER BY FIELD(document_type, 'DTI Registration', 'SEC Registration', 'Barangay Clearance', 'Business Permit', 'BIR 2303', 'Government ID'), uploaded_at ASC";
+
+    $stmt = mysqli_prepare($conn, $sql);
+
+    if (!$stmt) {
+        return $documents;
+    }
+
+    $tenantIDString = trim((string) $tenantID);
+    mysqli_stmt_bind_param($stmt, "ss", $tenantIDString, $tenantIDString);
+    mysqli_stmt_execute($stmt);
+    $result = mysqli_stmt_get_result($stmt);
+
+    while ($row = mysqli_fetch_assoc($result)) {
+        $documents[] = [
+            'document_id' => (int) ($row['document_id'] ?? 0),
+            'registration_type' => (string) ($row['registration_type'] ?? ''),
+            'document_type' => (string) ($row['document_type'] ?? ''),
+            'file_name' => (string) ($row['file_name'] ?? ''),
+            'file_path' => (string) ($row['file_path'] ?? ''),
+            'file_extension' => strtolower((string) ($row['file_extension'] ?? pathinfo((string) ($row['file_name'] ?? ''), PATHINFO_EXTENSION))),
+            'mime_type' => (string) ($row['mime_type'] ?? ''),
+            'file_size' => (int) ($row['file_size'] ?? 0),
+            'verification_status' => (string) ($row['verification_status'] ?? 'Pending'),
+            'remarks' => (string) ($row['remarks'] ?? ''),
+            'uploaded_at' => (string) ($row['uploaded_at'] ?? '')
+        ];
+    }
+
+    mysqli_stmt_close($stmt);
+
+    return $documents;
+}
+
+function requiredTenantDocumentTypesForReview($registrationType = '')
+{
+    $registrationType = trim((string) $registrationType);
+    $registrationDocument = in_array($registrationType, ['DTI Registration', 'SEC Registration'], true)
+        ? $registrationType
+        : 'DTI Registration / SEC Registration';
+
+    return [
+        $registrationDocument,
+        'Barangay Clearance',
+        'Business Permit',
+        'BIR 2303',
+        'Government ID'
+    ];
+}
+
 // Pagination configuration
 $rowsPerPage = 5;
 $tenantPage = isset($_GET['tenant_page']) ? max(1, (int) $_GET['tenant_page']) : 1;
@@ -2047,9 +2118,34 @@ if (isset($_POST['createTenant'])) {
                                                     $planBillingCycle = $pendingRow['billing_cycle'] ?? 'monthly';
                                                     $billingDivisor = getBillingCycleDivisor($planBillingCycle);
                                                     $planPrice = $subscriptionPlans[$pendingPlanKey]['monthly_price'] * $billingDivisor;
+
+                                                    // Load all uploaded documents for this applicant from tenant_documents.
+                                                    // These values are passed directly to the Application Review modal.
+                                                    $tenantDocumentsForReview = loadTenantDocumentsForReview($conn, $pendingRow['tenantID'] ?? '');
+                                                    $registrationTypeForReview = '';
+
+                                                    foreach ($tenantDocumentsForReview as $documentForReview) {
+                                                        $documentTypeForReview = trim((string) ($documentForReview['document_type'] ?? ''));
+                                                        if ($documentTypeForReview === 'DTI Registration' || $documentTypeForReview === 'SEC Registration') {
+                                                            $registrationTypeForReview = $documentTypeForReview;
+                                                            break;
+                                                        }
+                                                    }
+
+                                                    if ($registrationTypeForReview === '') {
+                                                        foreach ($tenantDocumentsForReview as $documentForReview) {
+                                                            $registrationTypeValue = trim((string) ($documentForReview['registration_type'] ?? ''));
+                                                            if ($registrationTypeValue === 'DTI Registration' || $registrationTypeValue === 'SEC Registration') {
+                                                                $registrationTypeForReview = $registrationTypeValue;
+                                                                break;
+                                                            }
+                                                        }
+                                                    }
+
+                                                    $tenantDocumentTypesForReview = requiredTenantDocumentTypesForReview($registrationTypeForReview);
                                                 ?>
                                                 <button
-                                                    onclick="openApplicantReview(<?php echo htmlspecialchars(json_encode($pendingRow['tenantID'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>, <?php echo htmlspecialchars(json_encode($pendingRow['ownerName'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>, <?php echo htmlspecialchars(json_encode($pendingRow['shopName'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>, <?php echo htmlspecialchars(json_encode($pendingRow['shopAddress'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>, <?php echo htmlspecialchars(json_encode($pendingRow['email'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>, <?php echo htmlspecialchars(json_encode($pendingRow['contactNumber'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>, <?php echo htmlspecialchars(json_encode($tenantPlan ?? ''), ENT_QUOTES, 'UTF-8'); ?>, <?php echo htmlspecialchars(json_encode($planBillingCycle ?? 'monthly'), ENT_QUOTES, 'UTF-8'); ?>, <?php echo htmlspecialchars(json_encode($paymentInfo['status'] ?? 'unpaid'), ENT_QUOTES, 'UTF-8'); ?>, <?php echo htmlspecialchars(json_encode($paymentInfo['amount'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>, <?php echo htmlspecialchars(json_encode($paymentInfo['payment_method'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>, <?php echo htmlspecialchars(json_encode((string) ($planPrice ?? '')), ENT_QUOTES, 'UTF-8'); ?>, <?php echo htmlspecialchars(json_encode($pendingRow['business_permit_image'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>, <?php echo htmlspecialchars(json_encode($pendingRow['valid_id_image'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>, <?php echo htmlspecialchars(json_encode($pendingRow['bir_certificate_image'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>)"
+                                                    onclick="openApplicantReview(<?php echo htmlspecialchars(json_encode($pendingRow['tenantID'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>, <?php echo htmlspecialchars(json_encode($pendingRow['ownerName'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>, <?php echo htmlspecialchars(json_encode($pendingRow['shopName'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>, <?php echo htmlspecialchars(json_encode($pendingRow['shopAddress'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>, <?php echo htmlspecialchars(json_encode($pendingRow['email'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>, <?php echo htmlspecialchars(json_encode($pendingRow['contactNumber'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>, <?php echo htmlspecialchars(json_encode($tenantPlan ?? ''), ENT_QUOTES, 'UTF-8'); ?>, <?php echo htmlspecialchars(json_encode($planBillingCycle ?? 'monthly'), ENT_QUOTES, 'UTF-8'); ?>, <?php echo htmlspecialchars(json_encode($paymentInfo['status'] ?? 'unpaid'), ENT_QUOTES, 'UTF-8'); ?>, <?php echo htmlspecialchars(json_encode($paymentInfo['amount'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>, <?php echo htmlspecialchars(json_encode($paymentInfo['payment_method'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>, <?php echo htmlspecialchars(json_encode((string) ($planPrice ?? '')), ENT_QUOTES, 'UTF-8'); ?>, <?php echo htmlspecialchars(json_encode($tenantDocumentsForReview), ENT_QUOTES, 'UTF-8'); ?>, <?php echo htmlspecialchars(json_encode($tenantDocumentTypesForReview), ENT_QUOTES, 'UTF-8'); ?>)"
                                                     class="px-3 py-1.5 border border-blue-200 text-blue-600 text-xs font-bold rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/10 transition-colors">
                                                     <span class="flex items-center gap-1">
                                                         <span class="material-symbols-outlined text-sm">info</span>
@@ -2369,22 +2465,21 @@ if (isset($_POST['createTenant'])) {
 
                         <!-- Uploaded Documents Section -->
                         <div>
-                            <h3 class="text-lg font-bold mb-4 flex items-center gap-2">
-                                <span class="material-symbols-outlined text-red-600">folder_open</span>
-                                Uploaded Documents
-                            </h3>
-                            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                <div class="border border-slate-200 dark:border-slate-700 rounded-lg p-4 bg-slate-50 dark:bg-slate-800">
-                                    <p class="text-xs font-bold uppercase text-gray-500 mb-3">Business Permit</p>
-                                    <div id="reviewBusinessPermit">-</div>
+                            <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-4">
+                                <h3 class="text-lg font-bold flex items-center gap-2">
+                                    <span class="material-symbols-outlined text-red-600">folder_open</span>
+                                    Uploaded Documents
+                                </h3>
+                                <div id="reviewDocumentSummary" class="text-xs font-bold px-3 py-1.5 rounded-full bg-slate-100 text-slate-600">
+                                    0 of 5 uploaded
                                 </div>
-                                <div class="border border-slate-200 dark:border-slate-700 rounded-lg p-4 bg-slate-50 dark:bg-slate-800">
-                                    <p class="text-xs font-bold uppercase text-gray-500 mb-3">Valid Owner ID</p>
-                                    <div id="reviewValidId">-</div>
-                                </div>
-                                <div class="border border-slate-200 dark:border-slate-700 rounded-lg p-4 bg-slate-50 dark:bg-slate-800">
-                                    <p class="text-xs font-bold uppercase text-gray-500 mb-3">BIR Certificate</p>
-                                    <div id="reviewBirCertificate">-</div>
+                            </div>
+
+                            <div id="reviewMissingDocuments" class="hidden mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800"></div>
+
+                            <div id="reviewDocumentsGrid" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div class="border border-dashed border-slate-300 rounded-lg p-5 text-sm text-slate-500">
+                                    No documents loaded.
                                 </div>
                             </div>
                         </div>
@@ -2811,34 +2906,174 @@ if (isset($_POST['createTenant'])) {
             form.submit();
         }
         // Applicant Review Modal Functions
-        function renderDocumentPreview(containerId, filePath, label) {
-            const container = document.getElementById(containerId);
-            if (!container) return;
+        function formatFileSize(bytes) {
+            const size = Number(bytes || 0);
+            if (size <= 0) return "-";
+            if (size < 1024 * 1024) return (size / 1024).toFixed(1) + " KB";
+            return (size / (1024 * 1024)).toFixed(2) + " MB";
+        }
 
-            if (!filePath || String(filePath).trim() === "") {
-                container.innerHTML = "<div class=\"h-32 rounded-lg border border-dashed border-slate-300 flex items-center justify-center text-xs text-slate-400 text-center px-3\">No document uploaded</div>";
-                return;
+        function resolveDocumentUrl(filePath) {
+            if (!filePath || String(filePath).trim() === "") return "";
+            const cleanPath = String(filePath).replace(/^\/+/, "");
+            return cleanPath.startsWith("http://") || cleanPath.startsWith("https://") ? cleanPath : "../" + cleanPath;
+        }
+
+        function escapeHtml(value) {
+            return String(value ?? "")
+                .replaceAll("&", "&amp;")
+                .replaceAll("<", "&lt;")
+                .replaceAll(">", "&gt;")
+                .replaceAll('"', "&quot;")
+                .replaceAll("'", "&#039;");
+        }
+
+        function renderDocumentCard(documentItem, requiredLabel) {
+            const hasDocument = !!(documentItem && documentItem.file_path);
+            const documentType = requiredLabel || documentItem?.document_type || "Document";
+
+            if (!hasDocument) {
+                return `
+                    <div class="border border-amber-200 bg-amber-50 rounded-xl p-4">
+                        <div class="flex items-start gap-3">
+                            <span class="material-symbols-outlined text-amber-600">warning</span>
+                            <div>
+                                <p class="text-xs font-black uppercase tracking-widest text-amber-700">${escapeHtml(documentType)}</p>
+                                <p class="text-sm font-semibold text-amber-900 mt-2">Missing document</p>
+                                <p class="text-xs text-amber-700 mt-1">Ask the applicant to upload this required file before approval.</p>
+                            </div>
+                        </div>
+                    </div>
+                `;
             }
 
-            const cleanPath = String(filePath).replace(/^\/+/, "");
-            const imageUrl = cleanPath.startsWith("http://") || cleanPath.startsWith("https://") ? cleanPath : "../" + cleanPath;
+            const fileUrl = resolveDocumentUrl(documentItem.file_path);
+            const extension = String(documentItem.file_extension || documentItem.file_name?.split(".").pop() || "").toLowerCase();
+            const isImage = ["jpg", "jpeg", "png", "webp", "gif"].includes(extension);
+            const isPdf = extension === "pdf";
+            const status = documentItem.verification_status || "Pending";
+            const uploadedAt = documentItem.uploaded_at || "-";
+            const fileName = documentItem.file_name || "Uploaded document";
+            const fileSize = formatFileSize(documentItem.file_size);
 
-            container.innerHTML = `
-                <a href="${imageUrl}" target="_blank" rel="noopener" class="block group">
-                    <img src="${imageUrl}"
-                         alt="${label}"
-                         class="w-full h-32 object-cover rounded-lg border border-slate-200 dark:border-slate-700 mb-3 bg-white group-hover:opacity-80 transition"
-                         onerror="this.style.display=\"none\"; this.nextElementSibling.classList.remove(\"hidden\");" />
-                    <div class="hidden h-32 rounded-lg border border-dashed border-slate-300 mb-3 items-center justify-center text-xs text-slate-400 text-center px-3">
-                        Preview unavailable. Click view to open file.
+            const preview = isImage
+                ? `<img src="${escapeHtml(fileUrl)}"
+                         alt="${escapeHtml(documentType)}"
+                         class="w-full h-40 object-cover rounded-lg border border-slate-200 bg-white mb-3"
+                         onerror="this.style.display='none'; this.nextElementSibling.classList.remove('hidden');" />
+                   <div class="hidden h-40 rounded-lg border border-dashed border-slate-300 mb-3 items-center justify-center text-xs text-slate-400 text-center px-3">
+                       Preview unavailable. Click View File to open it.
+                   </div>`
+                : `<div class="h-40 rounded-lg border border-slate-200 bg-white mb-3 flex flex-col items-center justify-center text-center px-4">
+                       <span class="material-symbols-outlined text-5xl ${isPdf ? 'text-red-600' : 'text-slate-500'}">${isPdf ? 'picture_as_pdf' : 'draft'}</span>
+                       <p class="text-xs font-bold text-slate-600 mt-2">${escapeHtml(extension.toUpperCase() || 'FILE')}</p>
+                       <p class="text-[11px] text-slate-400 mt-1">Preview opens in a new tab</p>
+                   </div>`;
+
+            return `
+                <div class="border border-slate-200 dark:border-slate-700 rounded-xl p-4 bg-slate-50 dark:bg-slate-800">
+                    <div class="flex items-start justify-between gap-3 mb-3">
+                        <div>
+                            <p class="text-xs font-black uppercase tracking-widest text-gray-500">${escapeHtml(documentType)}</p>
+                            <p class="text-sm font-semibold text-slate-800 dark:text-slate-100 mt-1 break-words">${escapeHtml(fileName)}</p>
+                        </div>
+                        <span class="shrink-0 px-2 py-1 rounded-md bg-blue-50 text-blue-700 text-[10px] font-black">${escapeHtml(status)}</span>
                     </div>
-                    <span class="inline-flex items-center justify-center w-full px-3 py-2 bg-red-600 text-white text-xs font-bold rounded-lg hover:bg-red-700 transition-colors">
-                        View Document
-                    </span>
-                </a>
+
+                    <a href="${escapeHtml(fileUrl)}" target="_blank" rel="noopener" class="block group">
+                        ${preview}
+                        <span class="inline-flex items-center justify-center w-full px-3 py-2 bg-red-600 text-white text-xs font-bold rounded-lg hover:bg-red-700 transition-colors">
+                            <span class="material-symbols-outlined text-sm mr-1">open_in_new</span>
+                            View File
+                        </span>
+                    </a>
+
+                    <div class="grid grid-cols-2 gap-3 mt-3 text-xs text-slate-500">
+                        <div>
+                            <p class="font-bold uppercase text-[10px] text-slate-400">Size</p>
+                            <p>${escapeHtml(fileSize)}</p>
+                        </div>
+                        <div>
+                            <p class="font-bold uppercase text-[10px] text-slate-400">Uploaded</p>
+                            <p>${escapeHtml(uploadedAt)}</p>
+                        </div>
+                    </div>
+                </div>
             `;
         }
-        function openApplicantReview(tenantID, ownerName, shopName, shopAddress, email, contactNumber, subscriptionPlan, billingCycle, paymentStatus, paymentAmount, paymentMethod, planPrice, businessPermitImage, validIdImage, birCertificateImage) {
+
+        function renderApplicantDocuments(documents, requiredTypes) {
+            const grid = document.getElementById("reviewDocumentsGrid");
+            const summary = document.getElementById("reviewDocumentSummary");
+            const missingBox = document.getElementById("reviewMissingDocuments");
+
+            if (!grid) return;
+
+            const docs = Array.isArray(documents) ? documents : [];
+            const required = Array.isArray(requiredTypes) && requiredTypes.length > 0
+                ? requiredTypes
+                : ["DTI Registration / SEC Registration", "Barangay Clearance", "Business Permit", "BIR 2303", "Government ID"];
+
+            const normalizedDocs = docs.map((doc) => ({
+                ...doc,
+                document_type: String(doc.document_type || "").trim()
+            }));
+
+            const cards = [];
+            const missing = [];
+
+            required.forEach((requiredType) => {
+                let documentItem = null;
+
+                if (requiredType === "DTI Registration / SEC Registration") {
+                    documentItem = normalizedDocs.find((doc) => doc.document_type === "DTI Registration" || doc.document_type === "SEC Registration");
+                } else {
+                    documentItem = normalizedDocs.find((doc) => doc.document_type === requiredType);
+                }
+
+                if (!documentItem) {
+                    missing.push(requiredType);
+                }
+
+                cards.push(renderDocumentCard(documentItem, requiredType));
+            });
+
+            // Show any extra uploaded documents too.
+            normalizedDocs.forEach((doc) => {
+                const alreadyRendered = required.some((requiredType) => {
+                    if (requiredType === "DTI Registration / SEC Registration") {
+                        return doc.document_type === "DTI Registration" || doc.document_type === "SEC Registration";
+                    }
+                    return doc.document_type === requiredType;
+                });
+
+                if (!alreadyRendered) {
+                    cards.push(renderDocumentCard(doc, doc.document_type || "Other Document"));
+                }
+            });
+
+            grid.innerHTML = cards.join("");
+
+            if (summary) {
+                const uploadedCount = required.length - missing.length;
+                summary.textContent = `${uploadedCount} of ${required.length} uploaded`;
+                summary.className = missing.length === 0
+                    ? "text-xs font-bold px-3 py-1.5 rounded-full bg-green-100 text-green-700"
+                    : "text-xs font-bold px-3 py-1.5 rounded-full bg-amber-100 text-amber-700";
+            }
+
+            if (missingBox) {
+                if (missing.length > 0) {
+                    missingBox.classList.remove("hidden");
+                    missingBox.innerHTML = `<strong>Missing required document(s):</strong> ${missing.map(escapeHtml).join(", ")}`;
+                } else {
+                    missingBox.classList.add("hidden");
+                    missingBox.innerHTML = "";
+                }
+            }
+        }
+
+        function openApplicantReview(tenantID, ownerName, shopName, shopAddress, email, contactNumber, subscriptionPlan, billingCycle, paymentStatus, paymentAmount, paymentMethod, planPrice, documentsOrBusinessPermit, requiredTypesOrValidId, birCertificateImage) {
             // Set applicant details
             document.getElementById('reviewOwnerName').textContent = ownerName || '-';
             document.getElementById('reviewShopName').textContent = shopName || '-';
@@ -2848,14 +3083,14 @@ if (isset($_POST['createTenant'])) {
             document.getElementById('reviewPlan').textContent = subscriptionPlan || '-';
             document.getElementById('reviewBillingCycle').textContent = (billingCycle || '-').toLowerCase();
             document.getElementById('reviewApplicationDate').textContent = new Date().toLocaleDateString();
-            
+
             // Set plan price
             document.getElementById('reviewPlanPrice').textContent = planPrice ? '₱' + parseFloat(planPrice).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : 'PHP 0.00';
-            
+
             // Set payment details
             document.getElementById('reviewPaymentAmount').textContent = paymentAmount ? '₱' + parseFloat(paymentAmount).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '-';
             document.getElementById('reviewPaymentMethod').textContent = paymentMethod || '-';
-            
+
             // Set payment status badge
             const paymentBadges = {
                 'paid': '<span class="px-3 py-1 bg-green-100 text-green-700 text-xs font-bold rounded-md inline-block">✓ Paid</span>',
@@ -2865,10 +3100,24 @@ if (isset($_POST['createTenant'])) {
             };
             document.getElementById('reviewPaymentBadge').innerHTML = paymentBadges[(paymentStatus || 'unpaid').toLowerCase()] || paymentBadges['unpaid'];
 
-            renderDocumentPreview('reviewBusinessPermit', businessPermitImage, 'Business Permit');
-            renderDocumentPreview('reviewValidId', validIdImage, 'Valid Owner ID');
-            renderDocumentPreview('reviewBirCertificate', birCertificateImage, 'BIR Certificate');
-            
+            let documents = [];
+            let requiredTypes = [];
+
+            if (Array.isArray(documentsOrBusinessPermit)) {
+                documents = documentsOrBusinessPermit;
+                requiredTypes = Array.isArray(requiredTypesOrValidId) ? requiredTypesOrValidId : [];
+            } else {
+                // Backward compatibility for old owner image columns.
+                documents = [
+                    { document_type: 'Business Permit', file_path: documentsOrBusinessPermit || '', file_name: 'Business Permit' },
+                    { document_type: 'Government ID', file_path: requiredTypesOrValidId || '', file_name: 'Government ID' },
+                    { document_type: 'BIR 2303', file_path: birCertificateImage || '', file_name: 'BIR 2303' }
+                ].filter((doc) => doc.file_path);
+                requiredTypes = ['Business Permit', 'Government ID', 'BIR 2303'];
+            }
+
+            renderApplicantDocuments(documents, requiredTypes);
+
             // Store tenantID and applicant details for later use
             document.getElementById('applicantReviewModal').dataset.tenantID = tenantID;
             document.getElementById('applicantReviewModal').dataset.subscriptionPlan = subscriptionPlan || '';
@@ -2876,7 +3125,7 @@ if (isset($_POST['createTenant'])) {
             document.getElementById('applicantReviewModal').dataset.shopName = shopName || '';
             document.getElementById('applicantReviewModal').dataset.ownerName = ownerName || '';
             document.getElementById('applicantReviewModal').dataset.isPaid = (paymentStatus || 'unpaid').toLowerCase() === 'paid' ? 'true' : 'false';
-            
+
             // Open the modal
             document.getElementById("applicantReviewModal").classList.remove("hidden");
         }

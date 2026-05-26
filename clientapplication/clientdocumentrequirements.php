@@ -9,9 +9,13 @@ if (!$isClientLoggedIn) {
     exit();
 }
 
-$tenantID = $_GET['tenantID'] ?? '';
-$plan = $_GET['plan'] ?? '';
-$billingCycle = $_GET['billingCycle'] ?? '';
+$tenantID = trim((string) ($_GET['tenantID'] ?? ''));
+$plan = trim((string) ($_GET['plan'] ?? ''));
+$billingCycle = trim((string) ($_GET['billingCycle'] ?? ''));
+
+if ($tenantID === '') {
+    die("Missing tenant ID.");
+}
 
 if (!isset($_SESSION['tenant_application_data']) || !is_array($_SESSION['tenant_application_data'])) {
     $_SESSION['tenant_application_data'] = [];
@@ -23,95 +27,195 @@ $_SESSION['tenant_application_data']['billingCycle'] = $billingCycle;
 
 $errors = [];
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-
-    $documentType = trim($_POST['document_type'] ?? '');
-
-    $requiredFiles = [
-        'registration_document',
-        'barangay_clearance',
-        'business_permit',
-        'bir_2303',
-        'government_id'
+function safeDocumentLabel($fieldName)
+{
+    $labels = [
+        'registration_document' => 'DTI / SEC Registration',
+        'barangay_clearance' => 'Barangay Clearance',
+        'business_permit' => 'Business Permit',
+        'bir_2303' => 'BIR 2303',
+        'government_id' => 'Government ID'
     ];
 
-    foreach ($requiredFiles as $fileField) {
-        if (
-            !isset($_FILES[$fileField]) ||
-            $_FILES[$fileField]['error'] === UPLOAD_ERR_NO_FILE
-        ) {
+    return $labels[$fieldName] ?? ucwords(str_replace('_', ' ', $fieldName));
+}
+
+function uploadTenantDocument($fieldName, $tenantID, $uploadDir, &$errors)
+{
+    if (!isset($_FILES[$fieldName]) || $_FILES[$fieldName]['error'] === UPLOAD_ERR_NO_FILE) {
+        $errors[] = safeDocumentLabel($fieldName) . " is required.";
+        return null;
+    }
+
+    $file = $_FILES[$fieldName];
+
+    if ($file['error'] !== UPLOAD_ERR_OK) {
+        $errors[] = "Upload failed for " . safeDocumentLabel($fieldName) . ".";
+        return null;
+    }
+
+    $originalName = basename((string) $file['name']);
+    $extension = strtolower(pathinfo($originalName, PATHINFO_EXTENSION));
+    $allowedExtensions = ['jpg', 'jpeg', 'png', 'webp', 'pdf'];
+
+    if (!in_array($extension, $allowedExtensions, true)) {
+        $errors[] = safeDocumentLabel($fieldName) . " must be JPG, JPEG, PNG, WEBP, or PDF only.";
+        return null;
+    }
+
+    $maxSize = 3 * 1024 * 1024;
+
+    if ((int) $file['size'] > $maxSize) {
+        $errors[] = safeDocumentLabel($fieldName) . " exceeds the 3 MB file size limit.";
+        return null;
+    }
+
+    $mimeType = mime_content_type($file['tmp_name']);
+    $allowedMimeTypes = [
+        'image/jpeg',
+        'image/png',
+        'image/webp',
+        'application/pdf'
+    ];
+
+    if (!in_array($mimeType, $allowedMimeTypes, true)) {
+        $errors[] = safeDocumentLabel($fieldName) . " has an invalid file type.";
+        return null;
+    }
+
+    $tenantFolder = $uploadDir . $tenantID . '/';
+
+    if (!is_dir($tenantFolder)) {
+        mkdir($tenantFolder, 0777, true);
+    }
+
+    $safeBaseName = preg_replace('/[^a-zA-Z0-9_\-]/', '_', pathinfo($originalName, PATHINFO_FILENAME));
+    $storedFileName = $fieldName . '_' . time() . '_' . random_int(1000, 9999) . '_' . $safeBaseName . '.' . $extension;
+    $targetPath = $tenantFolder . $storedFileName;
+
+    if (!move_uploaded_file($file['tmp_name'], $targetPath)) {
+        $errors[] = "Failed to save " . safeDocumentLabel($fieldName) . ".";
+        return null;
+    }
+
+    return [
+        'original_name' => $originalName,
+        'stored_name' => $storedFileName,
+        'file_path' => 'uploads/tenant_documents/' . $tenantID . '/' . $storedFileName,
+        'extension' => $extension,
+        'mime_type' => $mimeType,
+        'file_size' => (int) $file['size']
+    ];
+}
+
+function saveTenantDocument($conn, $tenantID, $registrationType, $documentType, $fileInfo)
+{
+    $sql = "INSERT INTO tenant_documents (
+                tenantID,
+                registration_type,
+                document_type,
+                file_name,
+                file_path,
+                file_extension,
+                mime_type,
+                file_size,
+                verification_status,
+                uploaded_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'Pending', NOW())";
+
+    $stmt = mysqli_prepare($conn, $sql);
+
+    if (!$stmt) {
+        return false;
+    }
+
+    mysqli_stmt_bind_param(
+        $stmt,
+        "sssssssi",
+        $tenantID,
+        $registrationType,
+        $documentType,
+        $fileInfo['original_name'],
+        $fileInfo['file_path'],
+        $fileInfo['extension'],
+        $fileInfo['mime_type'],
+        $fileInfo['file_size']
+    );
+
+    return mysqli_stmt_execute($stmt);
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $registrationType = trim((string) ($_POST['document_type'] ?? ''));
+
+    if (!in_array($registrationType, ['DTI Registration', 'SEC Registration'], true)) {
+        $errors[] = "Please select DTI Registration or SEC Registration.";
+    }
+
+    $requiredDocuments = [
+        'registration_document' => $registrationType,
+        'barangay_clearance' => 'Barangay Clearance',
+        'business_permit' => 'Business Permit',
+        'bir_2303' => 'BIR 2303',
+        'government_id' => 'Government ID'
+    ];
+
+    foreach (array_keys($requiredDocuments) as $fileField) {
+        if (!isset($_FILES[$fileField]) || $_FILES[$fileField]['error'] === UPLOAD_ERR_NO_FILE) {
             $errors[] = "Please upload all required documents.";
             break;
         }
     }
 
     if (empty($errors)) {
-
         $uploadDir = __DIR__ . '/../uploads/tenant_documents/';
 
         if (!is_dir($uploadDir)) {
             mkdir($uploadDir, 0777, true);
         }
 
-        function uploadDocument($fieldName, $tenantID, $uploadDir)
-        {
-            global $errors;
+        $uploadedFiles = [];
 
-            $file = $_FILES[$fieldName];
-
-            $extension = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
-
-            $allowed = ['jpg', 'jpeg', 'png', 'webp', 'pdf'];
-
-            if (!in_array($extension, $allowed)) {
-                $errors[] = strtoupper($fieldName) . ' must be JPG, PNG, WEBP, or PDF only.';
-                return '';
-            }
-
-            // 1 MB LIMIT
-            $maxSize = 1 * 1024 * 1024;
-
-            if ($file['size'] > $maxSize) {
-                $errors[] = strtoupper($fieldName) . ' exceeds the 1 MB file size limit.';
-                return '';
-            }
-
-            $fileName = $tenantID . '_' . $fieldName . '_' . time() . '.' . $extension;
-
-            $targetPath = $uploadDir . $fileName;
-
-            if (move_uploaded_file($file['tmp_name'], $targetPath)) {
-                return 'uploads/tenant_documents/' . $fileName;
-            }
-
-            $errors[] = 'Failed to upload ' . strtoupper($fieldName) . '.';
-
-            return '';
+        foreach ($requiredDocuments as $fieldName => $documentType) {
+            $uploadedFiles[$fieldName] = uploadTenantDocument($fieldName, $tenantID, $uploadDir, $errors);
         }
 
-        $registrationDocument = uploadDocument('registration_document', $tenantID, $uploadDir);
-        $barangayClearance = uploadDocument('barangay_clearance', $tenantID, $uploadDir);
-        $businessPermit = uploadDocument('business_permit', $tenantID, $uploadDir);
-        $bir2303 = uploadDocument('bir_2303', $tenantID, $uploadDir);
-        $governmentId = uploadDocument('government_id', $tenantID, $uploadDir);
+        if (empty($errors)) {
+            mysqli_begin_transaction($conn);
 
-        $updateSql = "
-            UPDATE owners SET
-                registration_type = '" . mysqli_real_escape_string($conn, $documentType) . "',
-                business_permit_image = '" . mysqli_real_escape_string($conn, $businessPermit) . "',
-                valid_id_image = '" . mysqli_real_escape_string($conn, $governmentId) . "',
-                bir_certificate_image = '" . mysqli_real_escape_string($conn, $bir2303) . "'
-            WHERE tenantID = '" . mysqli_real_escape_string($conn, $tenantID) . "'
-        ";
+            try {
+                $deleteSql = "DELETE FROM tenant_documents WHERE tenantID = ?";
+                $deleteStmt = mysqli_prepare($conn, $deleteSql);
 
-        mysqli_query($conn, $updateSql);
+                if (!$deleteStmt) {
+                    throw new Exception("Unable to prepare old document cleanup.");
+                }
 
-        header(
-            "Location: clientpayment.php?tenantID=" . urlencode($tenantID) .
-            "&plan=" . urlencode($plan) .
-            "&billingCycle=" . urlencode($billingCycle)
-        );
-        exit();
+                mysqli_stmt_bind_param($deleteStmt, "s", $tenantID);
+
+                if (!mysqli_stmt_execute($deleteStmt)) {
+                    throw new Exception("Unable to replace old documents.");
+                }
+
+                foreach ($requiredDocuments as $fieldName => $documentType) {
+                    if (!saveTenantDocument($conn, $tenantID, $registrationType, $documentType, $uploadedFiles[$fieldName])) {
+                        throw new Exception("Unable to save " . safeDocumentLabel($fieldName) . " in the database.");
+                    }
+                }
+
+                mysqli_commit($conn);
+
+                header(
+                    "Location: clientpayment.php?tenantID=" . urlencode($tenantID) .
+                    "&plan=" . urlencode($plan) .
+                    "&billingCycle=" . urlencode($billingCycle)
+                );
+                exit();
+            } catch (Exception $e) {
+                mysqli_rollback($conn);
+                $errors[] = $e->getMessage();
+            }
+        }
     }
 }
 ?>
@@ -128,8 +232,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap"
         rel="stylesheet">
 
-    <link
-        href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap"
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap"
         rel="stylesheet" />
 
     <script>
@@ -182,8 +285,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 <body class="min-h-screen bg-surface">
 
-    <nav
-        class="fixed top-0 w-full z-50 bg-white/80 backdrop-blur-md border-b border-slate-200 shadow-sm">
+    <nav class="fixed top-0 w-full z-50 bg-white/80 backdrop-blur-md border-b border-slate-200 shadow-sm">
         <div class="max-w-7xl mx-auto flex justify-between items-center px-6 py-3">
             <a href="clientlanding.php?restore=1" class="text-xl font-black tracking-tighter text-primary">
                 RapidRepairCo.
@@ -208,7 +310,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     </nav>
 
     <main class="pt-24 px-6 pb-16">
-        <section class="relative overflow-hidden rounded-[2rem] max-w-7xl mx-auto border border-outline bg-white shadow-sm">
+        <section
+            class="relative overflow-hidden rounded-[2rem] max-w-7xl mx-auto border border-outline bg-white shadow-sm">
             <div class="absolute inset-0 bg-gradient-to-br from-primary/10 via-white to-slate-50"></div>
 
             <div class="absolute -top-28 -left-28 w-80 h-80 bg-primary/10 rounded-full blur-3xl"></div>
@@ -246,8 +349,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 <span class="material-symbols-outlined">upload_file</span>
                             </div>
                             <div>
-                                <h3 class="font-black tracking-tight">1 MB limit</h3>
-                                <p class="text-sm text-slate-500 mt-1">Each document must not exceed 1 MB.</p>
+                                <h3 class="font-black tracking-tight">3 MB limit</h3>
+                                <p class="text-sm text-slate-500 mt-1">Each document must not exceed 3 MB.</p>
                             </div>
                         </div>
 
@@ -257,7 +360,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             </div>
                             <div>
                                 <h3 class="font-black tracking-tight">Clear copies only</h3>
-                                <p class="text-sm text-slate-500 mt-1">Make sure document names and details are readable.</p>
+                                <p class="text-sm text-slate-500 mt-1">Make sure document names and details are
+                                    readable.</p>
                             </div>
                         </div>
 
@@ -267,19 +371,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             </div>
                             <div>
                                 <h3 class="font-black tracking-tight">Next step: payment</h3>
-                                <p class="text-sm text-slate-500 mt-1">After uploading, you will continue to the payment page.</p>
+                                <p class="text-sm text-slate-500 mt-1">After uploading, you will continue to the payment
+                                    page.</p>
                             </div>
                         </div>
                     </div>
                 </aside>
 
                 <section class="p-8 md:p-12 lg:p-14">
-                    <div class="bg-white rounded-[2rem] border border-outline shadow-[0_25px_80px_rgba(15,23,42,0.08)] p-6 md:p-8">
+                    <div
+                        class="bg-white rounded-[2rem] border border-outline shadow-[0_25px_80px_rgba(15,23,42,0.08)] p-6 md:p-8">
 
                         <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-5 mb-8">
                             <div>
                                 <h2 class="text-2xl font-black tracking-tight">Upload Documents</h2>
-                                <p class="text-sm text-slate-500 mt-2">Complete all required fields before continuing.</p>
+                                <p class="text-sm text-slate-500 mt-2">Complete all required fields before continuing.
+                                </p>
                             </div>
 
                             <div class="px-4 py-3 rounded-2xl bg-slate-50 border border-outline">
@@ -293,7 +400,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         <?php if (count($errors) > 0): ?>
                             <div class="mb-6 rounded-2xl bg-red-50 border border-red-200 px-5 py-4 text-red-700">
                                 <?php foreach ($errors as $error): ?>
-                                    <p class="text-sm font-semibold"><?php echo htmlspecialchars($error, ENT_QUOTES, 'UTF-8'); ?></p>
+                                    <p class="text-sm font-semibold">
+                                        <?php echo htmlspecialchars($error, ENT_QUOTES, 'UTF-8'); ?></p>
                                 <?php endforeach; ?>
                             </div>
                         <?php endif; ?>
@@ -301,7 +409,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         <form method="POST" enctype="multipart/form-data" class="space-y-6">
 
                             <div class="rounded-3xl border border-outline bg-slate-50/70 p-5">
-                                <label class="flex items-center gap-2 text-[11px] font-black uppercase tracking-widest text-slate-600 mb-3">
+                                <label
+                                    class="flex items-center gap-2 text-[11px] font-black uppercase tracking-widest text-slate-600 mb-3">
                                     <span class="material-symbols-outlined text-primary text-[18px]">business</span>
                                     DTI Registration or SEC Registration
                                 </label>
@@ -317,54 +426,70 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                             <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
 
-                                <div class="rounded-3xl border border-outline bg-white p-5 hover:border-primary/40 transition-all">
-                                    <label class="flex items-center gap-2 text-[11px] font-black uppercase tracking-widest text-slate-600 mb-3">
+                                <div
+                                    class="rounded-3xl border border-outline bg-white p-5 hover:border-primary/40 transition-all">
+                                    <label
+                                        class="flex items-center gap-2 text-[11px] font-black uppercase tracking-widest text-slate-600 mb-3">
                                         <span class="material-symbols-outlined text-primary text-[18px]">article</span>
                                         Upload DTI / SEC Document
                                     </label>
-                                    <input type="file" name="registration_document" accept=".jpg,.jpeg,.png,.webp,.pdf" required
+                                    <input type="file" name="registration_document" accept=".jpg,.jpeg,.png,.webp,.pdf"
+                                        required
                                         class="file-input w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm">
-                                    <p class="text-xs text-slate-500 mt-3">Maximum file size: 1 MB</p>
+                                    <p class="text-xs text-slate-500 mt-3">Maximum file size: 3 MB</p>
                                 </div>
 
-                                <div class="rounded-3xl border border-outline bg-white p-5 hover:border-primary/40 transition-all">
-                                    <label class="flex items-center gap-2 text-[11px] font-black uppercase tracking-widest text-slate-600 mb-3">
-                                        <span class="material-symbols-outlined text-primary text-[18px]">location_city</span>
+                                <div
+                                    class="rounded-3xl border border-outline bg-white p-5 hover:border-primary/40 transition-all">
+                                    <label
+                                        class="flex items-center gap-2 text-[11px] font-black uppercase tracking-widest text-slate-600 mb-3">
+                                        <span
+                                            class="material-symbols-outlined text-primary text-[18px]">location_city</span>
                                         Barangay Clearance
                                     </label>
-                                    <input type="file" name="barangay_clearance" accept=".jpg,.jpeg,.png,.webp,.pdf" required
+                                    <input type="file" name="barangay_clearance" accept=".jpg,.jpeg,.png,.webp,.pdf"
+                                        required
                                         class="file-input w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm">
-                                    <p class="text-xs text-slate-500 mt-3">Maximum file size: 1 MB</p>
+                                    <p class="text-xs text-slate-500 mt-3">Maximum file size: 3 MB</p>
                                 </div>
 
-                                <div class="rounded-3xl border border-outline bg-white p-5 hover:border-primary/40 transition-all">
-                                    <label class="flex items-center gap-2 text-[11px] font-black uppercase tracking-widest text-slate-600 mb-3">
-                                        <span class="material-symbols-outlined text-primary text-[18px]">storefront</span>
+                                <div
+                                    class="rounded-3xl border border-outline bg-white p-5 hover:border-primary/40 transition-all">
+                                    <label
+                                        class="flex items-center gap-2 text-[11px] font-black uppercase tracking-widest text-slate-600 mb-3">
+                                        <span
+                                            class="material-symbols-outlined text-primary text-[18px]">storefront</span>
                                         Business Permit
                                     </label>
-                                    <input type="file" name="business_permit" accept=".jpg,.jpeg,.png,.webp,.pdf" required
+                                    <input type="file" name="business_permit" accept=".jpg,.jpeg,.png,.webp,.pdf"
+                                        required
                                         class="file-input w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm">
-                                    <p class="text-xs text-slate-500 mt-3">Maximum file size: 1 MB</p>
+                                    <p class="text-xs text-slate-500 mt-3">Maximum file size: 3 MB</p>
                                 </div>
 
-                                <div class="rounded-3xl border border-outline bg-white p-5 hover:border-primary/40 transition-all">
-                                    <label class="flex items-center gap-2 text-[11px] font-black uppercase tracking-widest text-slate-600 mb-3">
-                                        <span class="material-symbols-outlined text-primary text-[18px]">receipt_long</span>
+                                <div
+                                    class="rounded-3xl border border-outline bg-white p-5 hover:border-primary/40 transition-all">
+                                    <label
+                                        class="flex items-center gap-2 text-[11px] font-black uppercase tracking-widest text-slate-600 mb-3">
+                                        <span
+                                            class="material-symbols-outlined text-primary text-[18px]">receipt_long</span>
                                         BIR 2303
                                     </label>
                                     <input type="file" name="bir_2303" accept=".jpg,.jpeg,.png,.webp,.pdf" required
                                         class="file-input w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm">
-                                    <p class="text-xs text-slate-500 mt-3">Maximum file size: 1 MB</p>
+                                    <p class="text-xs text-slate-500 mt-3">Maximum file size: 3 MB</p>
                                 </div>
 
-                                <div class="rounded-3xl border border-outline bg-white p-5 hover:border-primary/40 transition-all md:col-span-2">
-                                    <label class="flex items-center gap-2 text-[11px] font-black uppercase tracking-widest text-slate-600 mb-3">
+                                <div
+                                    class="rounded-3xl border border-outline bg-white p-5 hover:border-primary/40 transition-all md:col-span-2">
+                                    <label
+                                        class="flex items-center gap-2 text-[11px] font-black uppercase tracking-widest text-slate-600 mb-3">
                                         <span class="material-symbols-outlined text-primary text-[18px]">badge</span>
                                         Government ID
                                     </label>
                                     <input type="file" name="government_id" accept=".jpg,.jpeg,.png,.webp,.pdf" required
                                         class="file-input w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm">
-                                    <p class="text-xs text-slate-500 mt-3">Maximum file size: 1 MB</p>
+                                    <p class="text-xs text-slate-500 mt-3">Maximum file size: 3 MB</p>
                                 </div>
 
                             </div>

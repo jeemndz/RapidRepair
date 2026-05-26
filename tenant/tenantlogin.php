@@ -31,6 +31,42 @@ $welcome_subtext = $customization['welcome_subtext'] ?? 'The all-in-one platform
 $hero_image_path = $customization['hero_image_path'] ?? '';
 $hero_image = $hero_image_path !== '' ? '../pictures/' . $hero_image_path : 'https://lh3.googleusercontent.com/aida-public/AB6AXuDSvLJ3cZ6ER79yp4o0Y6WzI13dqdVNHhZHyLZ4Kme87pJYEmODEmNSRjQ0g63jOoVZm4UaDpyBha6ec962kjUuNBIniN-rnrETo8k-FO4-O39ZFYyuu6p97SuzraheAFkzXxwABqt3ur6ZemstwDJC3DK8JRm5f8I_Wg39e4nQFobYSlTPUeKHAi9IREjo2PztGF8l1xTOkR0Thn92ufrXf2K5DCTcgO9BDNrLqPYjloFAqFRHq3Wug_cHDUq7vyyX-0hUWfzOyqxn';
 
+function resolveCustomizationAsset($path)
+{
+    $path = trim((string) $path);
+
+    if ($path === '') {
+        return '';
+    }
+
+    if (preg_match('/^(https?:)?\/\//i', $path) || strpos($path, 'data:') === 0) {
+        return $path;
+    }
+
+    if (strpos($path, '../') === 0 || strpos($path, './') === 0) {
+        return $path;
+    }
+
+    if (strpos($path, '/uploads/') === 0) {
+        return '..' . $path;
+    }
+
+    if (strpos($path, 'uploads/') === 0) {
+        return '../' . $path;
+    }
+
+    return '../pictures/' . ltrim($path, '/');
+}
+
+$logo_path = '';
+if (!empty($customization['logo_path'])) {
+    $logo_path = resolveCustomizationAsset($customization['logo_path']);
+} elseif (!empty($customization['logoPath'])) {
+    $logo_path = resolveCustomizationAsset($customization['logoPath']);
+} elseif (!empty($customization['logo'])) {
+    $logo_path = resolveCustomizationAsset($customization['logo']);
+}
+
 if (isset($_POST['login'])) {
 
     $loginInput = isset($_POST['login_input']) ? trim($_POST['login_input']) : '';
@@ -224,7 +260,7 @@ if (isset($_POST['login'])) {
     <meta http-equiv="Pragma" content="no-cache" />
     <meta http-equiv="Expires" content="0" />
 
-    <title>RapidRepair - Partner Login</title>
+    <title><?php echo htmlspecialchars($shop_name); ?> - Partner Login</title>
 
     <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
 
@@ -293,11 +329,49 @@ if (isset($_POST['login'])) {
         .hover\\:bg-primary\\/90:hover {
             background-color: color-mix(in srgb, var(--primary-color) 90%, black) !important;
         }
+    
+        .auth-pattern-grid {
+            background-image:
+                linear-gradient(rgba(148,163,184,0.08) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(148,163,184,0.08) 1px, transparent 1px);
+            background-size: 34px 34px;
+        }
+
+        .auth-pattern-dots {
+            background-image:
+                radial-gradient(circle at 1px 1px, rgba(148,163,184,0.16) 1.2px, transparent 0);
+            background-size: 26px 26px;
+        }
+
+        .auth-floating-shape {
+            position: absolute;
+            border-radius: 9999px;
+            pointer-events: none;
+        }
+
+        .auth-glass {
+            background: rgba(255,255,255,0.78);
+            backdrop-filter: blur(18px);
+            border: 1px solid rgba(255,255,255,0.7);
+            box-shadow: 0 25px 60px rgba(15,23,42,0.10);
+        }
+
+        .auth-line-pattern {
+            background-image:
+                repeating-linear-gradient(
+                    135deg,
+                    rgba(148,163,184,0.05),
+                    rgba(148,163,184,0.05) 2px,
+                    transparent 2px,
+                    transparent 16px
+                );
+        }
+
     </style>
 
 </head>
 
-<body class="font-display text-slate-900 antialiased bg-slate-50">
+<body class="font-display text-slate-900 antialiased bg-white/70">
 
     <div class="flex min-h-screen">
 
@@ -313,15 +387,30 @@ if (isset($_POST['login'])) {
 
                 <div class="max-w-md">
 
-                    <div class="flex items-center gap-2 mb-6">
-                        <div class="bg-primary p-2 rounded-lg">
-                            <span class="material-symbols-outlined text-white">handyman</span>
-                        </div>
+                    <div class="flex items-center gap-4 mb-6">
 
-                        <span class="text-2xl font-black tracking-tight text-white">
-                            <?php echo htmlspecialchars(substr($shop_name, 0, 12)); ?><span
-                                class="text-primary"><?php echo htmlspecialchars(substr($shop_name, 12)); ?></span>
-                        </span>
+                        <?php if (!empty($logo_path)): ?>
+                            <div class="w-16 h-16 rounded-2xl overflow-hidden bg-white/10 backdrop-blur border border-white/10 shadow-xl flex items-center justify-center">
+                                <img
+                                    src="<?php echo htmlspecialchars($logo_path); ?>"
+                                    alt="<?php echo htmlspecialchars($shop_name); ?> Logo"
+                                    class="w-full h-full object-contain bg-white">
+                            </div>
+                        <?php else: ?>
+                            <div class="bg-primary p-3 rounded-2xl shadow-lg">
+                                <span class="material-symbols-outlined text-white text-3xl">handyman</span>
+                            </div>
+                        <?php endif; ?>
+
+                        <div>
+                            <span class="block text-2xl font-black tracking-tight text-white leading-tight">
+                                <?php echo htmlspecialchars($shop_name); ?>
+                            </span>
+
+                            <span class="text-sm text-slate-300">
+                                Automotive Service Platform
+                            </span>
+                        </div>
 
                     </div>
 
@@ -337,21 +426,47 @@ if (isset($_POST['login'])) {
             </div>
         </div>
 
-        <div class="w-full lg:w-1/2 flex items-center justify-center p-8 sm:p-12 md:p-16 bg-white">
+        <div class="w-full lg:w-1/2 relative overflow-hidden flex items-center justify-center p-8 sm:p-12 md:p-16 bg-white auth-pattern-grid auth-line-pattern">
 
-            <div class="w-full max-w-[440px]">
+            <div class="absolute inset-0 auth-pattern-dots opacity-50"></div>
 
-                <div class="mb-10 lg:hidden flex items-center gap-2">
+            <div class="auth-floating-shape top-16 left-10 w-52 h-52 bg-primary/10 blur-3xl"></div>
+            <div class="auth-floating-shape bottom-10 right-12 w-72 h-72 bg-blue-200/30 blur-3xl"></div>
+            <div class="auth-floating-shape top-[28%] right-[15%] w-24 h-24 border-[10px] border-primary/10"></div>
+            <div class="auth-floating-shape bottom-[18%] left-[10%] w-20 h-20 bg-primary/10 rounded-[2rem] rotate-12"></div>
 
-                    <div class="bg-primary p-1.5 rounded-lg">
-                        <span class="material-symbols-outlined text-white text-xl">handyman</span>
+            <div class="relative z-10 w-full max-w-[440px] auth-glass rounded-[2rem] p-8 sm:p-10">
+
+                <div class="mb-10 lg:hidden flex items-center gap-4">
+
+                    <?php if (!empty($logo_path)): ?>
+                        <div class="w-14 h-14 rounded-2xl overflow-hidden bg-slate-100 border border-slate-200 shadow-sm flex items-center justify-center">
+                            <img
+                                src="<?php echo htmlspecialchars($logo_path); ?>"
+                                alt="<?php echo htmlspecialchars($shop_name); ?> Logo"
+                                class="w-full h-full object-contain bg-white">
+                        </div>
+                    <?php else: ?>
+                        <div class="bg-primary p-2 rounded-xl shadow-sm">
+                            <span class="material-symbols-outlined text-white text-2xl">handyman</span>
+                        </div>
+                    <?php endif; ?>
+
+                    <div>
+                        <span class="block text-xl font-black tracking-tight text-slate-900 leading-tight">
+                            <?php echo htmlspecialchars($shop_name); ?>
+                        </span>
+
+                        <span class="text-xs text-slate-500">
+                            Automotive Service Platform
+                        </span>
                     </div>
 
-                    <span class="text-xl font-black tracking-tight text-slate-900">
-                        <?php echo htmlspecialchars(substr($shop_name, 0, 12)); ?><span
-                            class="text-primary"><?php echo htmlspecialchars(substr($shop_name, 12)); ?></span>
-                    </span>
+                </div>
 
+                <div class="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary/10 border border-primary/10 text-primary text-[11px] font-black uppercase tracking-[0.25em] mb-6">
+                    <span class="material-symbols-outlined text-[16px]">lock</span>
+                    Secure Shop Access
                 </div>
 
                 <div class="mb-8">
@@ -378,7 +493,7 @@ if (isset($_POST['login'])) {
                             Username or Email
                         </label>
                         <div
-                            class="flex items-stretch rounded-xl overflow-hidden border border-slate-200 focus-within:border-primary transition-colors bg-slate-50">
+                            class="flex items-stretch rounded-xl overflow-hidden border border-slate-200 focus-within:border-primary transition-colors bg-white/70">
                             <div class="flex items-center justify-center bg-slate-100 px-3 border-r border-slate-200">
                                 <span class="material-symbols-outlined text-gray-custom text-xl">person</span>
                             </div>
@@ -396,7 +511,7 @@ if (isset($_POST['login'])) {
                         </div>
 
                         <div
-                            class="flex items-stretch rounded-xl overflow-hidden border border-slate-200 focus-within:border-primary transition-colors bg-slate-50">
+                            class="flex items-stretch rounded-xl overflow-hidden border border-slate-200 focus-within:border-primary transition-colors bg-white/70">
 
                             <div class="flex items-center justify-center bg-slate-100 px-3 border-r border-slate-200">
                                 <span class="material-symbols-outlined text-gray-custom text-xl">lock</span>
@@ -420,7 +535,7 @@ if (isset($_POST['login'])) {
                         <button name="login"
                             class="w-full h-12 bg-primary hover:bg-primary/90 text-white font-bold rounded-xl primary-glow transition-all transform hover:-translate-y-0.5 active:translate-y-0 flex items-center justify-center gap-2">
 
-                            <span>Sign In to Dashboard</span>
+                            <span>Sign In</span>
 
                             <span class="material-symbols-outlined text-lg">
                                 arrow_forward

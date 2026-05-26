@@ -70,6 +70,22 @@ if (!$owner) {
 
 $_SESSION['login_slug'] = $loginSlug;
 $shopName = !empty($owner['shopName']) ? $owner['shopName'] : 'AutoFix Pro';
+
+
+$logoPath = '';
+$logoStmt = mysqli_prepare($conn, "SELECT logo_path FROM tenant_customizations WHERE tenantID = ? LIMIT 1");
+
+if ($logoStmt) {
+    mysqli_stmt_bind_param($logoStmt, 'i', $tenantID);
+    mysqli_stmt_execute($logoStmt);
+    $logoResult = mysqli_stmt_get_result($logoStmt);
+    $logoRow = $logoResult ? mysqli_fetch_assoc($logoResult) : null;
+    mysqli_stmt_close($logoStmt);
+
+    if (!empty($logoRow['logo_path'])) {
+        $logoPath = '../pictures/' . ltrim($logoRow['logo_path'], '/');
+    }
+}
 $shopQuery = urlencode($loginSlug);
 $currentScript = basename($_SERVER['PHP_SELF']);
 if ($_SERVER['REQUEST_METHOD'] === 'GET' && (!isset($_GET['shop']) || trim((string) $_GET['shop']) !== $loginSlug)) {
@@ -1149,11 +1165,42 @@ if ($editVehicleId > 0) {
         class="fixed inset-y-0 left-0 flex flex-col z-40 h-full w-64 border-r border-slate-200 bg-white overflow-y-auto">
         <div class="p-6">
             <div class="flex items-center gap-3 mb-8">
-                <div class="bg-primary rounded-lg p-2 text-white">
-                    <span class="material-symbols-outlined">directions_car</span>
-                </div>
+                
+<?php if ($logoPath !== ''): ?>
+
+    <div class="h-14 w-14 overflow-hidden flex items-center justify-center">
+        <img
+            src="<?php echo h($logoPath); ?>"
+            alt="<?php echo h($shopName); ?> logo"
+            class="w-full h-full object-contain">
+    </div>
+
+<?php else: ?>
+
+    <div class="bg-primary rounded-2xl p-3 text-white shadow-lg">
+        <span class="material-symbols-outlined text-3xl">
+            directions_car
+        </span>
+    </div>
+
+<?php endif; ?>
+
                 <div>
-                    <h1 class="text-lg font-bold leading-none"><?php echo h($shopName); ?></h1>
+                    
+<?php
+$shopParts = explode(' ', trim($shopName), 2);
+?>
+
+<h1 class="text-xl font-black leading-none tracking-tight">
+    <span class="text-slate-900 dark:text-white">
+        <?php echo htmlspecialchars($shopParts[0] ?? 'Rapid'); ?>
+    </span>
+
+    <span class="text-primary">
+        <?php echo htmlspecialchars($shopParts[1] ?? 'Repair'); ?>
+    </span>
+</h1>
+
                     <p class="text-xs text-slate-500 mt-1">Your Repair Shop</p>
                 </div>
             </div>
