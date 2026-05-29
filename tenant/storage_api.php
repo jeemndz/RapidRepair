@@ -19,10 +19,6 @@ function jsonResponse($payload) {
     exit;
 }
 
-function hApiString($value) {
-    return trim((string) $value);
-}
-
 function tableExists($conn, $tableName) {
     $safeTable = mysqli_real_escape_string($conn, $tableName);
     $result = mysqli_query($conn, "SHOW TABLES LIKE '$safeTable'");
@@ -32,18 +28,25 @@ function tableExists($conn, $tableName) {
 function columnExists($conn, $tableName, $columnName) {
     $safeTable = mysqli_real_escape_string($conn, $tableName);
     $safeColumn = mysqli_real_escape_string($conn, $columnName);
-    $result = mysqli_query($conn, "SHOW COLUMNS FROM `$safeTable` LIKE '$safeColumn'");
+
+    $result = mysqli_query(
+        $conn,
+        "SHOW COLUMNS FROM `$safeTable` LIKE '$safeColumn'"
+    );
+
     return $result && mysqli_num_rows($result) > 0;
 }
 
 function normalizePlanCode($value) {
     $normalized = strtolower(trim((string) $value));
     $normalized = preg_replace('/[^a-z0-9]+/', '-', $normalized);
-    $normalized = trim((string) $normalized, '-');
+    $normalized = trim($normalized, '-');
+
     return $normalized;
 }
 
 function folderSize($dir) {
+
     $size = 0;
 
     if (!is_dir($dir)) {
@@ -51,15 +54,21 @@ function folderSize($dir) {
     }
 
     try {
+
         foreach (
             new RecursiveIteratorIterator(
-                new RecursiveDirectoryIterator($dir, FilesystemIterator::SKIP_DOTS)
+                new RecursiveDirectoryIterator(
+                    $dir,
+                    FilesystemIterator::SKIP_DOTS
+                )
             ) as $file
         ) {
+
             if ($file->isFile()) {
                 $size += $file->getSize();
             }
         }
+
     } catch (Throwable $e) {
         return 0;
     }
@@ -68,6 +77,7 @@ function folderSize($dir) {
 }
 
 function countTenantRecords($conn, $table, $tenantID) {
+
     $allowedTables = [
         'users',
         'vehicleinformation',
@@ -90,7 +100,13 @@ function countTenantRecords($conn, $table, $tenantID) {
         return 0;
     }
 
-    $sql = "SELECT COUNT(*) AS total FROM `$table` WHERE CAST(tenantID AS UNSIGNED) = CAST(? AS UNSIGNED)";
+    $sql = "
+        SELECT COUNT(*) AS total
+        FROM `$table`
+        WHERE CAST(tenantID AS UNSIGNED)
+        = CAST(? AS UNSIGNED)
+    ";
+
     $stmt = $conn->prepare($sql);
 
     if (!$stmt) {
@@ -98,241 +114,182 @@ function countTenantRecords($conn, $table, $tenantID) {
     }
 
     $tenantIDString = (string) $tenantID;
+
     $stmt->bind_param("s", $tenantIDString);
     $stmt->execute();
 
     $result = $stmt->get_result();
-    $row = $result ? $result->fetch_assoc() : null;
+
+    $row = $result
+        ? $result->fetch_assoc()
+        : null;
+
     $stmt->close();
 
     return (int)($row['total'] ?? 0);
 }
 
-function parseStorageFromFeatures($featuresRaw, $planCode = '', $planName = '') {
+function parseStorageFromFeatures(
+    $featuresRaw,
+    $planCode = '',
+    $planName = ''
+) {
+
     $storageGB = null;
     $recordLimit = null;
 
     $featuresRaw = trim((string) $featuresRaw);
 
     if ($featuresRaw !== '') {
+
         $decoded = json_decode($featuresRaw, true);
 
         if (is_array($decoded)) {
-            if (isset($decoded['storage_gb']) && is_numeric($decoded['storage_gb'])) {
-                $storageGB = (float) $decoded['storage_gb'];
-            } elseif (isset($decoded['storage']) && is_numeric($decoded['storage'])) {
-                $storageGB = (float) $decoded['storage'];
-            } elseif (isset($decoded['storage_limit_gb']) && is_numeric($decoded['storage_limit_gb'])) {
-                $storageGB = (float) $decoded['storage_limit_gb'];
+
+            if (
+                isset($decoded['storage_gb']) &&
+                is_numeric($decoded['storage_gb'])
+            ) {
+                $storageGB = (float)$decoded['storage_gb'];
             }
 
-            if (isset($decoded['record_limit']) && is_numeric($decoded['record_limit'])) {
-                $recordLimit = (int) $decoded['record_limit'];
-            } elseif (isset($decoded['records']) && is_numeric($decoded['records'])) {
-                $recordLimit = (int) $decoded['records'];
+            if (
+                isset($decoded['record_limit']) &&
+                is_numeric($decoded['record_limit'])
+            ) {
+                $recordLimit = (int)$decoded['record_limit'];
             }
         }
 
         if ($storageGB === null) {
-            if (preg_match('/(\d+(?:\.\d+)?)\s*(gb|gigabyte|gigabytes)/i', $featuresRaw, $match)) {
-                $storageGB = (float) $match[1];
-            } elseif (preg_match('/(\d+(?:\.\d+)?)\s*(mb|megabyte|megabytes)/i', $featuresRaw, $match)) {
-                $storageGB = ((float) $match[1]) / 1024;
+
+            if (
+                preg_match(
+                    '/(\d+(?:\.\d+)?)\s*(gb|gigabyte|gigabytes)/i',
+                    $featuresRaw,
+                    $match
+                )
+            ) {
+
+                $storageGB = (float)$match[1];
             }
         }
 
         if ($recordLimit === null) {
-            if (preg_match('/(\d[\d,]*)\s*(records|record)/i', $featuresRaw, $match)) {
-                $recordLimit = (int) str_replace(',', '', $match[1]);
+
+            if (
+                preg_match(
+                    '/(\d[\d,]*)\s*(records|record)/i',
+                    $featuresRaw,
+                    $match
+                )
+            ) {
+
+                $recordLimit =
+                    (int) str_replace(',', '', $match[1]);
             }
         }
     }
 
     if ($storageGB === null || $storageGB <= 0) {
-        $planKey = normalizePlanCode($planCode !== '' ? $planCode : $planName);
 
-        /*
-            Fallback storage limits.
-            Update these values if your actual plan limits are different.
-            If your subscription_plans.plan_features contains JSON like {"storage_gb":8},
-            that JSON value will be used instead of these defaults.
-        */
+        $planKey = normalizePlanCode(
+            $planCode !== ''
+                ? $planCode
+                : $planName
+        );
+
         $fallbackStorage = [
+
             'basic' => 1,
-            'basic-plan' => 1,
             'starter' => 1,
 
-            'medium' => 5,
             'standard' => 5,
-            'standard-plan' => 5,
             'professional' => 5,
 
             'premium' => 10,
-            'premium-plan' => 10,
             'enterprise' => 20
         ];
 
-        $storageGB = $fallbackStorage[$planKey] ?? 1;
+        $storageGB =
+            $fallbackStorage[$planKey] ?? 1;
     }
 
     return [
-        'storage_gb' => (float) $storageGB,
+        'storage_gb' => (float)$storageGB,
         'record_limit' => $recordLimit
     ];
 }
 
 function getTenantSubscriptionData($conn, $tenantID) {
-    $tenantIDString = (string) $tenantID;
 
-    /*
-        1. First source: latest active row from subscriptions table.
-        This is the main source after plan update.
-    */
-    if (tableExists($conn, 'subscriptions') && tableExists($conn, 'subscription_plans')) {
-        $sql = "
-            SELECT 
-                o.tenantID,
-                o.shopName,
-                o.subscription_plan AS owner_subscription_plan,
-                o.billing_cycle AS owner_billing_cycle,
-                o.next_billing_date AS owner_next_billing_date,
-                s.subscription_id,
-                s.status AS subscription_status,
-                s.billing_cycle,
-                s.start_date,
-                s.end_date,
-                s.next_billing_date,
-                s.amount,
-                sp.plan_id,
-                sp.plan_name,
-                sp.plan_code,
-                sp.monthly_price,
-                sp.plan_features
-            FROM owners o
-            LEFT JOIN subscriptions s 
-                ON CAST(o.tenantID AS UNSIGNED) = CAST(s.tenantID AS UNSIGNED)
-                AND s.status = 'active'
-            LEFT JOIN subscription_plans sp 
-                ON s.plan_id = sp.plan_id
-            WHERE CAST(o.tenantID AS UNSIGNED) = CAST(? AS UNSIGNED)
-            ORDER BY s.subscription_id DESC
-            LIMIT 1
-        ";
+    $tenantIDString = (string)$tenantID;
 
-        $stmt = $conn->prepare($sql);
-        if ($stmt) {
-            $stmt->bind_param("s", $tenantIDString);
-            $stmt->execute();
-            $result = $stmt->get_result();
-            $data = $result ? $result->fetch_assoc() : null;
-            $stmt->close();
+    $sql = "
+        SELECT 
+            o.tenantID,
+            o.shopName,
 
-            if ($data && !empty($data['subscription_id']) && !empty($data['plan_id'])) {
-                $data['source'] = 'subscriptions';
-                return $data;
-            }
-        }
+            s.subscription_id,
+            s.status AS subscription_status,
+            s.billing_cycle,
+            s.start_date,
+            s.end_date,
+            s.next_billing_date,
+
+            sp.plan_id,
+            sp.plan_name,
+            sp.plan_code,
+            sp.monthly_price,
+            sp.plan_features
+
+        FROM owners o
+
+        LEFT JOIN subscriptions s
+            ON CAST(o.tenantID AS UNSIGNED)
+            = CAST(s.tenantID AS UNSIGNED)
+            AND s.status = 'active'
+
+        LEFT JOIN subscription_plans sp
+            ON s.plan_id = sp.plan_id
+
+        WHERE CAST(o.tenantID AS UNSIGNED)
+            = CAST(? AS UNSIGNED)
+
+        ORDER BY s.subscription_id DESC
+        LIMIT 1
+    ";
+
+    $stmt = $conn->prepare($sql);
+
+    if (!$stmt) {
+        return null;
     }
 
-    /*
-        2. Fallback source: owners.subscription_plan.
-        This prevents storage from breaking if the subscriptions table has not been synced yet.
-    */
-    if (tableExists($conn, 'subscription_plans')) {
-        $sql = "
-            SELECT 
-                o.tenantID,
-                o.shopName,
-                o.subscription_plan AS owner_subscription_plan,
-                o.billing_cycle AS owner_billing_cycle,
-                o.subscription_start AS owner_subscription_start,
-                o.subscription_end AS owner_subscription_end,
-                o.next_billing_date AS owner_next_billing_date,
-                o.plan_price AS owner_plan_price,
-                sp.plan_id,
-                sp.plan_name,
-                sp.plan_code,
-                sp.monthly_price,
-                sp.plan_features
-            FROM owners o
-            LEFT JOIN subscription_plans sp 
-                ON LOWER(sp.plan_code) = LOWER(o.subscription_plan)
-            WHERE CAST(o.tenantID AS UNSIGNED) = CAST(? AS UNSIGNED)
-            LIMIT 1
-        ";
+    $stmt->bind_param("s", $tenantIDString);
+    $stmt->execute();
 
-        $stmt = $conn->prepare($sql);
-        if ($stmt) {
-            $stmt->bind_param("s", $tenantIDString);
-            $stmt->execute();
-            $result = $stmt->get_result();
-            $data = $result ? $result->fetch_assoc() : null;
-            $stmt->close();
+    $result = $stmt->get_result();
 
-            if ($data && !empty($data['plan_id'])) {
-                return [
-                    'tenantID' => $data['tenantID'],
-                    'shopName' => $data['shopName'],
-                    'subscription_id' => null,
-                    'subscription_status' => 'active',
-                    'billing_cycle' => $data['owner_billing_cycle'] ?: 'monthly',
-                    'start_date' => $data['owner_subscription_start'] ?? null,
-                    'end_date' => $data['owner_subscription_end'] ?? null,
-                    'next_billing_date' => $data['owner_next_billing_date'] ?? null,
-                    'amount' => $data['owner_plan_price'] ?? null,
-                    'plan_id' => $data['plan_id'],
-                    'plan_name' => $data['plan_name'],
-                    'plan_code' => $data['plan_code'],
-                    'monthly_price' => $data['monthly_price'],
-                    'plan_features' => $data['plan_features'],
-                    'source' => 'owners'
-                ];
-            }
-        }
-    }
+    $data = $result
+        ? $result->fetch_assoc()
+        : null;
 
-    /*
-        3. Last fallback: owner exists but no matching plan found.
-    */
-    $stmt = $conn->prepare("SELECT tenantID, shopName, subscription_plan, billing_cycle, next_billing_date FROM owners WHERE CAST(tenantID AS UNSIGNED) = CAST(? AS UNSIGNED) LIMIT 1");
-    if ($stmt) {
-        $stmt->bind_param("s", $tenantIDString);
-        $stmt->execute();
-        $result = $stmt->get_result();
-        $owner = $result ? $result->fetch_assoc() : null;
-        $stmt->close();
+    $stmt->close();
 
-        if ($owner) {
-            $planCode = $owner['subscription_plan'] ?: 'basic';
-            return [
-                'tenantID' => $owner['tenantID'],
-                'shopName' => $owner['shopName'],
-                'subscription_id' => null,
-                'subscription_status' => 'active',
-                'billing_cycle' => $owner['billing_cycle'] ?: 'monthly',
-                'start_date' => null,
-                'end_date' => null,
-                'next_billing_date' => $owner['next_billing_date'] ?? null,
-                'amount' => null,
-                'plan_id' => null,
-                'plan_name' => ucwords(str_replace('-', ' ', $planCode)),
-                'plan_code' => $planCode,
-                'monthly_price' => 0,
-                'plan_features' => '',
-                'source' => 'owners_default'
-            ];
-        }
-    }
-
-    return null;
+    return $data;
 }
 
-$data = getTenantSubscriptionData($conn, $tenantID);
+$data = getTenantSubscriptionData(
+    $conn,
+    $tenantID
+);
 
 if (!$data) {
+
     jsonResponse([
         "success" => false,
-        "message" => "Tenant subscription information was not found."
+        "message" => "No active subscription found."
     ]);
 }
 
@@ -345,18 +302,152 @@ $limits = parseStorageFromFeatures(
 $storageGB = $limits['storage_gb'];
 $recordLimit = $limits['record_limit'];
 
-$storageLimitBytes = $storageGB * 1024 * 1024 * 1024;
+$storageLimitBytes =
+    $storageGB * 1024 * 1024 * 1024;
 
 /*
-    Folder path if storage_api.php is inside /tenant folder:
-    RapidRepair/uploads/tenants/{tenantID}/
+|--------------------------------------------------------------------------
+| TENANT FOLDER
+|--------------------------------------------------------------------------
 */
-$tenantFolder = __DIR__ . "/../uploads/tenants/" . $tenantID;
 
-$usedBytes = folderSize($tenantFolder);
+$tenantFolder =
+    __DIR__ . "/../uploads/tenants/" . $tenantID;
+
+/*
+|--------------------------------------------------------------------------
+| FILE STORAGE
+|--------------------------------------------------------------------------
+*/
+
+$fileBytesUsed =
+    folderSize($tenantFolder);
+
+/*
+|--------------------------------------------------------------------------
+| RECORD COUNTS
+|--------------------------------------------------------------------------
+*/
+
+$recordUsage = [
+
+    "customers" =>
+        countTenantRecords(
+            $conn,
+            "users",
+            $tenantID
+        ),
+
+    "vehicles" =>
+        countTenantRecords(
+            $conn,
+            "vehicleinformation",
+            $tenantID
+        ),
+
+    "appointments" =>
+        countTenantRecords(
+            $conn,
+            "appointments",
+            $tenantID
+        ),
+
+    "repair_jobs" =>
+        countTenantRecords(
+            $conn,
+            "repair_jobs",
+            $tenantID
+        ),
+
+    "diagnostics" =>
+        countTenantRecords(
+            $conn,
+            "diagnostic_reports",
+            $tenantID
+        ),
+
+    "inventory_items" =>
+        countTenantRecords(
+            $conn,
+            "inventory_items",
+            $tenantID
+        ),
+
+    "payments" =>
+        countTenantRecords(
+            $conn,
+            "payments",
+            $tenantID
+        )
+];
+
+/*
+|--------------------------------------------------------------------------
+| AVERAGE KB PER RECORD
+|--------------------------------------------------------------------------
+*/
+
+$averageRecordSizesKB = [
+
+    "customers" => 2.0,
+    "vehicles" => 3.5,
+    "appointments" => 2.5,
+    "repair_jobs" => 5.0,
+    "diagnostics" => 4.0,
+    "inventory_items" => 2.5,
+    "payments" => 2.0
+];
+
+/*
+|--------------------------------------------------------------------------
+| TOTAL RECORDS
+|--------------------------------------------------------------------------
+*/
+
+$totalRecords =
+    array_sum($recordUsage);
+
+/*
+|--------------------------------------------------------------------------
+| DATABASE STORAGE ESTIMATION
+|--------------------------------------------------------------------------
+*/
+
+$databaseKBUsed = 0;
+
+foreach ($recordUsage as $key => $count) {
+
+    $averageKB =
+        $averageRecordSizesKB[$key] ?? 1;
+
+    $databaseKBUsed += (
+        $count * $averageKB
+    );
+}
+
+$databaseBytesUsed =
+    $databaseKBUsed * 1024;
+
+/*
+|--------------------------------------------------------------------------
+| TOTAL STORAGE USED
+|--------------------------------------------------------------------------
+*/
+
+$totalUsedBytes =
+    $fileBytesUsed + $databaseBytesUsed;
+
+/*
+|--------------------------------------------------------------------------
+| STORAGE PERCENTAGE
+|--------------------------------------------------------------------------
+*/
 
 $percentage = $storageLimitBytes > 0
-    ? round(($usedBytes / $storageLimitBytes) * 100, 2)
+    ? round(
+        ($totalUsedBytes / $storageLimitBytes) * 100,
+        2
+    )
     : 0;
 
 if ($percentage > 100) {
@@ -364,70 +455,178 @@ if ($percentage > 100) {
 }
 
 /*
-    Database record usage per tenant.
-    Services table is not included.
+|--------------------------------------------------------------------------
+| RECORD LIMITS
+|--------------------------------------------------------------------------
 */
-$recordUsage = [
-    "customers" => countTenantRecords($conn, "users", $tenantID),
-    "vehicles" => countTenantRecords($conn, "vehicleinformation", $tenantID),
-    "appointments" => countTenantRecords($conn, "appointments", $tenantID),
-    "repair_jobs" => countTenantRecords($conn, "repair_jobs", $tenantID),
-    "diagnostics" => countTenantRecords($conn, "diagnostic_reports", $tenantID),
-    "inventory_items" => countTenantRecords($conn, "inventory_items", $tenantID),
-    "payments" => countTenantRecords($conn, "payments", $tenantID)
-];
-
-$totalRecords = array_sum($recordUsage);
 
 $recordPercentage = null;
 $recordIsWarning = false;
 $recordIsFull = false;
 
-if (is_numeric($recordLimit) && (int)$recordLimit > 0) {
+if (
+    is_numeric($recordLimit) &&
+    (int)$recordLimit > 0
+) {
+
     $recordLimit = (int)$recordLimit;
-    $recordPercentage = round(($totalRecords / $recordLimit) * 100, 2);
+
+    $recordPercentage = round(
+        ($totalRecords / $recordLimit) * 100,
+        2
+    );
 
     if ($recordPercentage > 100) {
         $recordPercentage = 100;
     }
 
-    $recordIsWarning = $recordPercentage >= 80;
-    $recordIsFull = $totalRecords >= $recordLimit;
+    $recordIsWarning =
+        $recordPercentage >= 80;
+
+    $recordIsFull =
+        $totalRecords >= $recordLimit;
 }
 
+/*
+|--------------------------------------------------------------------------
+| RESPONSE
+|--------------------------------------------------------------------------
+*/
+
 jsonResponse([
+
     "success" => true,
 
     "tenantID" => $tenantID,
-    "shopName" => $data['shopName'] ?? '',
 
-    "subscription_source" => $data['source'] ?? 'unknown',
-    "subscription_id" => $data['subscription_id'] ?? null,
-    "subscription_status" => $data['subscription_status'] ?? 'active',
+    "shopName" =>
+        $data['shopName'] ?? '',
 
-    "plan_id" => $data['plan_id'] ?? null,
-    "plan_name" => $data['plan_name'] ?? 'Subscription',
-    "plan_code" => $data['plan_code'] ?? '',
-    "billing_cycle" => $data['billing_cycle'] ?? 'monthly',
-    "start_date" => $data['start_date'] ?? null,
-    "end_date" => $data['end_date'] ?? null,
-    "next_billing_date" => $data['next_billing_date'] ?? null,
+    "subscription_id" =>
+        $data['subscription_id'] ?? null,
 
-    "storage_limit_gb" => $storageGB,
-    "storage_limit_bytes" => $storageLimitBytes,
+    "subscription_status" =>
+        $data['subscription_status'] ?? 'active',
 
-    "used_bytes" => $usedBytes,
-    "used_mb" => round($usedBytes / 1024 / 1024, 2),
-    "used_gb" => round($usedBytes / 1024 / 1024 / 1024, 2),
+    "plan_id" =>
+        $data['plan_id'] ?? null,
 
-    "percentage" => $percentage,
-    "is_warning" => $percentage >= 80,
-    "is_full" => $storageLimitBytes > 0 ? ($usedBytes >= $storageLimitBytes) : false,
+    "plan_name" =>
+        $data['plan_name'] ?? 'Subscription',
 
-    "record_usage" => $recordUsage,
-    "total_records" => $totalRecords,
-    "record_limit" => $recordLimit,
-    "record_percentage" => $recordPercentage,
-    "record_is_warning" => $recordIsWarning,
-    "record_is_full" => $recordIsFull
+    "plan_code" =>
+        $data['plan_code'] ?? '',
+
+    "billing_cycle" =>
+        $data['billing_cycle'] ?? 'monthly',
+
+    "start_date" =>
+        $data['start_date'] ?? null,
+
+    "end_date" =>
+        $data['end_date'] ?? null,
+
+    "next_billing_date" =>
+        $data['next_billing_date'] ?? null,
+
+    /*
+    |--------------------------------------------------------------------------
+    | STORAGE LIMITS
+    |--------------------------------------------------------------------------
+    */
+
+    "storage_limit_gb" =>
+        $storageGB,
+
+    "storage_limit_bytes" =>
+        $storageLimitBytes,
+
+    /*
+    |--------------------------------------------------------------------------
+    | FILE STORAGE
+    |--------------------------------------------------------------------------
+    */
+
+    "file_used_bytes" =>
+        $fileBytesUsed,
+
+    "file_used_kb" =>
+        round($fileBytesUsed / 1024, 2),
+
+    "file_used_mb" =>
+        round($fileBytesUsed / 1024 / 1024, 2),
+
+    "file_used_gb" =>
+        round($fileBytesUsed / 1024 / 1024 / 1024, 2),
+
+    /*
+    |--------------------------------------------------------------------------
+    | DATABASE STORAGE
+    |--------------------------------------------------------------------------
+    */
+
+    "database_used_kb" =>
+        round($databaseKBUsed, 2),
+
+    "database_used_mb" =>
+        round($databaseKBUsed / 1024, 2),
+
+    /*
+    |--------------------------------------------------------------------------
+    | TOTAL STORAGE
+    |--------------------------------------------------------------------------
+    */
+
+    "used_bytes" =>
+        $totalUsedBytes,
+
+    "used_kb" =>
+        round($totalUsedBytes / 1024, 2),
+
+    "used_mb" =>
+        round($totalUsedBytes / 1024 / 1024, 2),
+
+    "used_gb" =>
+        round($totalUsedBytes / 1024 / 1024 / 1024, 2),
+
+    /*
+    |--------------------------------------------------------------------------
+    | STORAGE STATUS
+    |--------------------------------------------------------------------------
+    */
+
+    "percentage" =>
+        $percentage,
+
+    "is_warning" =>
+        $percentage >= 80,
+
+    "is_full" =>
+        $storageLimitBytes > 0
+            ? ($totalUsedBytes >= $storageLimitBytes)
+            : false,
+
+    /*
+    |--------------------------------------------------------------------------
+    | RECORDS
+    |--------------------------------------------------------------------------
+    */
+
+    "record_usage" =>
+        $recordUsage,
+
+    "total_records" =>
+        $totalRecords,
+
+    "record_limit" =>
+        $recordLimit,
+
+    "record_percentage" =>
+        $recordPercentage,
+
+    "record_is_warning" =>
+        $recordIsWarning,
+
+    "record_is_full" =>
+        $recordIsFull
 ]);

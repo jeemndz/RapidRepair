@@ -18,6 +18,28 @@ function respond($statusCode, array $payload)
     exit;
 }
 
+function normalizeLogoUrl($logoPath)
+{
+    $logoPath = trim((string) $logoPath);
+
+    if ($logoPath === '') {
+        return '';
+    }
+
+    if (preg_match('/^https?:\/\//i', $logoPath)) {
+        return $logoPath;
+    }
+
+    $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+    $host = $_SERVER['HTTP_HOST'] ?? '';
+
+    if ($host === '') {
+        return $logoPath;
+    }
+
+    return $scheme . '://' . $host . '/' . ltrim($logoPath, '/');
+}
+
 $tenantID = isset($_GET['tenantID']) ? (int) $_GET['tenantID'] : 0;
 
 if ($tenantID <= 0) {
@@ -28,9 +50,18 @@ if ($tenantID <= 0) {
 }
 
 $stmt = $conn->prepare("
-    SELECT tenantID, shopName, shopAddress, contactNumber
-    FROM owners
-    WHERE tenantID = ?
+    SELECT 
+        o.tenantID,
+        o.shopName,
+        o.shopAddress,
+        o.contactNumber,
+        tc.shop_name AS custom_shop_name,
+        tc.shop_address AS custom_shop_address,
+        tc.logo_path
+    FROM owners o
+    LEFT JOIN tenant_customizations tc 
+        ON tc.tenantID = o.tenantID
+    WHERE o.tenantID = ?
     LIMIT 1
 ");
 
@@ -54,11 +85,17 @@ if (!$shop) {
     ]);
 }
 
+$logoPath = $shop['logo_path'] ?? '';
+
 respond(200, [
     'success' => true,
     'tenantID' => (int) $shop['tenantID'],
-    'shopName' => $shop['shopName'] ?? '',
-    'shopAddress' => $shop['shopAddress'] ?? '',
+
+    'shopName' => $shop['custom_shop_name'] ?: ($shop['shopName'] ?? ''),
+    'shopAddress' => $shop['custom_shop_address'] ?: ($shop['shopAddress'] ?? ''),
     'contactNumber' => $shop['contactNumber'] ?? '',
+
+    'logo_path' => $logoPath,
+    'logoUrl' => normalizeLogoUrl($logoPath),
 ]);
 ?>

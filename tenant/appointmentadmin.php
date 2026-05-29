@@ -119,7 +119,7 @@ if ($_SESSION['userType'] === 'owner') {
     $loggedInUserRole = isset($_SESSION['userRole']) ? $_SESSION['userRole'] : 'Staff Member';
 }
 
-$allowedStatuses = ['Pending', 'Confirmed', 'In Progress', 'Completed', 'Cancelled'];
+$allowedStatuses = ['Pending', 'Confirmed', 'In Progress', 'Completed', 'Cancelled', 'No Show'];
 $allowedJobStatuses = ['Queued', 'In Progress', 'Diagnostics', 'Waiting for Parts', 'Quality Check', 'Ready for Pickup', 'Completed', 'Cancelled'];
 
 // Sync repair job status to appointment status.
@@ -573,10 +573,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create_appointment_su
         mysqli_begin_transaction($conn);
         $createOk = true;
 
+        $reservationFee = 500.00;
+        $reservationPaid = 0;
+        $reservationPaymentStatus = 'Unpaid';
+
         $insertAppointmentStmt = mysqli_prepare(
             $conn,
-            'INSERT INTO appointments (tenantID, user_id, vehicle_id, appointment_date, appointment_time, status, notes, total_amount)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+            'INSERT INTO appointments (
+                tenantID, user_id, vehicle_id, appointment_date, appointment_time,
+                status, notes, total_amount,
+                reservation_fee, reservation_paid, reservation_payment_status
+            )
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
         );
         if (!$insertAppointmentStmt) {
             $createOk = false;
@@ -584,7 +592,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create_appointment_su
         } else {
             mysqli_stmt_bind_param(
                 $insertAppointmentStmt,
-                'iiissssd',
+                'iiissssddis',
                 $tenantID,
                 $createForm['user_id'],
                 $createForm['vehicle_id'],
@@ -592,7 +600,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create_appointment_su
                 $appointmentTime,
                 $createForm['status'],
                 $notes,
-                $totalAmount
+                $totalAmount,
+                $reservationFee,
+                $reservationPaid,
+                $reservationPaymentStatus
             );
 
             if (!mysqli_stmt_execute($insertAppointmentStmt)) {
@@ -685,7 +696,7 @@ $statusFilter = isset($_GET['status']) ? trim((string) $_GET['status']) : 'Pendi
 
 // Appointment list table should only show active/non-cancelled appointments.
 // Cancelled appointments are shown in Appointment History instead.
-$listStatuses = ['Pending', 'Confirmed', 'In Progress', 'Completed', 'Cancelled'];
+$listStatuses = ['Pending', 'Confirmed', 'In Progress', 'Completed', 'Cancelled', 'No Show'];
 if (!in_array($statusFilter, array_merge(['All'], $listStatuses), true)) {
     $statusFilter = 'Pending';
 }
@@ -693,6 +704,35 @@ if (!in_array($statusFilter, array_merge(['All'], $listStatuses), true)) {
 function h($value)
 {
     return htmlspecialchars((string) $value, ENT_QUOTES, 'UTF-8');
+}
+
+function isReservationFeePaid(array $row): bool
+{
+    $reservationPaid = (int) ($row['reservation_paid'] ?? 0) === 1;
+    $reservationStatus = strtolower(trim((string) ($row['reservation_payment_status'] ?? '')));
+
+    return $reservationPaid || $reservationStatus === 'paid';
+}
+
+function getReservationPaymentLabel(array $row): string
+{
+    return isReservationFeePaid($row)
+        ? 'Paid'
+        : (trim((string) ($row['reservation_payment_status'] ?? '')) !== ''
+            ? trim((string) ($row['reservation_payment_status'] ?? ''))
+            : 'Unpaid');
+}
+
+function getSlotReservationLabel(array $row): string
+{
+    return isReservationFeePaid($row) ? 'Slot Reserved' : 'Not Reserved Yet';
+}
+
+function getSlotReservationBadgeClass(array $row): string
+{
+    return isReservationFeePaid($row)
+        ? 'bg-blue-100 text-blue-700'
+        : 'bg-red-100 text-red-700';
 }
 
 function generateRepairJobOrderNo(mysqli $conn, int $tenantID): string
@@ -781,6 +821,11 @@ if ($showReviewModal && $reviewAppointmentId > 0) {
             a.status AS appt_status,
             a.notes AS appt_notes,
             a.total_amount,
+            a.reservation_fee,
+            a.reservation_paid,
+            a.reservation_payment_status,
+            a.reservation_payment_reference,
+            a.reservation_paid_at,
             COALESCE(u.fullName, CONCAT('User #', a.user_id)) AS customer_name,
             COALESCE(u.email, '') AS customer_email,
             COALESCE(u.contactNumber, '') AS customer_phone,
@@ -809,7 +854,7 @@ if ($showReviewModal && $reviewAppointmentId > 0) {
          LEFT JOIN services s ON s.service_id = aps.service_id AND s.tenantID = a.tenantID
          LEFT JOIN repair_jobs rj ON rj.appointment_id = a.appointment_id AND rj.tenantID = a.tenantID
          WHERE a.appointment_id = ? AND a.tenantID = ?
-         GROUP BY a.appointment_id, u.user_id, u.fullName, u.email, u.contactNumber, v.vehicle_id, v.year_model, v.brand, v.model, v.plate_number, rj.repair_job_id, rj.job_order_no, rj.job_status, rj.assigned_technician, rj.bay_no, rj.priority, rj.concern, rj.diagnosis_notes, rj.progress_notes, rj.check_in_time, rj.work_started_at, rj.estimated_finish_at, rj.labor_total, rj.parts_total, rj.grand_total
+         GROUP BY a.appointment_id, u.user_id, u.fullName, u.email, u.contactNumber, v.vehicle_id, v.year_model, v.brand, v.model, v.plate_number, a.reservation_fee, a.reservation_paid, a.reservation_payment_status, a.reservation_payment_reference, a.reservation_paid_at, rj.repair_job_id, rj.job_order_no, rj.job_status, rj.assigned_technician, rj.bay_no, rj.priority, rj.concern, rj.diagnosis_notes, rj.progress_notes, rj.check_in_time, rj.work_started_at, rj.estimated_finish_at, rj.labor_total, rj.parts_total, rj.grand_total
          LIMIT 1"
     );
 
@@ -935,6 +980,7 @@ $nextSql = "
     FROM appointments
     WHERE tenantID = $tenantID
       AND status IN ('Pending', 'Confirmed', 'In Progress')
+      AND (reservation_paid = 1 OR reservation_payment_status = 'Paid')
       AND (appointment_date > CURDATE() OR (appointment_date = CURDATE() AND appointment_time >= CURTIME()))
     ORDER BY appointment_date ASC, appointment_time ASC
     LIMIT 1
@@ -970,6 +1016,11 @@ $appointmentsSql = "
         a.status,
         a.notes,
         a.total_amount,
+        a.reservation_fee,
+        a.reservation_paid,
+        a.reservation_payment_status,
+        a.reservation_payment_reference,
+        a.reservation_paid_at,
         a.created_at,
         COALESCE(u.fullName, CONCAT('User #', a.user_id)) AS customer_name,
         v.year_model,
@@ -992,6 +1043,11 @@ $appointmentsSql = "
         a.status,
         a.notes,
         a.total_amount,
+        a.reservation_fee,
+        a.reservation_paid,
+        a.reservation_payment_status,
+        a.reservation_payment_reference,
+        a.reservation_paid_at,
         a.created_at,
         u.fullName,
         v.year_model,
@@ -1015,6 +1071,9 @@ $upcomingSql = "
         a.appointment_id,
         a.appointment_date,
         a.appointment_time,
+        a.reservation_fee,
+        a.reservation_paid,
+        a.reservation_payment_status,
         COALESCE(u.fullName, CONCAT('User #', a.user_id)) AS customer_name,
         CONCAT(IFNULL(v.brand, ''), ' ', IFNULL(v.model, '')) AS vehicle_name,
         COALESCE(GROUP_CONCAT(DISTINCT s.service_name ORDER BY s.service_name SEPARATOR ', '), 'No service linked') AS requested_services
@@ -1025,6 +1084,7 @@ $upcomingSql = "
     LEFT JOIN services s ON s.service_id = aps.service_id AND s.tenantID = a.tenantID
     WHERE a.tenantID = $tenantID
       AND a.status IN ('Confirmed', 'In Progress')
+      AND (a.reservation_paid = 1 OR a.reservation_payment_status = 'Paid')
       AND (a.appointment_date > CURDATE() OR (a.appointment_date = CURDATE() AND a.appointment_time >= CURTIME()))
       AND NOT EXISTS (
             SELECT 1
@@ -1037,6 +1097,9 @@ $upcomingSql = "
         a.appointment_id,
         a.appointment_date,
         a.appointment_time,
+        a.reservation_fee,
+        a.reservation_paid,
+        a.reservation_payment_status,
         u.fullName,
         a.user_id,
         v.brand,
@@ -1105,6 +1168,12 @@ if ($validDateFrom && $validDateTo) {
 $completedHistory = [];
 $totalHistoryRecords = 0;
 
+$invoiceAppointmentId = isset($_GET['invoice_appointment_id']) ? max(0, (int) $_GET['invoice_appointment_id']) : 0;
+$showInvoiceModal = $invoiceAppointmentId > 0;
+$invoiceDetails = null;
+$invoiceServices = [];
+$invoicePayment = null;
+
 // First, get total count for pagination
 $countHistoryStmt = mysqli_prepare(
     $conn,
@@ -1170,6 +1239,9 @@ $historyStmt = mysqli_prepare(
         a.status,
         a.notes,
         a.total_amount,
+        a.reservation_fee,
+        a.reservation_paid,
+        a.reservation_payment_status,
                 rj.job_status,
         COALESCE(u.fullName, CONCAT('User #', a.user_id)) AS customer_name,
         v.year_model,
@@ -1204,6 +1276,9 @@ $historyStmt = mysqli_prepare(
         a.status,
         a.notes,
         a.total_amount,
+        a.reservation_fee,
+        a.reservation_paid,
+        a.reservation_payment_status,
                 rj.job_status,
         u.fullName,
         a.user_id,
@@ -1238,6 +1313,97 @@ if ($historyStmt) {
     }
     mysqli_stmt_close($historyStmt);
 }
+
+if ($showInvoiceModal) {
+    $invoiceStmt = mysqli_prepare(
+        $conn,
+        "SELECT
+            a.appointment_id,
+            a.appointment_date,
+            a.appointment_time,
+            a.status,
+            a.notes,
+            a.total_amount,
+            a.reservation_fee,
+            a.reservation_paid,
+            a.reservation_payment_status,
+            a.reservation_payment_reference,
+            a.reservation_paid_at,
+            COALESCE(u.fullName, CONCAT('User #', a.user_id)) AS customer_name,
+            COALESCE(u.email, '') AS customer_email,
+            COALESCE(u.contactNumber, '') AS customer_phone,
+            CONCAT(IFNULL(v.year_model, ''), ' ', IFNULL(v.brand, ''), ' ', IFNULL(v.model, '')) AS vehicle_name,
+            IFNULL(v.plate_number, '') AS plate_number,
+            rj.repair_job_id,
+            rj.job_order_no,
+            rj.job_status,
+            rj.labor_total,
+            rj.parts_total,
+            rj.grand_total
+         FROM appointments a
+         LEFT JOIN users u ON u.user_id = a.user_id
+         LEFT JOIN vehicleinformation v ON v.vehicle_id = a.vehicle_id AND v.tenantID = a.tenantID
+         LEFT JOIN repair_jobs rj ON rj.appointment_id = a.appointment_id AND rj.tenantID = a.tenantID
+         WHERE a.appointment_id = ?
+         AND a.tenantID = ?
+         LIMIT 1"
+    );
+
+    if ($invoiceStmt) {
+        mysqli_stmt_bind_param($invoiceStmt, 'ii', $invoiceAppointmentId, $tenantID);
+        mysqli_stmt_execute($invoiceStmt);
+        $invoiceResult = mysqli_stmt_get_result($invoiceStmt);
+        $invoiceDetails = $invoiceResult ? mysqli_fetch_assoc($invoiceResult) : null;
+        mysqli_stmt_close($invoiceStmt);
+    }
+
+    if ($invoiceDetails) {
+        $invoiceServiceStmt = mysqli_prepare(
+            $conn,
+            "SELECT
+                COALESCE(s.service_name, CONCAT('Service #', aps.service_id)) AS service_name,
+                aps.service_price,
+                aps.duration_minutes
+             FROM appointment_services aps
+             LEFT JOIN services s ON s.service_id = aps.service_id AND s.tenantID = aps.tenantID
+             WHERE aps.appointment_id = ?
+             AND aps.tenantID = ?
+             ORDER BY s.service_name ASC"
+        );
+
+        if ($invoiceServiceStmt) {
+            mysqli_stmt_bind_param($invoiceServiceStmt, 'ii', $invoiceAppointmentId, $tenantID);
+            mysqli_stmt_execute($invoiceServiceStmt);
+            $invoiceServiceResult = mysqli_stmt_get_result($invoiceServiceStmt);
+            while ($invoiceServiceResult && $invoiceServiceRow = mysqli_fetch_assoc($invoiceServiceResult)) {
+                $invoiceServices[] = $invoiceServiceRow;
+            }
+            mysqli_stmt_close($invoiceServiceStmt);
+        }
+
+        $invoicePaymentStmt = mysqli_prepare(
+            $conn,
+            "SELECT payment_id, paymentAmount, amountPaid, balance, paymentMethod, paymentStatus, referenceNumber, paymentDate
+             FROM payments
+             WHERE appointment_id = ?
+             AND tenantID = ?
+             ORDER BY payment_id DESC
+             LIMIT 1"
+        );
+
+        if ($invoicePaymentStmt) {
+            mysqli_stmt_bind_param($invoicePaymentStmt, 'ii', $invoiceAppointmentId, $tenantID);
+            mysqli_stmt_execute($invoicePaymentStmt);
+            $invoicePaymentResult = mysqli_stmt_get_result($invoicePaymentStmt);
+            $invoicePayment = $invoicePaymentResult ? mysqli_fetch_assoc($invoicePaymentResult) : null;
+            mysqli_stmt_close($invoicePaymentStmt);
+        }
+    } else {
+        $showInvoiceModal = false;
+        $invoiceAppointmentId = 0;
+    }
+}
+
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -1282,6 +1448,32 @@ if ($historyStmt) {
 
         .material-symbols-outlined {
             font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+
+        @media print {
+            body * {
+                visibility: hidden;
+            }
+
+            #invoicePrintArea,
+            #invoicePrintArea * {
+                visibility: visible;
+            }
+
+            #invoicePrintArea {
+                position: absolute;
+                left: 0;
+                top: 0;
+                width: 100%;
+                max-height: none;
+                overflow: visible;
+                box-shadow: none;
+                border: none;
+            }
+
+            .print\:hidden {
+                display: none !important;
+            }
         }
     </style>
 </head>
@@ -1439,6 +1631,162 @@ if ($historyStmt) {
             <?php endif; ?>
             <?php if ($actionError !== ''): ?>
                 <div class="rounded-lg border border-red-200 bg-red-50 text-red-700 px-4 py-3 text-sm font-medium"><?php echo h($actionError); ?></div>
+            <?php endif; ?>
+
+            <?php if ($showInvoiceModal && $invoiceDetails): ?>
+                <?php
+                    $invoiceSubtotal = 0.00;
+                    foreach ($invoiceServices as $invoiceService) {
+                        $invoiceSubtotal += (float) ($invoiceService['service_price'] ?? 0);
+                    }
+
+                    $invoiceReservationFee = (float) ($invoiceDetails['reservation_fee'] ?? 500);
+                    $invoiceReservationPaid = isReservationFeePaid($invoiceDetails);
+                    $invoiceTotalAmount = (float) ($invoiceDetails['total_amount'] ?? 0);
+                    $invoiceGrandTotal = (float) ($invoiceDetails['grand_total'] ?? 0);
+                    if ($invoiceGrandTotal <= 0) {
+                        $invoiceGrandTotal = $invoiceTotalAmount > 0 ? $invoiceTotalAmount : $invoiceSubtotal;
+                    }
+
+                    $invoicePaidAmount = $invoiceReservationPaid ? $invoiceReservationFee : 0.00;
+                    if ($invoicePayment && isset($invoicePayment['amountPaid'])) {
+                        $invoicePaidAmount = max($invoicePaidAmount, (float) $invoicePayment['amountPaid']);
+                    }
+
+                    $invoiceBalance = max($invoiceGrandTotal - $invoicePaidAmount, 0);
+                    $invoiceNo = 'INV-' . str_pad((string) (int) $invoiceDetails['appointment_id'], 5, '0', STR_PAD_LEFT);
+                ?>
+                <div class="fixed inset-0 z-50 flex items-center justify-center p-4">
+                    <a href="appointmentadmin.php?shop=<?php echo h($shopQuery); ?>#appointment-history" class="absolute inset-0 bg-slate-900/60 backdrop-blur-[1px]"></a>
+
+                    <section id="invoicePrintArea" class="relative w-full max-w-4xl max-h-[92vh] overflow-y-auto rounded-2xl border border-slate-200 bg-white shadow-2xl">
+                        <div class="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-slate-100 bg-white px-6 py-4 print:hidden">
+                            <div>
+                                <h3 class="text-lg font-black text-slate-900">Appointment Invoice</h3>
+                                <p class="text-xs text-slate-500"><?php echo h($invoiceNo); ?></p>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <button
+                                    type="button"
+                                    onclick="window.print()"
+                                    class="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-bold text-white hover:bg-blue-700"
+                                >
+                                    <span class="material-symbols-outlined text-[18px]">print</span>
+                                    Print
+                                </button>
+                                <a href="appointmentadmin.php?shop=<?php echo h($shopQuery); ?>#appointment-history" class="inline-flex h-9 w-9 items-center justify-center rounded-full text-slate-500 hover:bg-slate-100 hover:text-slate-700">
+                                    <span class="material-symbols-outlined text-lg">close</span>
+                                </a>
+                            </div>
+                        </div>
+
+                        <div class="p-6">
+                            <div class="mb-6 flex flex-col gap-4 border-b border-slate-200 pb-5 md:flex-row md:items-start md:justify-between">
+                                <div>
+                                    <h2 class="text-2xl font-black text-slate-900"><?php echo h($shopName); ?></h2>
+                                    <p class="mt-1 text-sm text-slate-500">Repair Shop Invoice</p>
+                                </div>
+                                <div class="text-left md:text-right">
+                                    <p class="text-xs font-bold uppercase text-slate-500">Invoice No.</p>
+                                    <p class="text-lg font-black text-slate-900"><?php echo h($invoiceNo); ?></p>
+                                    <p class="mt-1 text-xs text-slate-500">
+                                        Date: <?php echo h(date('M d, Y', strtotime((string) $invoiceDetails['appointment_date']))); ?>
+                                    </p>
+                                </div>
+                            </div>
+
+                            <div class="mb-6 grid grid-cols-1 gap-4 md:grid-cols-2">
+                                <div class="rounded-xl border border-slate-200 p-4">
+                                    <p class="text-xs font-bold uppercase text-slate-500">Customer</p>
+                                    <p class="mt-1 font-bold text-slate-900"><?php echo h($invoiceDetails['customer_name']); ?></p>
+                                    <?php if (!empty($invoiceDetails['customer_email'])): ?>
+                                        <p class="text-sm text-slate-500"><?php echo h($invoiceDetails['customer_email']); ?></p>
+                                    <?php endif; ?>
+                                    <?php if (!empty($invoiceDetails['customer_phone'])): ?>
+                                        <p class="text-sm text-slate-500"><?php echo h($invoiceDetails['customer_phone']); ?></p>
+                                    <?php endif; ?>
+                                </div>
+
+                                <div class="rounded-xl border border-slate-200 p-4">
+                                    <p class="text-xs font-bold uppercase text-slate-500">Vehicle / Appointment</p>
+                                    <p class="mt-1 font-bold text-slate-900"><?php echo h(trim((string) $invoiceDetails['vehicle_name']) ?: 'Vehicle not set'); ?></p>
+                                    <?php if (!empty($invoiceDetails['plate_number'])): ?>
+                                        <p class="text-sm text-slate-500">Plate: <?php echo h($invoiceDetails['plate_number']); ?></p>
+                                    <?php endif; ?>
+                                    <p class="text-sm text-slate-500">
+                                        <?php echo h(date('M d, Y', strtotime((string) $invoiceDetails['appointment_date']))); ?>
+                                        at
+                                        <?php echo h(date('h:i A', strtotime((string) $invoiceDetails['appointment_time']))); ?>
+                                    </p>
+                                </div>
+                            </div>
+
+                            <div class="overflow-hidden rounded-xl border border-slate-200">
+                                <table class="w-full border-collapse text-sm">
+                                    <thead class="bg-slate-50">
+                                        <tr>
+                                            <th class="px-4 py-3 text-left text-xs font-bold uppercase text-slate-500">Service</th>
+                                            <th class="px-4 py-3 text-right text-xs font-bold uppercase text-slate-500">Duration</th>
+                                            <th class="px-4 py-3 text-right text-xs font-bold uppercase text-slate-500">Amount</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="divide-y divide-slate-100">
+                                        <?php if (count($invoiceServices) === 0): ?>
+                                            <tr>
+                                                <td colspan="3" class="px-4 py-4 text-center text-slate-500">No services linked.</td>
+                                            </tr>
+                                        <?php else: ?>
+                                            <?php foreach ($invoiceServices as $invoiceService): ?>
+                                                <tr>
+                                                    <td class="px-4 py-3 font-semibold text-slate-800"><?php echo h($invoiceService['service_name']); ?></td>
+                                                    <td class="px-4 py-3 text-right text-slate-500">
+                                                        <?php echo (int) ($invoiceService['duration_minutes'] ?? 0); ?> min
+                                                    </td>
+                                                    <td class="px-4 py-3 text-right font-bold text-slate-900">
+                                                        ₱<?php echo number_format((float) ($invoiceService['service_price'] ?? 0), 2); ?>
+                                                    </td>
+                                                </tr>
+                                            <?php endforeach; ?>
+                                        <?php endif; ?>
+                                    </tbody>
+                                </table>
+                            </div>
+
+                            <div class="mt-6 flex justify-end">
+                                <div class="w-full max-w-sm space-y-3 rounded-xl bg-slate-50 p-4">
+                                    <div class="flex items-center justify-between text-sm">
+                                        <span class="text-slate-500">Service Total</span>
+                                        <span class="font-bold text-slate-900">₱<?php echo number_format($invoiceSubtotal, 2); ?></span>
+                                    </div>
+                                    <div class="flex items-center justify-between text-sm">
+                                        <span class="text-slate-500">Reservation Fee</span>
+                                        <span class="font-bold <?php echo $invoiceReservationPaid ? 'text-emerald-700' : 'text-amber-700'; ?>">
+                                            <?php echo $invoiceReservationPaid ? 'Paid' : 'Unpaid'; ?> — ₱<?php echo number_format($invoiceReservationFee, 2); ?>
+                                        </span>
+                                    </div>
+                                    <div class="flex items-center justify-between border-t border-slate-200 pt-3 text-sm">
+                                        <span class="font-bold text-slate-700">Grand Total</span>
+                                        <span class="text-xl font-black text-slate-900">₱<?php echo number_format($invoiceGrandTotal, 2); ?></span>
+                                    </div>
+                                    <div class="flex items-center justify-between text-sm">
+                                        <span class="text-slate-500">Recorded Paid</span>
+                                        <span class="font-bold text-emerald-700">₱<?php echo number_format($invoicePaidAmount, 2); ?></span>
+                                    </div>
+                                    <div class="flex items-center justify-between text-sm">
+                                        <span class="text-slate-500">Balance</span>
+                                        <span class="font-bold text-red-600">₱<?php echo number_format($invoiceBalance, 2); ?></span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <?php if (!empty($invoiceDetails['reservation_payment_reference'])): ?>
+                                <p class="mt-4 text-xs text-slate-500">
+                                    Reservation Reference: <?php echo h($invoiceDetails['reservation_payment_reference']); ?>
+                                </p>
+                            <?php endif; ?>
+                        </div>
+                    </section>
+                </div>
             <?php endif; ?>
 
             <?php if ($showCreateForm): ?>
@@ -1620,6 +1968,31 @@ if ($historyStmt) {
                                         <p class="text-xs text-slate-500 font-semibold">Appointment Status</p>
                                         <p class="text-slate-900 font-medium"><?php echo h($reviewDetails['appt_status']); ?></p>
                                         <p class="text-xs text-slate-600">Total: ₱<?php echo number_format((float) ($reviewDetails['total_amount'] ?? 0), 2); ?></p>
+                                    </div>
+                                    <div>
+                                        <p class="text-xs text-slate-500 font-semibold">Reservation Fee</p>
+                                        <?php
+                                            $reviewReservationPaid = isReservationFeePaid($reviewDetails);
+                                            $reviewReservationLabel = getReservationPaymentLabel($reviewDetails);
+                                            $reviewReservationFee = (float) ($reviewDetails['reservation_fee'] ?? 500);
+                                            $reviewSlotLabel = getSlotReservationLabel($reviewDetails);
+                                            $reviewSlotClass = getSlotReservationBadgeClass($reviewDetails);
+                                        ?>
+                                        <div class="mt-1 flex flex-wrap items-center gap-2">
+                                            <span class="inline-flex items-center rounded-full px-2.5 py-1 text-xs font-bold <?php echo $reviewReservationPaid ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'; ?>">
+                                                <?php echo h($reviewReservationLabel); ?>
+                                            </span>
+                                            <span class="inline-flex items-center rounded-full px-2.5 py-1 text-xs font-bold <?php echo h($reviewSlotClass); ?>">
+                                                <?php echo h($reviewSlotLabel); ?>
+                                            </span>
+                                            <span class="text-sm font-semibold text-slate-900">₱<?php echo number_format($reviewReservationFee, 2); ?></span>
+                                        </div>
+                                        <?php if (!empty($reviewDetails['reservation_payment_reference'])): ?>
+                                            <p class="text-xs text-slate-600 mt-1">Ref: <?php echo h($reviewDetails['reservation_payment_reference']); ?></p>
+                                        <?php endif; ?>
+                                        <?php if (!empty($reviewDetails['reservation_paid_at'])): ?>
+                                            <p class="text-xs text-slate-600">Paid: <?php echo h(date('M d, Y h:i A', strtotime((string) $reviewDetails['reservation_paid_at']))); ?></p>
+                                        <?php endif; ?>
                                     </div>
                                 </div>
                                 <?php if (!empty($reviewDetails['services_list'])): ?>
@@ -1863,6 +2236,7 @@ if ($historyStmt) {
                                 <th class="px-5 py-3">Date / Time</th>
                                 <th class="px-5 py-3">Created At</th>
                                 <th class="px-5 py-3">Status</th>
+                                <th class="px-5 py-3">Reservation</th>
                                 <th class="px-5 py-3">Amount</th>
                                 <th class="px-5 py-3 text-right">Actions</th>
                             </tr>
@@ -1870,7 +2244,7 @@ if ($historyStmt) {
                         <tbody class="divide-y divide-gray-200">
                             <?php if (count($appointments) === 0): ?>
                                 <tr>
-                                    <td colspan="8" class="px-5 py-10 text-center text-slate-500">No appointments found for this filter.</td>
+                                    <td colspan="9" class="px-5 py-10 text-center text-slate-500">No appointments found for this filter.</td>
                                 </tr>
                             <?php else: ?>
                                 <?php foreach ($appointments as $row): ?>
@@ -1892,7 +2266,17 @@ if ($historyStmt) {
                                             $badge = 'bg-green-100 text-green-700';
                                         } elseif ($status === 'Cancelled') {
                                             $badge = 'bg-red-100 text-red-700';
+                                        } elseif ($status === 'No Show') {
+                                            $badge = 'bg-orange-100 text-orange-700';
                                         }
+
+                                        $reservationPaid = isReservationFeePaid($row);
+                                        $reservationFee = (float) ($row['reservation_fee'] ?? 500);
+                                        $reservationBadge = $reservationPaid ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700';
+                                        $reservationLabel = getReservationPaymentLabel($row);
+                                        $slotReserved = $reservationPaid && in_array($status, ['Pending', 'Confirmed', 'In Progress'], true);
+                                        $slotReservationLabel = $slotReserved ? 'Slot Reserved' : 'Not Reserved Yet';
+                                        $slotReservationClass = $slotReserved ? 'text-blue-700' : 'text-red-600';
                                     ?>
                                     <tr class="hover:bg-gray-50">
                                         <td class="px-5 py-4">
@@ -1918,6 +2302,20 @@ if ($historyStmt) {
                                         </td>
                                         <td class="px-5 py-4">
                                             <span class="px-2.5 py-1.5 rounded-full text-xs font-bold <?php echo h($badge); ?>"><?php echo h($status); ?></span>
+                                        </td>
+                                        <td class="px-5 py-4">
+                                            <div class="flex flex-col gap-1">
+                                                <span class="inline-flex w-fit items-center rounded-full px-2.5 py-1 text-xs font-bold <?php echo h($reservationBadge); ?>">
+                                                    <?php echo h($reservationLabel); ?>
+                                                </span>
+                                                <span class="text-xs text-slate-500">Fee: ₱<?php echo number_format($reservationFee, 2); ?></span>
+                                                <span class="text-xs font-semibold <?php echo h($slotReservationClass); ?>">
+                                                    <?php echo h($slotReservationLabel); ?>
+                                                </span>
+                                                <?php if (!empty($row['reservation_payment_reference'])): ?>
+                                                    <span class="text-[11px] text-slate-400">Ref: <?php echo h($row['reservation_payment_reference']); ?></span>
+                                                <?php endif; ?>
+                                            </div>
                                         </td>
                                         <td class="px-5 py-4 font-semibold text-black">
                                             <?php
@@ -1955,7 +2353,7 @@ if ($historyStmt) {
                 </div>
                 <div class="divide-y divide-slate-100">
                     <?php if (count($upcomingAppointments) === 0): ?>
-                        <div class="px-5 py-8 text-sm text-slate-500">No confirmed appointments in queue.</div>
+                        <div class="px-5 py-8 text-sm text-slate-500">No paid reserved appointments in queue.</div>
                     <?php else: ?>
                         <?php foreach ($upcomingAppointments as $item): ?>
                             <div class="px-5 py-4">
@@ -1963,6 +2361,20 @@ if ($historyStmt) {
                                     <div>
                                         <div class="font-semibold text-slate-900"><?php echo h($item['customer_name']); ?> - <?php echo h(trim((string) $item['vehicle_name'])); ?></div>
                                         <div class="text-xs text-slate-500 mt-1"><?php echo h($item['requested_services']); ?></div>
+                                        <?php
+                                            $upcomingReservationPaid = isReservationFeePaid($item);
+                                            $upcomingReservationLabel = getReservationPaymentLabel($item);
+                                            $upcomingSlotLabel = getSlotReservationLabel($item);
+                                            $upcomingSlotClass = getSlotReservationBadgeClass($item);
+                                        ?>
+                                        <div class="mt-2 flex flex-wrap items-center gap-2">
+                                            <span class="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-bold <?php echo $upcomingReservationPaid ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'; ?>">
+                                                Reservation: <?php echo h($upcomingReservationLabel); ?>
+                                            </span>
+                                            <span class="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-bold <?php echo h($upcomingSlotClass); ?>">
+                                                <?php echo h($upcomingSlotLabel); ?>
+                                            </span>
+                                        </div>
                                     </div>
                                     <div class="text-right shrink-0">
                                         <div class="text-xs font-bold text-blue-700"><?php echo h(date('M d, Y', strtotime((string) $item['appointment_date']))); ?></div>
@@ -2048,13 +2460,17 @@ if ($historyStmt) {
                                 <th class="px-5 py-3">Vehicle</th>
                                 <th class="px-5 py-3">Services</th>
                                 <th class="px-5 py-3">Date / Time</th>
+                                <th class="px-5 py-3">Reservation</th>
                                 <th class="px-5 py-3">Amount</th>
+                                <th class="px-4 py-3 text-center text-xs font-bold uppercase text-slate-500">
+    Actions
+</th>
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-slate-100">
                             <?php if (count($completedHistory) === 0): ?>
                                 <tr>
-                                    <td colspan="6" class="px-5 py-10 text-center text-slate-500">No completed or cancelled appointments found for this history filter.</td>
+                                    <td colspan="7" class="px-5 py-10 text-center text-slate-500">No completed or cancelled appointments found for this history filter.</td>
                                 </tr>
                             <?php else: ?>
                                 <?php foreach ($completedHistory as $historyItem): ?>
@@ -2067,6 +2483,11 @@ if ($historyStmt) {
                                         $historyJobStatus = (string) ($historyItem['job_status'] ?? '');
                                         $historyDisplayStatus = ($historyAppointmentStatus === 'Cancelled' || $historyJobStatus === 'Cancelled') ? 'Cancelled' : 'Completed';
                                         $historyStatusClass = $historyDisplayStatus === 'Cancelled' ? 'text-red-600' : 'text-emerald-600';
+                                        $historyReservationPaid = isReservationFeePaid($historyItem);
+                                        $historyReservationLabel = getReservationPaymentLabel($historyItem);
+                                        $historyReservationClass = $historyReservationPaid ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700';
+                                        $historySlotLabel = getSlotReservationLabel($historyItem);
+                                        $historySlotClass = getSlotReservationBadgeClass($historyItem);
                                     ?>
                                     <tr class="hover:bg-slate-50">
                                         <td class="px-5 py-4">
@@ -2083,7 +2504,31 @@ if ($historyStmt) {
                                             <div class="font-semibold"><?php echo h(date('M d, Y', strtotime((string) $historyItem['appointment_date']))); ?></div>
                                             <div class="text-xs text-slate-500"><?php echo h(date('h:i A', strtotime((string) $historyItem['appointment_time']))); ?></div>
                                         </td>
+                                        <td class="px-5 py-4">
+                                            <div class="flex flex-col gap-1">
+                                                <span class="inline-flex w-fit rounded-full px-2.5 py-1 text-xs font-bold <?php echo h($historyReservationClass); ?>">
+                                                    <?php echo h($historyReservationLabel); ?>
+                                                </span>
+                                                <span class="inline-flex w-fit rounded-full px-2.5 py-1 text-[11px] font-bold <?php echo h($historySlotClass); ?>">
+                                                    <?php echo h($historySlotLabel); ?>
+                                                </span>
+                                                <a
+                                                    href="appointmentadmin.php?shop=<?php echo h($shopQuery); ?>&invoice_appointment_id=<?php echo (int) $historyItem['appointment_id']; ?>#appointment-history"
+                                                    class="text-[11px] text-blue-600 hover:underline mt-1"></a>
+                                            </div>
+                                        </td>
                                         <td class="px-5 py-4 font-semibold text-slate-900"><?php echo '₱' . number_format((float) ($historyItem['total_amount'] ?? 0), 2); ?></td>
+                                    <td class="px-4 py-4 text-center">
+    <a
+        href="appointmentadmin.php?shop=<?php echo h($shopQuery); ?>&invoice_appointment_id=<?php echo (int)$historyItem['appointment_id']; ?>#appointment-history"
+        class="inline-flex items-center gap-2 rounded-lg bg-primary px-3 py-2 text-xs font-bold text-white hover:bg-blue-700 transition-colors"
+    >
+        <span class="material-symbols-outlined text-[16px]">
+            receipt_long
+        </span>
+        View Invoice
+    </a>
+</td>
                                     </tr>
                                 <?php endforeach; ?>
                             <?php endif; ?>

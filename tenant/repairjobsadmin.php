@@ -208,6 +208,24 @@ function h($value): string
     return htmlspecialchars((string) $value, ENT_QUOTES, 'UTF-8');
 }
 
+function reservationPaidFromRow(array $row): bool
+{
+    return (int) ($row['reservation_paid'] ?? 0) === 1
+        || strtolower(trim((string) ($row['reservation_payment_status'] ?? ''))) === 'paid';
+}
+
+function reservationSlotLabel(array $row): string
+{
+    return reservationPaidFromRow($row) ? 'Slot Reserved' : 'Not Reserved Yet';
+}
+
+function reservationBadgeClass(array $row): string
+{
+    return reservationPaidFromRow($row)
+        ? 'bg-blue-100 text-blue-700'
+        : 'bg-red-100 text-red-700';
+}
+
 function statusBadgeClass(string $status): string
 {
     return match ($status) {
@@ -511,9 +529,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['start_repair_now'])) 
                       AND (s.category = 'Diagnostics' OR LOWER(s.service_name) LIKE '%diagnostic%')
                 ) THEN 1 ELSE 0 END AS has_diagnostic_service
          FROM repair_jobs rj
+         INNER JOIN appointments a ON a.appointment_id = rj.appointment_id AND a.tenantID = rj.tenantID
          WHERE rj.repair_job_id = ?
            AND rj.tenantID = ?
            AND rj.job_status = 'Queued'
+           AND (a.reservation_paid = 1 OR a.reservation_payment_status = 'Paid')
          LIMIT 1"
     );
 
@@ -1366,6 +1386,7 @@ $confirmedSyncSql = "SELECT
     LEFT JOIN services s ON s.service_id = aps.service_id AND s.tenantID = a.tenantID
     WHERE a.tenantID = ?
       AND a.status IN ('Confirmed', 'For Diagnosis', 'Diagnosing')
+      AND (a.reservation_paid = 1 OR a.reservation_payment_status = 'Paid')
       AND NOT EXISTS (
         SELECT 1
         FROM repair_jobs rj
@@ -1550,6 +1571,7 @@ $queueFutureJobsStmt = mysqli_prepare(
      WHERE rj.tenantID = ?
        AND rj.job_status IN ('In Progress', 'Diagnostics')
        AND rj.work_started_at IS NULL
+       AND (a.reservation_paid = 1 OR a.reservation_payment_status = 'Paid')
        AND TIMESTAMP(a.appointment_date, COALESCE(a.appointment_time, '00:00:00')) > NOW()"
 );
 if ($queueFutureJobsStmt) {
@@ -1577,6 +1599,7 @@ $startDueJobsStmt = mysqli_prepare(
          rj.updated_at = NOW()
      WHERE rj.tenantID = ?
        AND rj.job_status = 'Queued'
+       AND (a.reservation_paid = 1 OR a.reservation_payment_status = 'Paid')
        AND TIMESTAMP(a.appointment_date, COALESCE(a.appointment_time, '00:00:00')) <= NOW()"
 );
 if ($startDueJobsStmt) {
@@ -2105,6 +2128,7 @@ $calendarStmt = mysqli_prepare(
      INNER JOIN appointments a ON a.appointment_id = rj.appointment_id AND a.tenantID = rj.tenantID
      WHERE rj.tenantID = ?
        {$assignedTechnicianFilterRj}
+       AND (a.reservation_paid = 1 OR a.reservation_payment_status = 'Paid')
        AND a.appointment_date BETWEEN ? AND ?
      GROUP BY a.appointment_date"
 );
@@ -2190,6 +2214,10 @@ $jobsSql = "SELECT
         rj.appointment_id,
         a.appointment_date,
         a.appointment_time,
+        a.reservation_fee,
+        a.reservation_paid,
+        a.reservation_payment_status,
+        a.reservation_payment_reference,
         rj.job_order_no,
         rj.job_status,
         rj.priority,
@@ -2202,7 +2230,18 @@ $jobsSql = "SELECT
         v.year_model,
         v.brand,
         v.model,
-        COALESCE(GROUP_CONCAT(DISTINCT s.service_name ORDER BY s.service_name SEPARATOR ', '), 'No services linked') AS services,
+        COALESCE(
+            GROUP_CONCAT(
+                DISTINCT CONCAT(
+                    s.service_name,
+                    ' - ₱',
+                    FORMAT(COALESCE(rjs.service_price, 0), 2)
+                )
+                ORDER BY s.service_name
+                SEPARATOR ', '
+            ),
+            'No services linked'
+        ) AS services,
         COALESCE(SUM(rjs.actual_duration_minutes), 0) AS total_actual_minutes,
         COALESCE(SUM(rjs.estimated_duration_minutes), 0) AS total_estimated_minutes,
         COALESCE(SUM(CASE WHEN s.category = 'Diagnostics' OR LOWER(s.service_name) LIKE '%diagnostic%' THEN 1 ELSE 0 END), 0) AS diagnostic_service_count,
@@ -2229,6 +2268,10 @@ $jobsSql = "SELECT
         rj.appointment_id,
         a.appointment_date,
         a.appointment_time,
+        a.reservation_fee,
+        a.reservation_paid,
+        a.reservation_payment_status,
+        a.reservation_payment_reference,
         rj.job_order_no,
         rj.job_status,
         rj.priority,
@@ -2410,10 +2453,26 @@ $historyStmt = mysqli_prepare(
         rj.grand_total,
         rj.completed_at,
         rj.updated_at,
+        a.reservation_fee,
+        a.reservation_paid,
+        a.reservation_payment_status,
+        a.reservation_payment_reference,
         COALESCE(u.fullName, CONCAT('User #', rj.user_id)) AS customer_name,
         CONCAT(IFNULL(v.year_model, ''), ' ', IFNULL(v.brand, ''), ' ', IFNULL(v.model, '')) AS vehicle_name,
-        COALESCE(GROUP_CONCAT(DISTINCT s.service_name ORDER BY s.service_name SEPARATOR ', '), 'No services linked') AS services
+        COALESCE(
+            GROUP_CONCAT(
+                DISTINCT CONCAT(
+                    s.service_name,
+                    ' - ₱',
+                    FORMAT(COALESCE(rjs.service_price, 0), 2)
+                )
+                ORDER BY s.service_name
+                SEPARATOR ', '
+            ),
+            'No services linked'
+        ) AS services
      FROM repair_jobs rj
+     LEFT JOIN appointments a ON a.appointment_id = rj.appointment_id AND a.tenantID = rj.tenantID
      LEFT JOIN users u ON u.user_id = rj.user_id
      LEFT JOIN vehicleinformation v ON v.vehicle_id = rj.vehicle_id AND v.tenantID = rj.tenantID
      LEFT JOIN repair_job_services rjs ON rjs.repair_job_id = rj.repair_job_id AND rjs.tenantID = rj.tenantID
@@ -2434,6 +2493,10 @@ $historyStmt = mysqli_prepare(
         rj.grand_total,
         rj.completed_at,
         rj.updated_at,
+        a.reservation_fee,
+        a.reservation_paid,
+        a.reservation_payment_status,
+        a.reservation_payment_reference,
         u.fullName,
         rj.user_id,
         v.year_model,
@@ -2925,7 +2988,13 @@ if ($historyStmt) {
                                             $repairTimeLabel = $repairTimeRaw !== '' ? date('h:i A', strtotime($repairTimeRaw)) : 'No time set';
                                             $hasDiagnosticReport = !empty($job['diagnostic_id']);
                                             $hasDiagnosticMainService = ((int) ($job['diagnostic_service_count'] ?? 0)) > 0;
+                                            $slotLabel = reservationSlotLabel($job);
+                                            $slotClass = reservationBadgeClass($job);
+                                            $reservationPaymentLabel = reservationPaidFromRow($job)
+                                                ? 'Reservation Paid'
+                                                : 'Reservation Unpaid';
                                             ?>
+
                                             <tr class="hover:bg-slate-50/50 transition-colors">
                                                 <td class="px-6 py-4">
                                                     <div class="font-bold text-sm text-slate-900">
@@ -2938,6 +3007,14 @@ if ($historyStmt) {
                                                         Customer: <?php echo h($job['customer_name']); ?>
                                                         <?php echo $job['bay_no'] ? ' | Bay: ' . h($job['bay_no']) : ''; ?>
                                                     </div>
+                                                    <div class="mt-2 flex flex-wrap items-center gap-1.5">
+                                                        <span class="inline-flex rounded-full px-2 py-0.5 text-[11px] font-bold <?php echo h($slotClass); ?>">
+                                                            <?php echo h($slotLabel); ?>
+                                                        </span>
+                                                        <span class="inline-flex rounded-full px-2 py-0.5 text-[11px] font-bold <?php echo reservationPaidFromRow($job) ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'; ?>">
+                                                            <?php echo h($reservationPaymentLabel); ?>
+                                                        </span>
+                                                    </div>
                                                     <?php if ($hasDiagnosticReport): ?>
                                                         <div
                                                             class="mt-1 flex items-center gap-1 text-[11px] text-blue-700 font-bold">
@@ -2948,7 +3025,12 @@ if ($historyStmt) {
                                                     <?php endif; ?>
                                                 </td>
                                                 <td class="px-6 py-4 text-sm text-slate-700 max-w-md">
-                                                    <?php echo h($job['services']); ?>
+                                                    <div class="leading-relaxed">
+                                                        <?php echo h($job['services']); ?>
+                                                    </div>
+                                                    <div class="mt-1 text-[11px] font-semibold text-slate-500">
+                                                        Service prices are based on the booked service price.
+                                                    </div>
                                                 </td>
                                                 <td class="px-6 py-4 text-sm text-slate-700">
                                                     <div class="font-semibold text-slate-900"><?php echo h($repairDateLabel); ?>
@@ -3321,7 +3403,10 @@ if ($historyStmt) {
                                             $history['bay_no'] ?? '',
                                             $history['job_status'] ?? '',
                                         ])));
+                                        $historySlotLabel = reservationSlotLabel($history);
+                                        $historySlotClass = reservationBadgeClass($history);
                                         ?>
+
                                         <tr class="border-t border-slate-100 history-row"
                                             data-history-status="<?php echo h($history['job_status']); ?>"
                                             data-history-search="<?php echo h($historySearchText); ?>">
@@ -3335,10 +3420,16 @@ if ($historyStmt) {
                                                 <p class="text-xs text-slate-500 mt-1">
                                                     <?php echo h($historyVehicle !== '' ? $historyVehicle : 'Vehicle not set'); ?>
                                                 </p>
+                                                <span class="mt-2 inline-flex rounded-full px-2 py-0.5 text-[11px] font-bold <?php echo h($historySlotClass); ?>">
+                                                    <?php echo h($historySlotLabel); ?>
+                                                </span>
                                             </td>
                                             <td class="px-6 py-4 align-top max-w-[280px]">
                                                 <p class="text-xs text-slate-600 leading-relaxed">
                                                     <?php echo h($history['services']); ?>
+                                                </p>
+                                                <p class="mt-1 text-[11px] font-semibold text-slate-500">
+                                                    Includes booked service price.
                                                 </p>
                                             </td>
                                             <td class="px-6 py-4 align-top">
