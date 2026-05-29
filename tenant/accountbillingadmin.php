@@ -439,27 +439,45 @@ if ($invoiceStmt) {
     <div id="sidebarOverlay" class="hidden fixed inset-0 bg-black/50 z-30 md:hidden"></div>
 
     <aside id="sidebar" class="fixed md:fixed left-0 top-0 bottom-0 w-64 border-r border-slate-200 bg-white z-40 flex flex-col h-full -translate-x-full md:translate-x-0 transition-transform duration-300 ease-in-out md:transition-none pt-16 md:pt-0 overflow-y-auto">
-        <div class="p-6">
-            <div class="flex items-center gap-4 mb-8">
-                <?php if ($logoPath !== ''): ?>
-                    <div class="h-14 w-14 overflow-hidden flex items-center justify-center">
-                        <img src="<?php echo h($logoPath); ?>" alt="<?php echo h($shopName); ?> logo" class="w-full h-full object-contain">
-                    </div>
-                <?php else: ?>
-                    <div class="bg-blue-700 rounded-2xl p-3 text-white shadow-lg">
-                        <span class="material-symbols-outlined text-3xl">directions_car</span>
-                    </div>
-                <?php endif; ?>
+           <div class="p-6 flex-1">
+                <div class="flex items-center gap-3 mb-8">
 
-                <div>
-                    <?php $shopParts = explode(' ', trim($shopName), 2); ?>
-                    <h1 class="text-xl font-black leading-none tracking-tight">
-                        <span class="text-black"><?php echo htmlspecialchars($shopParts[0] ?? 'Rapid'); ?></span>
-                        <span class="text-blue-600"><?php echo htmlspecialchars($shopParts[1] ?? 'Repair'); ?></span>
-                    </h1>
-                    <p class="text-xs text-slate-500 mt-1">Your Repair Shop</p>
+                    <?php if ($logoPath !== ''): ?>
+
+                        <div class="h-14 w-14 overflow-hidden flex items-center justify-center">
+                            <img src="<?php echo h($logoPath); ?>" alt="<?php echo h($shopName); ?> logo"
+                                class="w-full h-full object-contain">
+                        </div>
+
+                    <?php else: ?>
+
+                        <div class="bg-primary rounded-2xl p-3 text-white shadow-lg">
+                            <span class="material-symbols-outlined text-3xl">
+                                directions_car
+                            </span>
+                        </div>
+
+                    <?php endif; ?>
+
+                    <div>
+
+                        <?php
+                        $shopParts = explode(' ', trim($shopName), 2);
+                        ?>
+
+                        <h1 class="text-xl font-black leading-none tracking-tight">
+                            <span class="text-slate-900 dark:text-white">
+                                <?php echo htmlspecialchars($shopParts[0] ?? 'Rapid'); ?>
+                            </span>
+
+                            <span class="text-primary">
+                                <?php echo htmlspecialchars($shopParts[1] ?? 'Repair'); ?>
+                            </span>
+                        </h1>
+
+                        <p class="text-xs text-slate-500 mt-1">Your Repair Shop</p>
+                    </div>
                 </div>
-            </div>
 
             <nav class="space-y-1">
                 <?php if (canAccessModule('dashboardadmin.php', $accessibleModules)): ?>

@@ -31,6 +31,92 @@ function getUploadErrorMessage($code)
     }
 }
 
+function tableColumnExists($conn, $table, $column)
+{
+    $stmt = mysqli_prepare($conn, "
+        SELECT COUNT(*) AS column_count
+        FROM INFORMATION_SCHEMA.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME = ?
+          AND COLUMN_NAME = ?
+    ");
+
+    if (!$stmt) {
+        return false;
+    }
+
+    mysqli_stmt_bind_param($stmt, "ss", $table, $column);
+    mysqli_stmt_execute($stmt);
+    $result = mysqli_stmt_get_result($stmt);
+    $row = mysqli_fetch_assoc($result);
+
+    return isset($row['column_count']) && (int)$row['column_count'] > 0;
+}
+
+function getTenantDefaultInfo($conn, $tenantID)
+{
+    $nameColumns = ['shopName', 'shop_name', 'business_name', 'company_name'];
+    $addressColumns = ['shopAddress', 'shop_address', 'business_address', 'address'];
+
+    $selectedNameColumn = null;
+    $selectedAddressColumn = null;
+
+    foreach ($nameColumns as $column) {
+        if (tableColumnExists($conn, 'owners', $column)) {
+            $selectedNameColumn = $column;
+            break;
+        }
+    }
+
+    foreach ($addressColumns as $column) {
+        if (tableColumnExists($conn, 'owners', $column)) {
+            $selectedAddressColumn = $column;
+            break;
+        }
+    }
+
+    $defaultInfo = [
+        'shop_name' => '',
+        'shop_address' => ''
+    ];
+
+    if ($selectedNameColumn === null && $selectedAddressColumn === null) {
+        return $defaultInfo;
+    }
+
+    $selectParts = [];
+    if ($selectedNameColumn !== null) {
+        $selectParts[] = "`$selectedNameColumn` AS shop_name";
+    } else {
+        $selectParts[] = "'' AS shop_name";
+    }
+
+    if ($selectedAddressColumn !== null) {
+        $selectParts[] = "`$selectedAddressColumn` AS shop_address";
+    } else {
+        $selectParts[] = "'' AS shop_address";
+    }
+
+    $sql = "SELECT " . implode(', ', $selectParts) . " FROM owners WHERE tenantID = ? LIMIT 1";
+    $stmt = mysqli_prepare($conn, $sql);
+
+    if (!$stmt) {
+        return $defaultInfo;
+    }
+
+    mysqli_stmt_bind_param($stmt, "i", $tenantID);
+    mysqli_stmt_execute($stmt);
+    $result = mysqli_stmt_get_result($stmt);
+    $row = mysqli_fetch_assoc($result);
+
+    if ($row) {
+        $defaultInfo['shop_name'] = trim((string)($row['shop_name'] ?? ''));
+        $defaultInfo['shop_address'] = trim((string)($row['shop_address'] ?? ''));
+    }
+
+    return $defaultInfo;
+}
+
 function handleImageUpload($file, $tenantID, $type, &$errorMessage = null)
 {
     $allowed_types = ['image/jpeg', 'image/png', 'image/svg+xml', 'image/webp', 'image/gif', 'image/jpg', 'image/pjpeg', 'image/x-png'];
@@ -90,6 +176,7 @@ if (!isset($_SESSION['tenantID'])) {
 }
 
 $tenantID = (int) $_SESSION['tenantID'];
+$tenantDefaultInfo = getTenantDefaultInfo($conn, $tenantID);
 
 if ($action === 'load' && $_SERVER['REQUEST_METHOD'] === 'GET') {
     $stmt = mysqli_prepare($conn, "SELECT * FROM tenant_customizations WHERE tenantID = ? LIMIT 1");
@@ -98,15 +185,26 @@ if ($action === 'load' && $_SERVER['REQUEST_METHOD'] === 'GET') {
     $result = mysqli_stmt_get_result($stmt);
     $customization = mysqli_fetch_assoc($result);
 
+    if (!$customization) {
+        $customization = [];
+    }
+
+    // Shop name and shop address are already given from the owners table.
+    // Customization fields still load normally, but the identity fields are fixed.
+    $customization['shop_name'] = $tenantDefaultInfo['shop_name'];
+    $customization['shop_address'] = $tenantDefaultInfo['shop_address'];
+
     jsonResponse([
         'success' => true,
-        'data' => $customization ?: null
+        'data' => $customization
     ]);
 }
 
 if ($action === 'save' && $_SERVER['REQUEST_METHOD'] === 'POST') {
-    $shop_name = trim($_POST['shop_name'] ?? '');
-    $shop_address = trim($_POST['shop_address'] ?? '');
+    // Do not let users manually change these here. They come from owners table.
+    $shop_name = $tenantDefaultInfo['shop_name'] !== '' ? $tenantDefaultInfo['shop_name'] : trim($_POST['shop_name'] ?? '');
+    $shop_address = $tenantDefaultInfo['shop_address'] !== '' ? $tenantDefaultInfo['shop_address'] : trim($_POST['shop_address'] ?? '');
+
     $corner_radius = trim($_POST['corner_radius'] ?? 'rounded');
     $primary_color = trim($_POST['primary_color'] ?? '#1152d4');
     $accent_color = trim($_POST['accent_color'] ?? '#1152d4');
@@ -114,7 +212,11 @@ if ($action === 'save' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     $welcome_subtext = trim($_POST['welcome_subtext'] ?? '');
 
     if ($shop_name === '') {
-        jsonResponse(['success' => false, 'message' => 'Shop name is required'], 422);
+        jsonResponse(['success' => false, 'message' => 'Shop name is missing from your account details. Please update it first.'], 422);
+    }
+
+    if ($shop_address === '') {
+        jsonResponse(['success' => false, 'message' => 'Shop address is missing from your account details. Please update it first.'], 422);
     }
 
     if (!preg_match('/^#[0-9A-Fa-f]{6}$/', $primary_color)) {
@@ -330,6 +432,14 @@ if ($action === 'save' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         function populateForm(data) {
             document.getElementById('shop_name').value = data.shop_name || '';
             document.getElementById('shop_address').value = data.shop_address || '';
+
+            if (data.shop_name) {
+                document.getElementById('shop_name_note').textContent = 'Shop name is already loaded from your registered shop details.';
+            }
+
+            if (data.shop_address) {
+                document.getElementById('shop_address_note').textContent = 'Shop address is already loaded from your registered shop details.';
+            }
             document.getElementById('corner_radius').value = data.corner_radius || 'rounded';
             document.getElementById('primary_color_input').value = data.primary_color || '#1152d4';
             document.getElementById('primary_color_hex').value = data.primary_color || '#1152d4';
@@ -505,8 +615,9 @@ if ($action === 'save' && $_SERVER['REQUEST_METHOD'] === 'POST') {
                                     <input
                                         id="shop_name"
                                         name="shop_name"
-                                        class="w-full rounded-lg border-slate-300 dark:border-slate-700 dark:bg-slate-800 focus:border-primary focus:ring-primary text-sm"
-                                        type="text" value="" />
+                                        class="w-full rounded-lg border-slate-300 bg-slate-100 text-slate-600 cursor-not-allowed focus:border-slate-300 focus:ring-0 text-sm"
+                                        type="text" value="" readonly />
+                                    <p id="shop_name_note" class="text-xs text-slate-500">This is automatically loaded from your registered shop details.</p>
                                 </div>
                                 <div class="space-y-2 mt-2">
                                     <label class="text-sm font-semibold text-slate-700">Corner Radius</label>
@@ -564,10 +675,11 @@ if ($action === 'save' && $_SERVER['REQUEST_METHOD'] === 'POST') {
                                         <input
                                             id="shop_address"
                                             name="shop_address"
-                                            class="w-full border-none text-slate-900 px-4 py-3 focus:ring-0 text-sm bg-transparent"
-                                            placeholder="Enter your shop's address" type="text"
-                                            value="" />
+                                            class="w-full border-none text-slate-600 px-4 py-3 focus:ring-0 text-sm bg-slate-100 cursor-not-allowed"
+                                            placeholder="Shop address is loaded automatically" type="text"
+                                            value="" readonly />
                                     </div>
+                                    <p id="shop_address_note" class="text-xs text-slate-500 mt-2">This is automatically loaded from your registered shop details.</p>
                                 </div>
                             </section>
                             <!-- Messaging -->

@@ -1169,6 +1169,12 @@ if (isset($_POST['updateTenant'])) {
         $updateFields[] = "billing_cycle = '" . mysqli_real_escape_string($conn, $billingCycle) . "'";
     }
 
+    $subscriptionStart = date('Y-m-d');
+    $subscriptionEnd = date('Y-m-d');
+    $nextBillingDate = date('Y-m-d');
+    $planTotalPrice = 0;
+    $resolvedPlanId = null;
+
     if ($status === 'Active') {
         $existingSubscriptionStart = '';
 
@@ -1185,6 +1191,7 @@ if (isset($_POST['updateTenant'])) {
 
         $billingDivisor = getBillingCycleDivisor($billingCycle);
         $planTotalPrice = $subscriptionPlans[$subscriptionPlan]['monthly_price'] * $billingDivisor;
+        $resolvedPlanId = resolvePlanIdForSubscription($conn, $subscriptionPlan, $subscriptionPlans[$subscriptionPlan]['name']);
 
         if (ownersColumnExists($conn, 'subscription_start')) {
             $updateFields[] = "subscription_start = '" . mysqli_real_escape_string($conn, $subscriptionStart) . "'";
@@ -1205,13 +1212,89 @@ if (isset($_POST['updateTenant'])) {
 
     $updateSql = "UPDATE owners SET " . implode(",\n        ", $updateFields) . "\n        WHERE tenantID = '$tenantID'";
 
-    if (mysqli_query($conn, $updateSql)) {
+    mysqli_begin_transaction($conn);
+
+    $ownersUpdated = mysqli_query($conn, $updateSql);
+    $subscriptionSynced = true;
+
+    if ($status === 'Active') {
+        $subscriptionSynced = false;
+
+        if ($ownersUpdated && subscriptionsTableExists($conn) && $resolvedPlanId !== null) {
+            $safeTenantID = mysqli_real_escape_string($conn, (string) $tenantID);
+            $safePlanId = (int) $resolvedPlanId;
+            $safeBillingCycle = mysqli_real_escape_string($conn, (string) $billingCycle);
+            $safeSubscriptionStart = mysqli_real_escape_string($conn, (string) $subscriptionStart);
+            $safeSubscriptionEnd = mysqli_real_escape_string($conn, (string) $subscriptionEnd);
+            $safeNextBillingDate = mysqli_real_escape_string($conn, (string) $nextBillingDate);
+            $safeAmount = mysqli_real_escape_string($conn, number_format((float) $planTotalPrice, 2, '.', ''));
+
+            // Match both exact tenantID and equivalent numeric tenantID, e.g. 004 and 4.
+            $subscriptionWhere = "(tenantID = '$safeTenantID' OR CAST(tenantID AS UNSIGNED) = CAST('$safeTenantID' AS UNSIGNED))";
+
+            $existingSubscriptionSql = "SELECT subscription_id FROM subscriptions WHERE $subscriptionWhere ORDER BY subscription_id DESC LIMIT 1";
+            $existingSubscriptionResult = mysqli_query($conn, $existingSubscriptionSql);
+
+            if ($existingSubscriptionResult && mysqli_num_rows($existingSubscriptionResult) > 0) {
+                $existingSubscription = mysqli_fetch_assoc($existingSubscriptionResult);
+                $subscriptionId = (int) ($existingSubscription['subscription_id'] ?? 0);
+
+                if ($subscriptionId > 0) {
+                    $subscriptionUpdateSql = "UPDATE subscriptions SET
+                        tenantID = '$safeTenantID',
+                        plan_id = '$safePlanId',
+                        billing_cycle = '$safeBillingCycle',
+                        start_date = '$safeSubscriptionStart',
+                        end_date = '$safeSubscriptionEnd',
+                        next_billing_date = '$safeNextBillingDate',
+                        amount = '$safeAmount',
+                        status = 'active',
+                        updated_at = NOW()
+                        WHERE subscription_id = '$subscriptionId'
+                        LIMIT 1";
+
+                    $subscriptionSynced = mysqli_query($conn, $subscriptionUpdateSql) !== false;
+                }
+            } else {
+                $subscriptionInsertSql = "INSERT INTO subscriptions (
+                    tenantID,
+                    plan_id,
+                    billing_cycle,
+                    start_date,
+                    end_date,
+                    next_billing_date,
+                    amount,
+                    status,
+                    created_at,
+                    updated_at
+                ) VALUES (
+                    '$safeTenantID',
+                    '$safePlanId',
+                    '$safeBillingCycle',
+                    '$safeSubscriptionStart',
+                    '$safeSubscriptionEnd',
+                    '$safeNextBillingDate',
+                    '$safeAmount',
+                    'active',
+                    NOW(),
+                    NOW()
+                )";
+
+                $subscriptionSynced = mysqli_query($conn, $subscriptionInsertSql) !== false;
+            }
+        }
+    }
+
+    if ($ownersUpdated && $subscriptionSynced) {
+        mysqli_commit($conn);
+
         // Log the tenant update
-        $logDetails = "Updated: Shop Name, Address, Owner Name, Email, Contact, Status";
+        $logDetails = "Updated: Shop Name, Address, Owner Name, Email, Contact, Status, Subscription Plan";
         log_event($conn, "Update Tenant Information", "Tenant", (int)$tenantID, $logDetails);
-        
+
         header("Location: ?notice=tenant_updated");
     } else {
+        mysqli_rollback($conn);
         header("Location: ?notice=tenant_update_failed");
     }
     exit;
@@ -1248,9 +1331,9 @@ if (isset($_POST['createTenant'])) {
     // Superadmin-created tenants should be ACTIVE immediately
     $status = 'Active';
 
-    // Use default subscription values for superadmin-created tenants
-    $subscriptionPlan = $defaultPlanKey;
-    $billingCycle = 'monthly';
+    // Use selected subscription values for superadmin-created tenants
+    $subscriptionPlan = $_POST['subscriptionPlan'] ?? $defaultPlanKey;
+    $billingCycle = $_POST['billingCycle'] ?? 'monthly';
 
     if (!isset($subscriptionPlans[$subscriptionPlan])) {
         $subscriptionPlan = $defaultPlanKey;
@@ -2551,6 +2634,27 @@ if (isset($_POST['createTenant'])) {
                                 <label class="text-xs font-bold uppercase text-gray-500">Contact Number</label>
                                 <input name="contactNumber" class="border rounded-lg p-3" placeholder="09123456789">
                             </div>
+                            <div class="flex flex-col gap-2">
+                                <label class="text-xs font-bold uppercase text-gray-500">Subscription Plan</label>
+                                <select id="createSubscriptionPlan" name="subscriptionPlan" class="border rounded-lg p-3" required>
+                                    <?php foreach ($subscriptionPlans as $plan): ?>
+                                        <option value="<?php echo htmlspecialchars($plan['key']); ?>"
+                                            data-plan-features="<?php echo htmlspecialchars(json_encode($plan['features']), ENT_QUOTES, 'UTF-8'); ?>">
+                                            <?php echo htmlspecialchars($plan['name']); ?> - PHP
+                                            <?php echo number_format($plan['monthly_price'], 2); ?> / month
+                                        </option>
+                                    <?php endforeach; ?>
+                                </select>
+                                <div id="createPlanFeaturesPreview" class="mt-2 text-xs text-slate-600 space-y-1"></div>
+                            </div>
+                            <div class="flex flex-col gap-2">
+                                <label class="text-xs font-bold uppercase text-gray-500">Billing Cycle</label>
+                                <select id="createBillingCycle" name="billingCycle" class="border rounded-lg p-3" required>
+                                    <option value="monthly">Monthly</option>
+                                    <option value="quarterly">Quarterly</option>
+                                    <option value="yearly">Yearly</option>
+                                </select>
+                            </div>
                             <div class="flex flex-col gap-2 md:col-span-2">
                                 <label class="text-xs font-bold uppercase text-gray-500">Temporary Password</label>
                                 <div class="flex gap-2">
@@ -2875,8 +2979,13 @@ if (isset($_POST['createTenant'])) {
             renderPlanFeatures('editSubscriptionPlan', 'editPlanFeaturesPreview');
         });
 
+        document.getElementById("createSubscriptionPlan")?.addEventListener('change', function () {
+            renderPlanFeatures('createSubscriptionPlan', 'createPlanFeaturesPreview');
+        });
+
         renderPlanFeatures('approvalSubscriptionPlan', 'approvalPlanFeaturesPreview');
         renderPlanFeatures('editSubscriptionPlan', 'editPlanFeaturesPreview');
+        renderPlanFeatures('createSubscriptionPlan', 'createPlanFeaturesPreview');
 
         function rejectTenant(tenantID) {
             const form = document.createElement('form');

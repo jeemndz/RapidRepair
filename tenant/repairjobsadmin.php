@@ -95,7 +95,8 @@ if ($isStaffUser) {
     }
 }
 
-function canAccessModule($moduleFile, $accessibleModules) {
+function canAccessModule($moduleFile, $accessibleModules)
+{
     return in_array($moduleFile, $accessibleModules, true);
 }
 
@@ -155,6 +156,19 @@ if ($logoStmt) {
     }
 }
 $shopQuery = urlencode($loginSlug);
+
+$loggedInUserName = trim((string) (
+    $_SESSION['fullName']
+    ?? $_SESSION['full_name']
+    ?? $_SESSION['username']
+    ?? $_SESSION['staffUsername']
+    ?? $_SESSION['staff_username']
+    ?? $shopName
+));
+
+$loggedInUserRole = $isStaffUser
+    ? ($loggedInStaffRoleName !== '' ? $loggedInStaffRoleName : 'Staff')
+    : 'Shop Owner';
 
 $currentScript = basename($_SERVER['PHP_SELF']);
 if ($_SERVER['REQUEST_METHOD'] === 'GET' && (!isset($_GET['shop']) || trim((string) $_GET['shop']) !== $loginSlug)) {
@@ -2442,6 +2456,7 @@ if ($historyStmt) {
 ?>
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="utf-8" />
     <meta content="width=device-width, initial-scale=1.0" name="viewport" />
@@ -2450,10 +2465,49 @@ if ($historyStmt) {
     <meta http-equiv="Expires" content="0" />
     <title><?php echo h($shopName); ?> | Repair Jobs</title>
     <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+    <script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "background": "#f6f6f8",
+                        "on-background": "#0f172a",
+                        "surface": "#f6f6f8",
+                        "surface-container": "#ffffff",
+                        "surface-container-high": "#ffffff",
+                        "surface-container-highest": "#ffffff",
+                        "on-surface": "#0f172a",
+                        "on-surface-variant": "#64748b",
+                        "primary": "#1152d4",
+                        "on-primary": "#ffffff",
+                        "primary-fixed": "#dbeafe",
+                        "primary-fixed-dim": "#bfdbfe",
+                        "on-primary-fixed": "#1e3a8a",
+                        "on-primary-fixed-variant": "#1d4ed8",
+                        "outline": "#e2e8f0",
+                        "outline-variant": "#cbd5e1",
+                        "error": "#ef4444",
+                        "on-error": "#ffffff"
+                    },
+                    fontFamily: {
+                        "headline": ["Inter"],
+                        "body": ["Inter"],
+                        "label": ["Inter"]
+                    },
+                    borderRadius: { "DEFAULT": "0.125rem", "lg": "0.25rem", "xl": "0.5rem", "full": "0.75rem" },
+                },
+            },
+        }
+    </script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap" rel="stylesheet" />
-    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap"
+        rel="stylesheet" />
     <style>
-        body { font-family: 'Inter', sans-serif; }
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+
         .material-symbols-outlined {
             font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
             vertical-align: middle;
@@ -2461,554 +2515,541 @@ if ($historyStmt) {
     </style>
 </head>
 
-<body class="bg-slate-50 text-slate-900 antialiased">
-<!-- Mobile Menu Toggle -->
-<div class="md:hidden fixed top-0 left-0 right-0 bg-white border-b border-slate-200 px-4 py-3 z-50 flex items-center justify-between">
-    <button id="sidebarToggle" type="button" class="inline-flex items-center justify-center w-10 h-10 rounded-lg hover:bg-slate-100 transition-colors">
-        <span class="material-symbols-outlined">menu</span>
-    </button>
-    <h2 class="text-lg font-bold truncate flex-1 ml-3"><?php echo h($shopName); ?></h2>
-</div>
-<div id="sidebarOverlay" class="hidden fixed inset-0 bg-black/50 z-30 md:hidden"></div>
-<div class="flex h-screen overflow-hidden pt-16 md:pt-0">
-    <aside id="sidebar" class="fixed md:static md:flex left-0 top-0 h-screen md:h-screen w-64 md:w-64 flex-shrink-0 border-r border-slate-200 bg-white flex flex-col overflow-y-auto z-40 -translate-x-full md:translate-x-0 transition-transform duration-300 ease-in-out md:transition-none pt-16 md:pt-0">
-        <div class="p-6">
-            <div class="flex items-center gap-4 mb-8">
-
-    <?php if ($logoPath !== ''): ?>
-
-        <div class="h-14 w-14 overflow-hidden flex items-center justify-center">
-            <img
-                src="<?php echo h($logoPath); ?>"
-                alt="<?php echo h($shopName); ?> logo"
-                class="w-full h-full object-contain">
-        </div>
-
-    <?php else: ?>
-
-        <div class="bg-primary rounded-2xl p-3 text-white shadow-lg">
-            <span class="material-symbols-outlined text-3xl">
-                directions_car
-            </span>
-        </div>
-
-    <?php endif; ?>
-
-    <div>
-
-        <?php
-        $shopParts = explode(' ', trim($shopName), 2);
-        ?>
-
-        <h1 class="text-xl font-black leading-none tracking-tight">
-
-            <span class="text-slate-900 dark:text-white">
-                <?php echo htmlspecialchars($shopParts[0] ?? 'Rapid'); ?>
-            </span>
-
-            <span class="text-primary">
-                <?php echo htmlspecialchars($shopParts[1] ?? 'Repair'); ?>
-            </span>
-
-        </h1>
-
-        <p class="text-xs text-slate-500 mt-1">
-            Your Repair Shop
-        </p>
-
+<body class="bg-background text-on-background min-h-screen antialiased">
+    <!-- Mobile Menu Toggle -->
+    <div
+        class="md:hidden fixed top-0 left-0 right-0 bg-white border-b border-slate-200 px-4 py-3 z-50 flex items-center justify-between">
+        <button id="sidebarToggle" type="button"
+            class="inline-flex items-center justify-center w-10 h-10 rounded-lg hover:bg-slate-100 transition-colors">
+            <span class="material-symbols-outlined">menu</span>
+        </button>
+        <h2 class="text-lg font-bold truncate flex-1 ml-3"><?php echo h($shopName); ?></h2>
     </div>
+    <div id="sidebarOverlay" class="hidden fixed inset-0 bg-black/50 z-30 md:hidden"></div>
+    <div class="min-h-screen pt-16 md:pt-0 md:pl-64">
+        <aside id="sidebar"
+            class="fixed inset-y-0 left-0 flex flex-col z-40 h-full w-64 border-r border-slate-200 bg-white overflow-y-auto -translate-x-full md:translate-x-0 transition-transform duration-300 ease-in-out pt-16 md:pt-0">
+            <div class="p-6 flex-1">
+                <div class="flex items-center gap-3 mb-8">
 
-</div>
-<nav class="space-y-1">
-                <?php if (canAccessModule('dashboardadmin.php', $accessibleModules)): ?>
-                    <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 hover:bg-slate-100 transition-colors font-medium"
-                       href="dashboardadmin.php?shop=<?php echo h($shopQuery); ?>">
-                        <span class="material-symbols-outlined text-[22px]">dashboard</span>Dashboard
-                    </a>
-                <?php endif; ?>
+                    <?php if ($logoPath !== ''): ?>
 
-                <?php if (canAccessModule('repairjobsadmin.php', $accessibleModules)): ?>
-                    <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-blue-50 text-blue-700 font-medium"
-                       href="repairjobsadmin.php?shop=<?php echo h($shopQuery); ?>">
-                        <span class="material-symbols-outlined text-[22px]">build</span>Repair Jobs
-                    </a>
-                <?php endif; ?>
-
-                <?php if (canAccessModule('vehicleadmin.php', $accessibleModules)): ?>
-                    <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 hover:bg-slate-100 transition-colors"
-                       href="vehicleadmin.php?shop=<?php echo h($shopQuery); ?>">
-                        <span class="material-symbols-outlined text-[22px]">directions_car</span>Vehicles
-                    </a>
-                <?php endif; ?>
-
-                <?php if (canAccessModule('appointmentadmin.php', $accessibleModules)): ?>
-                    <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 hover:bg-slate-100 transition-colors"
-                       href="appointmentadmin.php?shop=<?php echo h($shopQuery); ?>">
-                        <span class="material-symbols-outlined text-[22px]">event</span>Appointments
-                    </a>
-                <?php endif; ?>
-
-                <?php if (canAccessModule('reportsadmin.php', $accessibleModules)): ?>
-                    <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 hover:bg-slate-100 transition-colors"
-                       href="reportsadmin.php?shop=<?php echo h($shopQuery); ?>">
-                        <span class="material-symbols-outlined text-[22px]">description</span>Reports
-                    </a>
-                <?php endif; ?>
-
-                <?php if (canAccessModule('inventoryadmin.php', $accessibleModules)): ?>
-                    <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 hover:bg-slate-100 transition-colors"
-                       href="inventoryadmin.php?shop=<?php echo h($shopQuery); ?>">
-                        <span class="material-symbols-outlined text-[22px]">inventory_2</span>Inventory
-                    </a>
-                <?php endif; ?>
-
-                <?php if (canAccessModule('customeradmin.php', $accessibleModules)): ?>
-                    <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 hover:bg-slate-100 transition-colors"
-                       href="customeradmin.php?shop=<?php echo h($shopQuery); ?>">
-                        <span class="material-symbols-outlined text-[22px]">group</span>Customers
-                    </a>
-                <?php endif; ?>
-
-                <?php if (canAccessModule('paymentsadmin.php', $accessibleModules)): ?>
-                    <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 hover:bg-slate-100 transition-colors"
-                       href="paymentsadmin.php?shop=<?php echo h($shopQuery); ?>">
-                        <span class="material-symbols-outlined text-[22px]">payments</span>Payments
-                    </a>
-                <?php endif; ?>
-
-                <div class="pt-4 mt-4 border-t border-slate-100">
-                    <div class="relative">
-                        <button class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 hover:bg-slate-100 transition-colors w-full text-left settings-dropdown-btn" data-dropdown="settings">
-                            <span class="material-symbols-outlined text-[22px]">settings</span>
-                            <span>Settings</span>
-                            <span class="material-symbols-outlined text-[16px] ml-auto">expand_more</span>
-                        </button>
-                        <div class="absolute left-0 top-full mt-1 w-full bg-white border border-slate-200 rounded-lg shadow-lg hidden z-50 settings-dropdown" data-dropdown="settings">
-                            <?php if (canAccessModule('accountbillingadmin.php', $accessibleModules)): ?>
-                                <a class="flex items-center gap-3 px-3 py-2.5 rounded-t-lg text-slate-600 hover:bg-blue-50 transition-colors text-sm"
-                                   href="accountbillingadmin.php?shop=<?php echo h($shopQuery); ?>">
-                                    <span class="material-symbols-outlined text-[18px]">receipt_long</span>Account Billing
-                                </a>
-                            <?php endif; ?>
-                            <a class="flex items-center gap-3 px-3 py-2.5 text-slate-600 hover:bg-blue-50 transition-colors text-sm border-t border-slate-100"
-                               href="websitecustomadmin.php?shop=<?php echo h($shopQuery); ?>">
-                                <span class="material-symbols-outlined text-[18px]">palette</span>Website Customizer
-                            </a>
-                            <?php if (canAccessModule('settingsadmin.php', $accessibleModules)): ?>
-                                <a class="flex items-center gap-3 px-3 py-2.5 text-slate-600 hover:bg-blue-50 transition-colors text-sm border-t border-slate-100"
-                                   href="settingsadmin.php?shop=<?php echo h($shopQuery); ?>">
-                                    <span class="material-symbols-outlined text-[18px]">settings</span>Settings
-                                </a>
-                            <?php endif; ?>
-                            <?php if (canAccessModule('storage_managementadmin.php', $accessibleModules)): ?>
-                                <a class="flex items-center gap-3 px-3 py-2.5 rounded-b-lg text-slate-600 hover:bg-blue-50 transition-colors text-sm border-t border-slate-100"
-                                   href="storage_managementadmin.php?shop=<?php echo h($shopQuery); ?>">
-                                    <span class="material-symbols-outlined text-[18px]">storage</span>Storage Management
-                                </a>
-                            <?php endif; ?>
+                        <div class="h-14 w-14 overflow-hidden flex items-center justify-center">
+                            <img src="<?php echo h($logoPath); ?>" alt="<?php echo h($shopName); ?> logo"
+                                class="w-full h-full object-contain">
                         </div>
+
+                    <?php else: ?>
+
+                        <div class="bg-primary rounded-2xl p-3 text-white shadow-lg">
+                            <span class="material-symbols-outlined text-3xl">
+                                directions_car
+                            </span>
+                        </div>
+
+                    <?php endif; ?>
+
+                    <div>
+
+                        <?php
+                        $shopParts = explode(' ', trim($shopName), 2);
+                        ?>
+
+                        <h1 class="text-xl font-black leading-none tracking-tight">
+                            <span class="text-slate-900 dark:text-white">
+                                <?php echo htmlspecialchars($shopParts[0] ?? 'Rapid'); ?>
+                            </span>
+
+                            <span class="text-primary">
+                                <?php echo htmlspecialchars($shopParts[1] ?? 'Repair'); ?>
+                            </span>
+                        </h1>
+
+                        <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Your Repair Shop</p>
                     </div>
                 </div>
-            </nav>
-        </div>
-
-        <div class="mt-auto w-full p-4 border-t border-slate-200">
-            <div class="flex items-center gap-3">
-                <div class="w-10 h-10 rounded-full bg-slate-200 flex items-center justify-center overflow-hidden shrink-0">
-                    <span class="material-symbols-outlined text-slate-500">person</span>
-                </div>
-                <div class="flex-1 min-w-0">
-                    <p class="text-sm font-semibold truncate"><?php echo h($shopName); ?></p>
-                    <p class="text-xs text-slate-500 truncate">Service Lead</p>
-                </div>
-                <form method="post" action="../logout/logout.php" class="inline">
-                    <input type="hidden" name="action" value="confirm" />
-                    <input type="hidden" name="shop" value="<?php echo h($loginSlug); ?>" />
-                    <button type="submit" class="text-slate-400 hover:text-red-600 transition-colors" title="Logout">
-                        <span class="material-symbols-outlined text-xl">logout</span>
-                    </button>
-                </form>
-            </div>
-        </div>
-    </aside>
-
-    <main class="flex-1 overflow-y-auto flex flex-col bg-slate-50">
-        <header class="sticky top-0 z-40 w-full border-b border-slate-200 bg-white/90 backdrop-blur-md flex items-center justify-between px-8 h-16">
-            <h2 class="text-lg font-black tracking-tight">Repair Jobs Management</h2>
-            <div class="flex items-center gap-4">
-                <button type="button" id="notificationBtn" class="relative p-2 text-slate-500 hover:text-blue-700 transition-all">
-                    <span class="material-symbols-outlined">notifications</span>
-                    <?php if ($notificationCount > 0): ?>
-                        <span class="absolute right-1 top-1 flex h-2.5 w-2.5 rounded-full bg-red-500"></span>
+                <nav class="space-y-1">
+                    <?php if (canAccessModule('dashboardadmin.php', $accessibleModules)): ?>
+                        <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 hover:bg-slate-100 transition-colors"
+                            href="dashboardadmin.php?shop=<?php echo h($shopQuery); ?>">
+                            <span class="material-symbols-outlined text-[22px]">dashboard</span>
+                            Dashboard
+                        </a>
                     <?php endif; ?>
-                </button>
-                <button class="p-2 text-slate-500 hover:text-blue-700 transition-all">
-                    <span class="material-symbols-outlined">help_outline</span>
-                </button>
-            </div>
-        </header>
 
-        <div id="notificationPanel" class="hidden fixed right-8 top-20 z-50 w-80 rounded-2xl border border-slate-200 bg-white shadow-2xl opacity-0 translate-y-2 transition-all duration-300 ease-out">
-            <div class="p-4 border-b border-slate-100 flex items-center justify-between">
-                <div>
-                    <p class="font-bold text-slate-900">Notifications</p>
-                    <p class="text-xs text-slate-500">Repair workflow alerts</p>
-                </div>
-                <span class="material-symbols-outlined text-slate-400">notifications</span>
-            </div>
-            <div class="p-4 space-y-3">
-                <div class="rounded-xl bg-blue-50 border border-blue-100 p-3">
-                    <p class="text-sm font-bold text-blue-900"><?php echo number_format($notificationStats['approved_diagnostics']); ?> approved diagnostic(s)</p>
-                    <p class="text-xs text-blue-700 mt-1">Customer approval received today.</p>
-                </div>
-                <div class="rounded-xl bg-amber-50 border border-amber-100 p-3">
-                    <p class="text-sm font-bold text-amber-900"><?php echo number_format($notificationStats['new_repair_jobs']); ?> new repair job(s)</p>
-                    <p class="text-xs text-amber-700 mt-1">Arrived today and waiting in the queue.</p>
-                </div>
-                <?php if (count($notificationItems) > 0): ?>
-                    <div class="space-y-2 pt-1">
-                        <?php foreach ($notificationItems as $item): ?>
-                            <div class="rounded-xl border border-slate-200 p-3">
-                                <p class="text-sm font-bold text-slate-900"><?php echo h($item['title']); ?></p>
-                                <p class="text-xs text-slate-600 mt-1"><?php echo h($item['detail']); ?></p>
-                                <?php if (!empty($item['time'])): ?>
-                                    <p class="text-[11px] text-slate-400 mt-1"><?php echo h($item['time']); ?></p>
+                    <?php if (canAccessModule('repairjobsadmin.php', $accessibleModules)): ?>
+                        <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-primary/10 text-primary font-medium"
+                            href="repairjobsadmin.php?shop=<?php echo h($shopQuery); ?>">
+                            <span class="material-symbols-outlined text-[22px]">build</span>
+                            Repair Jobs
+                        </a>
+                    <?php endif; ?>
+
+                    <?php if (canAccessModule('vehicleadmin.php', $accessibleModules)): ?>
+                        <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 hover:bg-slate-100 transition-colors"
+                            href="vehicleadmin.php?shop=<?php echo h($shopQuery); ?>">
+                            <span class="material-symbols-outlined text-[22px]">directions_car</span>
+                            Vehicles
+                        </a>
+                    <?php endif; ?>
+
+                    <?php if (canAccessModule('appointmentadmin.php', $accessibleModules)): ?>
+                        <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 hover:bg-slate-100 transition-colors"
+                            href="appointmentadmin.php?shop=<?php echo h($shopQuery); ?>">
+                            <span class="material-symbols-outlined text-[22px]">event</span>
+                            Appointments
+                        </a>
+                    <?php endif; ?>
+
+                    <?php if (canAccessModule('reportsadmin.php', $accessibleModules)): ?>
+                        <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 hover:bg-slate-100 transition-colors"
+                            href="reportsadmin.php?shop=<?php echo h($shopQuery); ?>">
+                            <span class="material-symbols-outlined text-[22px]">description</span>
+                            Reports
+                        </a>
+                    <?php endif; ?>
+
+                    <?php if (canAccessModule('inventoryadmin.php', $accessibleModules)): ?>
+                        <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 hover:bg-slate-100 transition-colors"
+                            href="inventoryadmin.php?shop=<?php echo h($shopQuery); ?>">
+                            <span class="material-symbols-outlined text-[22px]">inventory_2</span>
+                            Inventory
+                        </a>
+                    <?php endif; ?>
+
+                    <?php if (canAccessModule('customeradmin.php', $accessibleModules)): ?>
+                        <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 hover:bg-slate-100 transition-colors"
+                            href="customeradmin.php?shop=<?php echo h($shopQuery); ?>">
+                            <span class="material-symbols-outlined text-[22px]">group</span>
+                            Customers
+                        </a>
+                    <?php endif; ?>
+
+                    <?php if (canAccessModule('paymentsadmin.php', $accessibleModules)): ?>
+                        <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 hover:bg-slate-100 transition-colors"
+                            href="paymentsadmin.php?shop=<?php echo h($shopQuery); ?>">
+                            <span class="material-symbols-outlined text-[22px]">payments</span>
+                            Payments
+                        </a>
+                    <?php endif; ?>
+
+                    <div class="pt-4 mt-4 border-t border-slate-100">
+                        <div class="relative group">
+                            <button type="button"
+                                class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 hover:bg-slate-100 transition-colors w-full text-left settings-dropdown-btn"
+                                data-dropdown="settings">
+                                <span class="material-symbols-outlined text-[22px]">settings</span>
+                                <span>Settings</span>
+                                <span class="material-symbols-outlined text-[16px] ml-auto">expand_more</span>
+                            </button>
+                            <div class="absolute left-0 top-full mt-1 w-full bg-white border border-slate-200 rounded-lg shadow-lg hidden z-50 settings-dropdown"
+                                data-dropdown="settings">
+                                <?php if (canAccessModule('accountbillingadmin.php', $accessibleModules)): ?>
+                                    <a class="flex items-center gap-3 px-3 py-2.5 rounded-t-lg text-slate-600 hover:bg-blue-50 transition-colors text-sm"
+                                        href="accountbillingadmin.php?shop=<?php echo h($shopQuery); ?>">
+                                        <span class="material-symbols-outlined text-[18px]">receipt_long</span>
+                                        Account Billing
+                                    </a>
+                                <?php endif; ?>
+                                <a class="flex items-center gap-3 px-3 py-2.5 text-slate-600 hover:bg-blue-50 transition-colors text-sm border-t border-slate-100"
+                                    href="websitecustomadmin.php?shop=<?php echo h($shopQuery); ?>">
+                                    <span class="material-symbols-outlined text-[18px]">palette</span>
+                                    Website Customizer
+                                </a>
+                                <?php if (canAccessModule('settingsadmin.php', $accessibleModules)): ?>
+                                    <a class="flex items-center gap-3 px-3 py-2.5 text-slate-600 hover:bg-blue-50 transition-colors text-sm border-t border-slate-100"
+                                        href="settingsadmin.php?shop=<?php echo h($shopQuery); ?>">
+                                        <span class="material-symbols-outlined text-[18px]">settings</span>
+                                        Settings
+                                    </a>
+                                <?php endif; ?>
+                                <?php if (canAccessModule('storage_managementadmin.php', $accessibleModules)): ?>
+                                    <a class="flex items-center gap-3 px-3 py-2.5 rounded-b-lg text-slate-600 hover:bg-blue-50 transition-colors text-sm border-t border-slate-100"
+                                        href="storage_managementadmin.php?shop=<?php echo h($shopQuery); ?>">
+                                        <span class="material-symbols-outlined text-[18px]">storage</span>
+                                        Storage Management
+                                    </a>
                                 <?php endif; ?>
                             </div>
-                        <?php endforeach; ?>
-                    </div>
-                <?php else: ?>
-                    <div class="rounded-xl border border-slate-200 p-3 text-sm text-slate-500">
-                        No new notifications right now.
-                    </div>
-                <?php endif; ?>
-            </div>
-        </div>
-
-        <div class="px-8 pb-12 pt-8">
-            <?php if ($message !== ''): ?>
-                <div class="mb-6 flex items-start gap-3 rounded-2xl border px-5 py-4 shadow-sm <?php echo $messageType === 'error' ? 'border-red-200 bg-red-50 text-red-700' : 'border-emerald-200 bg-emerald-50 text-emerald-800'; ?>">
-                    <span class="material-symbols-outlined"><?php echo $messageType === 'error' ? 'error' : 'check_circle'; ?></span>
-                    <div>
-                        <p class="text-sm font-bold"><?php echo h($message); ?></p>
-                        <p class="text-xs opacity-80 mt-0.5"><?php echo $messageType === 'error' ? 'Please check your form values and try again.' : 'Your latest change has been saved.'; ?></p>
-                    </div>
-                </div>
-            <?php endif; ?>
-
-            <div class="mb-8 flex flex-col lg:flex-row lg:items-end lg:justify-between gap-4">
-                <div>
-                    <h2 class="text-3xl font-black tracking-tight">Repair Jobs</h2>
-                    <p class="text-slate-600 font-medium mt-1">Real-time floor management, diagnostics, and job tracking.</p>
-                </div>
-                <p class="text-xs font-semibold text-slate-500">Diagnostic reports are sent to the customer for approval.</p>
-            </div>
-
-            <div class="grid grid-cols-1 md:grid-cols-5 gap-6 mb-8">
-                <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
-                    <p class="text-xs font-bold text-slate-500 uppercase tracking-wider">In Workshop</p>
-                    <p class="text-2xl font-black mt-2"><?php echo number_format($stats['in_workshop']); ?></p>
-                </div>
-                <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
-                    <p class="text-xs font-bold text-slate-500 uppercase tracking-wider">Waiting Parts</p>
-                    <p class="text-2xl font-black mt-2"><?php echo number_format($stats['waiting_parts']); ?></p>
-                </div>
-                <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
-                    <p class="text-xs font-bold text-slate-500 uppercase tracking-wider">Ready Pickup</p>
-                    <p class="text-2xl font-black mt-2"><?php echo number_format($stats['ready_pickup']); ?></p>
-                </div>
-                <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
-                    <p class="text-xs font-bold text-slate-500 uppercase tracking-wider">For Approval</p>
-                    <p class="text-2xl font-black mt-2"><?php echo number_format($stats['for_approval']); ?></p>
-                </div>
-                <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
-                    <p class="text-xs font-bold text-slate-500 uppercase tracking-wider">Avg. Cycle</p>
-                    <p class="text-2xl font-black mt-2"><?php echo $avgCycleHours > 0 ? number_format($avgCycleHours, 1) . ' hrs' : 'N/A'; ?></p>
-                </div>
-            </div>
-
-            <div class="grid grid-cols-1 2xl:grid-cols-[minmax(0,1fr)_360px] gap-6 mb-8 items-start">
-<section class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden min-w-0">
-                <div class="px-6 py-5 border-b border-slate-100 flex items-center justify-between">
-                    <div>
-                        <h3 class="text-lg font-bold text-slate-900">Active Repair Jobs</h3>
-                        <p class="text-xs text-slate-500 font-medium">Job-level status, diagnostics, and financial summary.</p>
-                    </div>
-                    <span class="text-xs font-bold text-slate-500"><?php echo number_format(count($jobRows)); ?> rows</span>
-                </div>
-
-                <div class="px-6 py-4 border-b border-slate-100 bg-slate-50/40">
-                    <form method="get" class="flex flex-wrap items-center gap-3">
-                        <input type="hidden" name="shop" value="<?php echo h($loginSlug); ?>">
-                        <input type="hidden" name="upcoming_sort_by" value="<?php echo h($upcomingSortBy); ?>">
-                        <input type="hidden" name="upcoming_sort_dir" value="<?php echo h($upcomingSortDir); ?>">
-                        <input type="hidden" name="diagnostics_sort_by" value="<?php echo h($diagnosticsSortBy); ?>">
-                        <input type="hidden" name="diagnostics_sort_dir" value="<?php echo h($diagnosticsSortDir); ?>">
-                        <div class="relative flex-1 min-w-[240px]">
-                            <span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">search</span>
-                            <input type="text" name="q" value="<?php echo h($search); ?>" placeholder="Filter by job order, customer, vehicle..." class="w-full rounded-lg border-slate-300 pl-9 pr-3 py-2 text-sm" />
                         </div>
-                        <select name="job_status" class="rounded-lg border-slate-300 text-sm min-w-[160px]">
-                            <option value="All">All Job Status</option>
-                            <?php foreach ($jobStatuses as $status): ?>
-                                <option value="<?php echo h($status); ?>" <?php echo $jobStatusFilter === $status ? 'selected' : ''; ?>><?php echo h($status); ?></option>
-                            <?php endforeach; ?>
-                        </select>
-                        <select name="service_status" class="rounded-lg border-slate-300 text-sm min-w-[170px]">
-                            <option value="All">All Service Status</option>
-                            <?php foreach ($serviceStatuses as $status): ?>
-                                <option value="<?php echo h($status); ?>" <?php echo $serviceStatusFilter === $status ? 'selected' : ''; ?>><?php echo h($status); ?></option>
-                            <?php endforeach; ?>
-                        </select>
-                        <select name="priority" class="rounded-lg border-slate-300 text-sm min-w-[150px]">
-                            <option value="All">All Priorities</option>
-                            <?php foreach ($priorityOptions as $priority): ?>
-                                <option value="<?php echo h($priority); ?>" <?php echo $priorityFilter === $priority ? 'selected' : ''; ?>><?php echo h($priority); ?></option>
-                            <?php endforeach; ?>
-                        </select>
-                        <select name="jobs_sort_by" class="rounded-lg border-slate-300 text-sm min-w-[170px]">
-                            <option value="repair_job_id" <?php echo $jobsSortBy === 'repair_job_id' ? 'selected' : ''; ?>>Sort: Repair Job ID</option>
-                            <option value="appointment_id" <?php echo $jobsSortBy === 'appointment_id' ? 'selected' : ''; ?>>Sort: Appointment ID</option>
-                            <option value="appointment_date" <?php echo $jobsSortBy === 'appointment_date' ? 'selected' : ''; ?>>Sort: Repair Date</option>
-                            <option value="appointment_time" <?php echo $jobsSortBy === 'appointment_time' ? 'selected' : ''; ?>>Sort: Repair Time</option>
-                            <option value="job_status" <?php echo $jobsSortBy === 'job_status' ? 'selected' : ''; ?>>Sort: Job Status</option>
-                            <option value="priority" <?php echo $jobsSortBy === 'priority' ? 'selected' : ''; ?>>Sort: Priority</option>
-                            <option value="grand_total" <?php echo $jobsSortBy === 'grand_total' ? 'selected' : ''; ?>>Sort: Grand Total</option>
-                            <option value="updated_at" <?php echo $jobsSortBy === 'updated_at' ? 'selected' : ''; ?>>Sort: Last Updated</option>
-                            <option value="completed_at" <?php echo $jobsSortBy === 'completed_at' ? 'selected' : ''; ?>>Sort: Completed Time</option>
-                        </select>
-                        <select name="jobs_sort_dir" class="rounded-lg border-slate-300 text-sm min-w-[120px]">
-                            <option value="DESC" <?php echo $jobsSortDir === 'DESC' ? 'selected' : ''; ?>>Descending</option>
-                            <option value="ASC" <?php echo $jobsSortDir === 'ASC' ? 'selected' : ''; ?>>Ascending</option>
-                        </select>
-                        <button type="submit" class="inline-flex items-center justify-center w-11 h-10 rounded-lg border border-slate-300 bg-white text-slate-600 hover:bg-slate-100" title="Apply Filters">
-                            <span class="material-symbols-outlined text-lg">filter_list</span>
+                    </div>
+                </nav>
+            </div>
+
+            <div class="mt-auto w-full p-4 border-t border-slate-200">
+                <div class="flex items-center gap-3">
+                    <div class="size-10 rounded-full bg-slate-200 flex items-center justify-center overflow-hidden">
+                        <span class="material-symbols-outlined text-slate-500">person</span>
+                    </div>
+                    <div class="flex-1 min-w-0">
+                        <p class="text-sm font-semibold truncate"><?php echo h($loggedInUserName); ?></p>
+                        <p class="text-xs text-slate-500 truncate"><?php echo h($loggedInUserRole); ?></p>
+                    </div>
+                    <form method="post" action="../logout/logout.php" class="inline">
+                        <input type="hidden" name="action" value="confirm" />
+                        <input type="hidden" name="shop" value="<?php echo h($loginSlug); ?>" />
+                        <button type="submit" class="text-slate-400 hover:text-error transition-colors" title="Logout">
+                            <span class="material-symbols-outlined text-xl">logout</span>
                         </button>
                     </form>
                 </div>
+            </div>
+        </aside>
 
-                <div class="overflow-x-auto">
-                    <table class="w-full text-left">
-                        <thead>
-                        <tr class="bg-slate-50/50">
-                            <th class="px-6 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">Order Details</th>
-                            <th class="px-6 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">Services</th>
-                            <th class="px-6 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">Repair Date & Time</th>
-                            <th class="px-6 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">Total</th>
-                            <th class="px-6 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">Labor Hrs</th>
-                            <th class="px-6 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">Status</th>
-                            <th class="px-6 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">Actions</th>
-                        </tr>
-                        </thead>
-                        <tbody class="divide-y divide-slate-100">
-                        <?php if (count($jobRows) === 0): ?>
-                            <tr>
-                                <td colspan="7" class="px-6 py-10 text-center text-sm text-slate-500">No repair jobs found for this filter.</td>
-                            </tr>
-                        <?php else: ?>
-                            <?php foreach ($jobRows as $job): ?>
-                                <?php
-                                $vehicleText = trim(((string) ($job['year_model'] ?? '')) . ' ' . ((string) ($job['brand'] ?? '')) . ' ' . ((string) ($job['model'] ?? '')));
-                                $estimatedHours = ((float) ($job['total_estimated_minutes'] ?? 0)) / 60;
-                                $actualHours = ((float) ($job['total_actual_minutes'] ?? 0)) / 60;
-                                $repairDateRaw = trim((string) ($job['appointment_date'] ?? ''));
-                                $repairTimeRaw = trim((string) ($job['appointment_time'] ?? ''));
-                                $repairDateLabel = $repairDateRaw !== '' ? date('M d, Y', strtotime($repairDateRaw)) : 'No date set';
-                                $repairTimeLabel = $repairTimeRaw !== '' ? date('h:i A', strtotime($repairTimeRaw)) : 'No time set';
-                                $hasDiagnosticReport = !empty($job['diagnostic_id']);
-                                $hasDiagnosticMainService = ((int) ($job['diagnostic_service_count'] ?? 0)) > 0;
-                                ?>
-                                <tr class="hover:bg-slate-50/50 transition-colors">
-                                    <td class="px-6 py-4">
-                                        <div class="font-bold text-sm text-slate-900"><?php echo h(!empty($job['job_order_no']) ? $job['job_order_no'] : 'RJO-' . $job['repair_job_id']); ?></div>
-                                        <div class="text-xs text-slate-500"><?php echo h($vehicleText !== '' ? $vehicleText : 'Vehicle record'); ?></div>
-                                        <div class="text-[11px] text-slate-400 mt-1">
-                                            Customer: <?php echo h($job['customer_name']); ?>
-                                            <?php echo $job['bay_no'] ? ' | Bay: ' . h($job['bay_no']) : ''; ?>
-                                        </div>
-                                        <?php if ($hasDiagnosticReport): ?>
-                                            <div class="mt-1 flex items-center gap-1 text-[11px] text-blue-700 font-bold">
-                                                <span class="material-symbols-outlined text-sm">clinical_notes</span>
-                                                Diagnostic: <?php echo h($job['diagnosis_status']); ?> / <?php echo h($job['customer_approval']); ?>
-                                            </div>
-                                        <?php endif; ?>
-                                    </td>
-                                    <td class="px-6 py-4 text-sm text-slate-700 max-w-md"><?php echo h($job['services']); ?></td>
-                                    <td class="px-6 py-4 text-sm text-slate-700">
-                                        <div class="font-semibold text-slate-900"><?php echo h($repairDateLabel); ?></div>
-                                        <div class="text-xs text-slate-500"><?php echo h($repairTimeLabel); ?></div>
-                                    </td>
-                                    <td class="px-6 py-4 text-sm font-bold text-slate-900">₱<?php echo number_format((float) ($job['grand_total'] ?? 0), 2); ?></td>
-                                    <td class="px-6 py-4 text-sm font-medium text-slate-600"><?php echo number_format($actualHours, 1); ?> / <?php echo number_format($estimatedHours, 1); ?></td>
-                                    <td class="px-6 py-4">
-                                        <span class="inline-flex px-2 py-1 rounded-full text-xs font-bold <?php echo h(statusBadgeClass((string) $job['job_status'])); ?>">
-                                            <?php echo h($job['job_status']); ?>
-                                        </span>
-                                    </td>
-                                    <td class="px-6 py-4">
-                                        <?php if ($job['job_status'] === 'Completed' || $job['job_status'] === 'Cancelled'): ?>
-                                            <span class="text-xs text-slate-500 font-semibold">Done</span>
-                                        <?php else: ?>
-                                            <div class="flex flex-col gap-2">
-                                                <form method="get" class="flex items-center gap-2">
-                                                    <input type="hidden" name="shop" value="<?php echo h($loginSlug); ?>">
-                                                    <input type="hidden" name="q" value="<?php echo h($search); ?>">
-                                                    <input type="hidden" name="job_status" value="<?php echo h($jobStatusFilter); ?>">
-                                                    <input type="hidden" name="service_status" value="<?php echo h($serviceStatusFilter); ?>">
-                                                    <input type="hidden" name="priority" value="<?php echo h($priorityFilter); ?>">
-                                                    <select name="job_status" class="rounded-lg border-slate-300 text-xs" onchange="handleJobStatusChange(this, <?php echo (int) $job['repair_job_id']; ?>)">
-                                                        <?php foreach ($jobStatuses as $status): ?>
-                                                            <option value="<?php echo h($status); ?>" <?php echo $job['job_status'] === $status ? 'selected' : ''; ?>>
-                                                                <?php echo h($status); ?>
-                                                            </option>
-                                                        <?php endforeach; ?>
-                                                    </select>
-                                                </form>
-
-                                                <?php if ($job['job_status'] === 'Queued'): ?>
-                                                    <form method="post" onsubmit="return confirm('Start this repair job now even before the scheduled appointment time?');">
-                                                        <input type="hidden" name="csrf_token" value="<?php echo h($csrfToken); ?>">
-                                                        <input type="hidden" name="repair_job_id" value="<?php echo (int) $job['repair_job_id']; ?>">
-                                                        <input type="hidden" name="start_repair_now" value="1">
-                                                        <button type="submit" class="inline-flex items-center justify-center gap-1 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-blue-700">
-                                                            <span class="material-symbols-outlined text-sm">play_arrow</span>
-                                                            Start Repair Now
-                                                        </button>
-                                                    </form>
-                                                <?php endif; ?>
-
-                                                <?php if ($job['job_status'] === 'Diagnostics' || ($job['job_status'] === 'In Progress' && !$hasDiagnosticMainService)): ?>
-                                                    <a href="repairjobsadmin.php?<?php echo h(http_build_query(array_filter([
-                                                        'shop' => $loginSlug,
-                                                        'q' => $search,
-                                                        'job_status' => $jobStatusFilter,
-                                                        'service_status' => $serviceStatusFilter,
-                                                        'priority' => $priorityFilter,
-                                                        'diagnostic_job' => (int) $job['repair_job_id'],
-                                                    ], static fn($v) => $v !== ''))); ?>"
-                                                       class="inline-flex items-center justify-center gap-1 rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-indigo-700">
-                                                        <span class="material-symbols-outlined text-sm">clinical_notes</span>
-                                                        <?php echo $hasDiagnosticReport ? 'Edit Diagnostic' : 'Create Diagnostic'; ?>
-                                                    </a>
-                                                <?php elseif ($job['job_status'] === 'In Progress' && $hasDiagnosticMainService): ?>
-                                                    <span class="inline-flex items-center justify-center gap-1 rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-bold text-slate-600">
-                                                        <span class="material-symbols-outlined text-sm">hourglass_top</span>
-                                                        In Progress
-                                                    </span>
-                                                <?php endif; ?>
-                                            </div>
-                                        <?php endif; ?>
-                                    </td>
-                                </tr>
-                            <?php endforeach; ?>
+        <main class="min-h-screen flex flex-col bg-slate-50">
+            <header
+                class="sticky top-0 z-40 w-full border-b border-slate-200 bg-white/90 backdrop-blur-md flex items-center justify-between px-8 h-16">
+                <h2 class="text-lg font-black tracking-tight">Repair Jobs Management</h2>
+                <div class="flex items-center gap-4">
+                    <button type="button" id="notificationBtn"
+                        class="relative p-2 text-slate-500 hover:text-blue-700 transition-all">
+                        <span class="material-symbols-outlined">notifications</span>
+                        <?php if ($notificationCount > 0): ?>
+                            <span class="absolute right-1 top-1 flex h-2.5 w-2.5 rounded-full bg-red-500"></span>
                         <?php endif; ?>
-                        </tbody>
-                    </table>
+                    </button>
+                    <button class="p-2 text-slate-500 hover:text-blue-700 transition-all">
+                        <span class="material-symbols-outlined">help_outline</span>
+                    </button>
                 </div>
+            </header>
 
-                <div class="px-6 py-4 border-t border-slate-100 bg-slate-50/40 flex items-center justify-between">
-                    <p class="text-xs text-slate-500 font-medium">Showing <?php echo number_format(count($jobRows)); ?> of <?php echo number_format($jobsTotalRows); ?> records</p>
-                    <div class="flex items-center gap-2">
-                        <?php if ($jobsPage > 1): ?>
-                            <a href="repairjobsadmin.php?<?php echo h(http_build_query(array_filter([
-                                'shop' => $loginSlug,
-                                'q' => $search,
-                                'job_status' => $jobStatusFilter,
-                                'service_status' => $serviceStatusFilter,
-                                'priority' => $priorityFilter,
-                                'upcoming_sort_by' => $upcomingSortBy,
-                                'upcoming_sort_dir' => $upcomingSortDir,
-                                'jobs_sort_by' => $jobsSortBy,
-                                'jobs_sort_dir' => $jobsSortDir,
-                                'diagnostics_sort_by' => $diagnosticsSortBy,
-                                'diagnostics_sort_dir' => $diagnosticsSortDir,
-                                'upcoming_page' => $upcomingPage,
-                                'jobs_page' => $jobsPage - 1,
-                                'diagnostics_page' => $diagnosticsPage,
-                            ], static fn($v) => $v !== ''))); ?>" class="px-3 py-1.5 text-xs font-semibold rounded-lg border border-slate-300 bg-white hover:bg-slate-100">Previous</a>
-                        <?php endif; ?>
-
-                        <span class="px-2 py-1 text-xs font-semibold text-slate-600">Page <?php echo (int) $jobsPage; ?> of <?php echo (int) $jobsTotalPages; ?></span>
-
-                        <?php if ($jobsPage < $jobsTotalPages): ?>
-                            <a href="repairjobsadmin.php?<?php echo h(http_build_query(array_filter([
-                                'shop' => $loginSlug,
-                                'q' => $search,
-                                'job_status' => $jobStatusFilter,
-                                'service_status' => $serviceStatusFilter,
-                                'priority' => $priorityFilter,
-                                'upcoming_sort_by' => $upcomingSortBy,
-                                'upcoming_sort_dir' => $upcomingSortDir,
-                                'jobs_sort_by' => $jobsSortBy,
-                                'jobs_sort_dir' => $jobsSortDir,
-                                'diagnostics_sort_by' => $diagnosticsSortBy,
-                                'diagnostics_sort_dir' => $diagnosticsSortDir,
-                                'upcoming_page' => $upcomingPage,
-                                'jobs_page' => $jobsPage + 1,
-                                'diagnostics_page' => $diagnosticsPage,
-                            ], static fn($v) => $v !== ''))); ?>" class="px-3 py-1.5 text-xs font-semibold rounded-lg border border-slate-300 bg-white hover:bg-slate-100">Next</a>
-                        <?php endif; ?>
+            <div id="notificationPanel"
+                class="hidden fixed right-8 top-20 z-50 w-80 rounded-2xl border border-slate-200 bg-white shadow-2xl opacity-0 translate-y-2 transition-all duration-300 ease-out">
+                <div class="p-4 border-b border-slate-100 flex items-center justify-between">
+                    <div>
+                        <p class="font-bold text-slate-900">Notifications</p>
+                        <p class="text-xs text-slate-500">Repair workflow alerts</p>
                     </div>
+                    <span class="material-symbols-outlined text-slate-400">notifications</span>
                 </div>
-            </section> 
+                <div class="p-4 space-y-3">
+                    <div class="rounded-xl bg-blue-50 border border-blue-100 p-3">
+                        <p class="text-sm font-bold text-blue-900">
+                            <?php echo number_format($notificationStats['approved_diagnostics']); ?> approved
+                            diagnostic(s)
+                        </p>
+                        <p class="text-xs text-blue-700 mt-1">Customer approval received today.</p>
+                    </div>
+                    <div class="rounded-xl bg-amber-50 border border-amber-100 p-3">
+                        <p class="text-sm font-bold text-amber-900">
+                            <?php echo number_format($notificationStats['new_repair_jobs']); ?> new repair job(s)
+                        </p>
+                        <p class="text-xs text-amber-700 mt-1">Arrived today and waiting in the queue.</p>
+                    </div>
+                    <?php if (count($notificationItems) > 0): ?>
+                        <div class="space-y-2 pt-1">
+                            <?php foreach ($notificationItems as $item): ?>
+                                <div class="rounded-xl border border-slate-200 p-3">
+                                    <p class="text-sm font-bold text-slate-900"><?php echo h($item['title']); ?></p>
+                                    <p class="text-xs text-slate-600 mt-1"><?php echo h($item['detail']); ?></p>
+                                    <?php if (!empty($item['time'])): ?>
+                                        <p class="text-[11px] text-slate-400 mt-1"><?php echo h($item['time']); ?></p>
+                                    <?php endif; ?>
+                                </div>
+                            <?php endforeach; ?>
+                        </div>
+                    <?php else: ?>
+                        <div class="rounded-xl border border-slate-200 p-3 text-sm text-slate-500">
+                            No new notifications right now.
+                        </div>
+                    <?php endif; ?>
+                </div>
+            </div>
 
-<section class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden min-w-0 xl:sticky xl:top-24">
-                    <div class="px-4 py-4 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <div class="px-8 pb-12 pt-8">
+                <?php if ($message !== ''): ?>
+                    <div
+                        class="mb-6 flex items-start gap-3 rounded-2xl border px-5 py-4 shadow-sm <?php echo $messageType === 'error' ? 'border-red-200 bg-red-50 text-red-700' : 'border-emerald-200 bg-emerald-50 text-emerald-800'; ?>">
+                        <span
+                            class="material-symbols-outlined"><?php echo $messageType === 'error' ? 'error' : 'check_circle'; ?></span>
                         <div>
-                            <h3 class="text-lg font-bold text-slate-900">Calendar</h3>
-                            <p class="text-xs text-slate-500 font-medium">Repair-job schedule by appointment date.</p>
-                        </div>
-                        <div class="flex items-center gap-2">
-                            <a href="repairjobsadmin.php?<?php echo h(http_build_query(array_filter([
-                                'shop' => $loginSlug,
-                                'q' => $search,
-                                'job_status' => $jobStatusFilter,
-                                'service_status' => $serviceStatusFilter,
-                                'priority' => $priorityFilter,
-                                'upcoming_sort_by' => $upcomingSortBy,
-                                'upcoming_sort_dir' => $upcomingSortDir,
-                                'jobs_sort_by' => $jobsSortBy,
-                                'jobs_sort_dir' => $jobsSortDir,
-                                'diagnostics_sort_by' => $diagnosticsSortBy,
-                                'diagnostics_sort_dir' => $diagnosticsSortDir,
-                                'calendar_month' => $calendarPrevMonth,
-                            ], static fn($v) => $v !== ''))); ?>" class="inline-flex items-center justify-center w-8 h-8 rounded-lg border border-slate-300 text-slate-600 hover:bg-slate-100"><span class="material-symbols-outlined text-lg">chevron_left</span></a>
-                            <span class="min-w-[115px] text-center text-xs font-black text-slate-900"><?php echo h($calendarMonthLabel); ?></span>
-                            <a href="repairjobsadmin.php?<?php echo h(http_build_query(array_filter([
-                                'shop' => $loginSlug,
-                                'q' => $search,
-                                'job_status' => $jobStatusFilter,
-                                'service_status' => $serviceStatusFilter,
-                                'priority' => $priorityFilter,
-                                'upcoming_sort_by' => $upcomingSortBy,
-                                'upcoming_sort_dir' => $upcomingSortDir,
-                                'jobs_sort_by' => $jobsSortBy,
-                                'jobs_sort_dir' => $jobsSortDir,
-                                'diagnostics_sort_by' => $diagnosticsSortBy,
-                                'diagnostics_sort_dir' => $diagnosticsSortDir,
-                                'calendar_month' => $calendarNextMonth,
-                            ], static fn($v) => $v !== ''))); ?>" class="inline-flex items-center justify-center w-8 h-8 rounded-lg border border-slate-300 text-slate-600 hover:bg-slate-100"><span class="material-symbols-outlined text-lg">chevron_right</span></a>
+                            <p class="text-sm font-bold"><?php echo h($message); ?></p>
+                            <p class="text-xs opacity-80 mt-0.5">
+                                <?php echo $messageType === 'error' ? 'Please check your form values and try again.' : 'Your latest change has been saved.'; ?>
+                            </p>
                         </div>
                     </div>
-                    <div class="p-4">
-                        <div class="w-full">
-                        <div class="grid grid-cols-7 gap-1 mb-2">
-                            <?php foreach (['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] as $dayName): ?>
-                                <div class="text-center text-[10px] font-black uppercase tracking-widest text-slate-400"><?php echo h($dayName); ?></div>
-                            <?php endforeach; ?>
+                <?php endif; ?>
+
+                <div class="mb-8 flex flex-col lg:flex-row lg:items-end lg:justify-between gap-4">
+                    <div>
+                        <h2 class="text-3xl font-black tracking-tight">Repair Jobs</h2>
+                        <p class="text-slate-600 font-medium mt-1">Real-time floor management, diagnostics, and job
+                            tracking.</p>
+                    </div>
+                    <p class="text-xs font-semibold text-slate-500">Diagnostic reports are sent to the customer for
+                        approval.</p>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-5 gap-6 mb-8">
+                    <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+                        <p class="text-xs font-bold text-slate-500 uppercase tracking-wider">In Workshop</p>
+                        <p class="text-2xl font-black mt-2"><?php echo number_format($stats['in_workshop']); ?></p>
+                    </div>
+                    <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+                        <p class="text-xs font-bold text-slate-500 uppercase tracking-wider">Waiting Parts</p>
+                        <p class="text-2xl font-black mt-2"><?php echo number_format($stats['waiting_parts']); ?></p>
+                    </div>
+                    <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+                        <p class="text-xs font-bold text-slate-500 uppercase tracking-wider">Ready Pickup</p>
+                        <p class="text-2xl font-black mt-2"><?php echo number_format($stats['ready_pickup']); ?></p>
+                    </div>
+                    <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+                        <p class="text-xs font-bold text-slate-500 uppercase tracking-wider">For Approval</p>
+                        <p class="text-2xl font-black mt-2"><?php echo number_format($stats['for_approval']); ?></p>
+                    </div>
+                    <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+                        <p class="text-xs font-bold text-slate-500 uppercase tracking-wider">Avg. Cycle</p>
+                        <p class="text-2xl font-black mt-2">
+                            <?php echo $avgCycleHours > 0 ? number_format($avgCycleHours, 1) . ' hrs' : 'N/A'; ?>
+                        </p>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 2xl:grid-cols-[minmax(0,1fr)_360px] gap-6 mb-8 items-start">
+                    <section class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden min-w-0">
+                        <div class="px-6 py-5 border-b border-slate-100 flex items-center justify-between">
+                            <div>
+                                <h3 class="text-lg font-bold text-slate-900">Active Repair Jobs</h3>
+                                <p class="text-xs text-slate-500 font-medium">Job-level status, diagnostics, and
+                                    financial summary.</p>
+                            </div>
+                            <span class="text-xs font-bold text-slate-500"><?php echo number_format(count($jobRows)); ?>
+                                rows</span>
                         </div>
-                        <div class="grid grid-cols-7 gap-1">
-                            <?php for ($blank = 1; $blank < $calendarFirstWeekday; $blank++): ?>
-                                <div class="min-h-[46px] rounded-xl border border-transparent bg-slate-50/40"></div>
-                            <?php endfor; ?>
-                            <?php for ($day = 1; $day <= $calendarDaysInMonth; $day++): ?>
-                                <?php
-                                    $dateKey = $calendarFirstDateObj->format('Y-m-') . str_pad((string) $day, 2, '0', STR_PAD_LEFT);
-                                    $dayData = $calendarAppointmentsByDate[$dateKey] ?? ['total' => 0, 'active' => 0, 'completed' => 0, 'cancelled' => 0];
-                                    $isToday = $dateKey === date('Y-m-d');
-                                    $isSelectedDate = $calendarDateFilter === $dateKey;
-                                    $hasJobs = ((int) $dayData['total']) > 0;
-                                    $dayUrl = 'repairjobsadmin.php?' . http_build_query(array_filter([
+
+                        <div class="px-6 py-4 border-b border-slate-100 bg-slate-50/40">
+                            <form method="get" class="flex flex-wrap items-center gap-3">
+                                <input type="hidden" name="shop" value="<?php echo h($loginSlug); ?>">
+                                <input type="hidden" name="upcoming_sort_by" value="<?php echo h($upcomingSortBy); ?>">
+                                <input type="hidden" name="upcoming_sort_dir"
+                                    value="<?php echo h($upcomingSortDir); ?>">
+                                <input type="hidden" name="diagnostics_sort_by"
+                                    value="<?php echo h($diagnosticsSortBy); ?>">
+                                <input type="hidden" name="diagnostics_sort_dir"
+                                    value="<?php echo h($diagnosticsSortDir); ?>">
+                                <div class="relative flex-1 min-w-[240px]">
+                                    <span
+                                        class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">search</span>
+                                    <input type="text" name="q" value="<?php echo h($search); ?>"
+                                        placeholder="Filter by job order, customer, vehicle..."
+                                        class="w-full rounded-lg border-slate-300 pl-9 pr-3 py-2 text-sm" />
+                                </div>
+                                <select name="job_status" class="rounded-lg border-slate-300 text-sm min-w-[160px]">
+                                    <option value="All">All Job Status</option>
+                                    <?php foreach ($jobStatuses as $status): ?>
+                                        <option value="<?php echo h($status); ?>" <?php echo $jobStatusFilter === $status ? 'selected' : ''; ?>><?php echo h($status); ?></option>
+                                    <?php endforeach; ?>
+                                </select>
+                                <select name="service_status" class="rounded-lg border-slate-300 text-sm min-w-[170px]">
+                                    <option value="All">All Service Status</option>
+                                    <?php foreach ($serviceStatuses as $status): ?>
+                                        <option value="<?php echo h($status); ?>" <?php echo $serviceStatusFilter === $status ? 'selected' : ''; ?>><?php echo h($status); ?></option>
+                                    <?php endforeach; ?>
+                                </select>
+                                <select name="priority" class="rounded-lg border-slate-300 text-sm min-w-[150px]">
+                                    <option value="All">All Priorities</option>
+                                    <?php foreach ($priorityOptions as $priority): ?>
+                                        <option value="<?php echo h($priority); ?>" <?php echo $priorityFilter === $priority ? 'selected' : ''; ?>><?php echo h($priority); ?></option>
+                                    <?php endforeach; ?>
+                                </select>
+                                <select name="jobs_sort_by" class="rounded-lg border-slate-300 text-sm min-w-[170px]">
+                                    <option value="repair_job_id" <?php echo $jobsSortBy === 'repair_job_id' ? 'selected' : ''; ?>>Sort: Repair Job ID</option>
+                                    <option value="appointment_id" <?php echo $jobsSortBy === 'appointment_id' ? 'selected' : ''; ?>>Sort: Appointment ID</option>
+                                    <option value="appointment_date" <?php echo $jobsSortBy === 'appointment_date' ? 'selected' : ''; ?>>Sort: Repair Date</option>
+                                    <option value="appointment_time" <?php echo $jobsSortBy === 'appointment_time' ? 'selected' : ''; ?>>Sort: Repair Time</option>
+                                    <option value="job_status" <?php echo $jobsSortBy === 'job_status' ? 'selected' : ''; ?>>Sort: Job Status</option>
+                                    <option value="priority" <?php echo $jobsSortBy === 'priority' ? 'selected' : ''; ?>>
+                                        Sort: Priority</option>
+                                    <option value="grand_total" <?php echo $jobsSortBy === 'grand_total' ? 'selected' : ''; ?>>Sort: Grand Total</option>
+                                    <option value="updated_at" <?php echo $jobsSortBy === 'updated_at' ? 'selected' : ''; ?>>Sort: Last Updated</option>
+                                    <option value="completed_at" <?php echo $jobsSortBy === 'completed_at' ? 'selected' : ''; ?>>Sort: Completed Time</option>
+                                </select>
+                                <select name="jobs_sort_dir" class="rounded-lg border-slate-300 text-sm min-w-[120px]">
+                                    <option value="DESC" <?php echo $jobsSortDir === 'DESC' ? 'selected' : ''; ?>>
+                                        Descending</option>
+                                    <option value="ASC" <?php echo $jobsSortDir === 'ASC' ? 'selected' : ''; ?>>Ascending
+                                    </option>
+                                </select>
+                                <button type="submit"
+                                    class="inline-flex items-center justify-center w-11 h-10 rounded-lg border border-slate-300 bg-white text-slate-600 hover:bg-slate-100"
+                                    title="Apply Filters">
+                                    <span class="material-symbols-outlined text-lg">filter_list</span>
+                                </button>
+                            </form>
+                        </div>
+
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-left">
+                                <thead>
+                                    <tr class="bg-slate-50/50">
+                                        <th
+                                            class="px-6 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                                            Order Details</th>
+                                        <th
+                                            class="px-6 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                                            Services</th>
+                                        <th
+                                            class="px-6 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                                            Repair Date & Time</th>
+                                        <th
+                                            class="px-6 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                                            Total</th>
+                                        <th
+                                            class="px-6 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                                            Labor Hrs</th>
+                                        <th
+                                            class="px-6 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                                            Status</th>
+                                        <th
+                                            class="px-6 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                                            Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-slate-100">
+                                    <?php if (count($jobRows) === 0): ?>
+                                        <tr>
+                                            <td colspan="7" class="px-6 py-10 text-center text-sm text-slate-500">No repair
+                                                jobs found for this filter.</td>
+                                        </tr>
+                                    <?php else: ?>
+                                        <?php foreach ($jobRows as $job): ?>
+                                            <?php
+                                            $vehicleText = trim(((string) ($job['year_model'] ?? '')) . ' ' . ((string) ($job['brand'] ?? '')) . ' ' . ((string) ($job['model'] ?? '')));
+                                            $estimatedHours = ((float) ($job['total_estimated_minutes'] ?? 0)) / 60;
+                                            $actualHours = ((float) ($job['total_actual_minutes'] ?? 0)) / 60;
+                                            $repairDateRaw = trim((string) ($job['appointment_date'] ?? ''));
+                                            $repairTimeRaw = trim((string) ($job['appointment_time'] ?? ''));
+                                            $repairDateLabel = $repairDateRaw !== '' ? date('M d, Y', strtotime($repairDateRaw)) : 'No date set';
+                                            $repairTimeLabel = $repairTimeRaw !== '' ? date('h:i A', strtotime($repairTimeRaw)) : 'No time set';
+                                            $hasDiagnosticReport = !empty($job['diagnostic_id']);
+                                            $hasDiagnosticMainService = ((int) ($job['diagnostic_service_count'] ?? 0)) > 0;
+                                            ?>
+                                            <tr class="hover:bg-slate-50/50 transition-colors">
+                                                <td class="px-6 py-4">
+                                                    <div class="font-bold text-sm text-slate-900">
+                                                        <?php echo h(!empty($job['job_order_no']) ? $job['job_order_no'] : 'RJO-' . $job['repair_job_id']); ?>
+                                                    </div>
+                                                    <div class="text-xs text-slate-500">
+                                                        <?php echo h($vehicleText !== '' ? $vehicleText : 'Vehicle record'); ?>
+                                                    </div>
+                                                    <div class="text-[11px] text-slate-400 mt-1">
+                                                        Customer: <?php echo h($job['customer_name']); ?>
+                                                        <?php echo $job['bay_no'] ? ' | Bay: ' . h($job['bay_no']) : ''; ?>
+                                                    </div>
+                                                    <?php if ($hasDiagnosticReport): ?>
+                                                        <div
+                                                            class="mt-1 flex items-center gap-1 text-[11px] text-blue-700 font-bold">
+                                                            <span class="material-symbols-outlined text-sm">clinical_notes</span>
+                                                            Diagnostic: <?php echo h($job['diagnosis_status']); ?> /
+                                                            <?php echo h($job['customer_approval']); ?>
+                                                        </div>
+                                                    <?php endif; ?>
+                                                </td>
+                                                <td class="px-6 py-4 text-sm text-slate-700 max-w-md">
+                                                    <?php echo h($job['services']); ?>
+                                                </td>
+                                                <td class="px-6 py-4 text-sm text-slate-700">
+                                                    <div class="font-semibold text-slate-900"><?php echo h($repairDateLabel); ?>
+                                                    </div>
+                                                    <div class="text-xs text-slate-500"><?php echo h($repairTimeLabel); ?></div>
+                                                </td>
+                                                <td class="px-6 py-4 text-sm font-bold text-slate-900">
+                                                    ₱<?php echo number_format((float) ($job['grand_total'] ?? 0), 2); ?></td>
+                                                <td class="px-6 py-4 text-sm font-medium text-slate-600">
+                                                    <?php echo number_format($actualHours, 1); ?> /
+                                                    <?php echo number_format($estimatedHours, 1); ?>
+                                                </td>
+                                                <td class="px-6 py-4">
+                                                    <span
+                                                        class="inline-flex px-2 py-1 rounded-full text-xs font-bold <?php echo h(statusBadgeClass((string) $job['job_status'])); ?>">
+                                                        <?php echo h($job['job_status']); ?>
+                                                    </span>
+                                                </td>
+                                                <td class="px-6 py-4">
+                                                    <?php if ($job['job_status'] === 'Completed' || $job['job_status'] === 'Cancelled'): ?>
+                                                        <span class="text-xs text-slate-500 font-semibold">Done</span>
+                                                    <?php else: ?>
+                                                        <div class="flex flex-col gap-2">
+                                                            <form method="get" class="flex items-center gap-2">
+                                                                <input type="hidden" name="shop"
+                                                                    value="<?php echo h($loginSlug); ?>">
+                                                                <input type="hidden" name="q" value="<?php echo h($search); ?>">
+                                                                <input type="hidden" name="job_status"
+                                                                    value="<?php echo h($jobStatusFilter); ?>">
+                                                                <input type="hidden" name="service_status"
+                                                                    value="<?php echo h($serviceStatusFilter); ?>">
+                                                                <input type="hidden" name="priority"
+                                                                    value="<?php echo h($priorityFilter); ?>">
+                                                                <select name="job_status"
+                                                                    class="rounded-lg border-slate-300 text-xs"
+                                                                    onchange="handleJobStatusChange(this, <?php echo (int) $job['repair_job_id']; ?>)">
+                                                                    <?php foreach ($jobStatuses as $status): ?>
+                                                                        <option value="<?php echo h($status); ?>" <?php echo $job['job_status'] === $status ? 'selected' : ''; ?>>
+                                                                            <?php echo h($status); ?>
+                                                                        </option>
+                                                                    <?php endforeach; ?>
+                                                                </select>
+                                                            </form>
+
+                                                            <?php if ($job['job_status'] === 'Queued'): ?>
+                                                                <form method="post"
+                                                                    onsubmit="return confirm('Start this repair job now even before the scheduled appointment time?');">
+                                                                    <input type="hidden" name="csrf_token"
+                                                                        value="<?php echo h($csrfToken); ?>">
+                                                                    <input type="hidden" name="repair_job_id"
+                                                                        value="<?php echo (int) $job['repair_job_id']; ?>">
+                                                                    <input type="hidden" name="start_repair_now" value="1">
+                                                                    <button type="submit"
+                                                                        class="inline-flex items-center justify-center gap-1 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-blue-700">
+                                                                        <span
+                                                                            class="material-symbols-outlined text-sm">play_arrow</span>
+                                                                        Start Repair Now
+                                                                    </button>
+                                                                </form>
+                                                            <?php endif; ?>
+
+                                                            <?php if ($job['job_status'] === 'Diagnostics' || ($job['job_status'] === 'In Progress' && !$hasDiagnosticMainService)): ?>
+                                                                <a href="repairjobsadmin.php?<?php echo h(http_build_query(array_filter([
+                                                                    'shop' => $loginSlug,
+                                                                    'q' => $search,
+                                                                    'job_status' => $jobStatusFilter,
+                                                                    'service_status' => $serviceStatusFilter,
+                                                                    'priority' => $priorityFilter,
+                                                                    'diagnostic_job' => (int) $job['repair_job_id'],
+                                                                ], static fn($v) => $v !== ''))); ?>"
+                                                                    class="inline-flex items-center justify-center gap-1 rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-indigo-700">
+                                                                    <span
+                                                                        class="material-symbols-outlined text-sm">clinical_notes</span>
+                                                                    <?php echo $hasDiagnosticReport ? 'Edit Diagnostic' : 'Create Diagnostic'; ?>
+                                                                </a>
+                                                            <?php elseif ($job['job_status'] === 'In Progress' && $hasDiagnosticMainService): ?>
+                                                                <span
+                                                                    class="inline-flex items-center justify-center gap-1 rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-bold text-slate-600">
+                                                                    <span class="material-symbols-outlined text-sm">hourglass_top</span>
+                                                                    In Progress
+                                                                </span>
+                                                            <?php endif; ?>
+                                                        </div>
+                                                    <?php endif; ?>
+                                                </td>
+                                            </tr>
+                                        <?php endforeach; ?>
+                                    <?php endif; ?>
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <div
+                            class="px-6 py-4 border-t border-slate-100 bg-slate-50/40 flex items-center justify-between">
+                            <p class="text-xs text-slate-500 font-medium">Showing
+                                <?php echo number_format(count($jobRows)); ?> of
+                                <?php echo number_format($jobsTotalRows); ?> records
+                            </p>
+                            <div class="flex items-center gap-2">
+                                <?php if ($jobsPage > 1): ?>
+                                    <a href="repairjobsadmin.php?<?php echo h(http_build_query(array_filter([
                                         'shop' => $loginSlug,
                                         'q' => $search,
                                         'job_status' => $jobStatusFilter,
@@ -3020,39 +3061,50 @@ if ($historyStmt) {
                                         'jobs_sort_dir' => $jobsSortDir,
                                         'diagnostics_sort_by' => $diagnosticsSortBy,
                                         'diagnostics_sort_dir' => $diagnosticsSortDir,
-                                        'calendar_month' => $calendarMonth,
-                                        'calendar_date' => $dateKey,
-                                    ], static fn($v) => $v !== ''));
-                                ?>
-                                <a href="<?php echo h($dayUrl); ?>" class="block min-h-[58px] rounded-lg border p-1.5 transition-colors <?php echo $isSelectedDate ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-100' : ($isToday ? 'border-blue-300 bg-blue-50' : ($hasJobs ? 'border-slate-300 bg-white hover:bg-slate-50' : 'border-slate-100 bg-slate-50/50 hover:bg-slate-100')); ?>">
-                                    <div class="flex items-center justify-between gap-1">
-                                        <span class="text-xs font-black <?php echo ($isToday || $isSelectedDate) ? 'text-blue-700' : 'text-slate-800'; ?>"><?php echo (int) $day; ?></span>
-                                        <?php if ($hasJobs): ?>
-                                            <span class="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-slate-900 px-1 text-[9px] font-black text-white"><?php echo (int) $dayData['total']; ?></span>
-                                        <?php endif; ?>
-                                    </div>
-                                    <?php if ($hasJobs): ?>
-                                        <p class="mt-1 text-[9px] font-bold text-slate-600"><?php echo (int) $dayData['active']; ?> active job<?php echo (int) $dayData['active'] === 1 ? '' : 's'; ?></p>
-                                        <div class="mt-1 flex flex-wrap gap-0.5">
-                                            <?php if ((int) $dayData['completed'] > 0): ?><span class="h-1 w-1 rounded-full bg-green-500"></span><?php endif; ?>
-                                            <?php if ((int) $dayData['cancelled'] > 0): ?><span class="h-1 w-1 rounded-full bg-red-500"></span><?php endif; ?>
-                                            <?php if ((int) $dayData['active'] > 0): ?><span class="h-1 w-1 rounded-full bg-blue-500"></span><?php endif; ?>
-                                        </div>
-                                    <?php else: ?>
-                                        <p class="mt-1 text-[9px] text-slate-400">No repair job</p>
-                                    <?php endif; ?>
-                                </a>
-                            <?php endfor; ?>
-                        </div>
-                        <div class="mt-3 flex flex-wrap items-center gap-3 text-[10px] text-slate-500">
-                            <span class="inline-flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full bg-slate-900"></span> Has repair job</span>
-                            <span class="inline-flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full bg-blue-100 border border-blue-300"></span> Today</span>
-                        </div>
+                                        'upcoming_page' => $upcomingPage,
+                                        'jobs_page' => $jobsPage - 1,
+                                        'diagnostics_page' => $diagnosticsPage,
+                                    ], static fn($v) => $v !== ''))); ?>"
+                                        class="px-3 py-1.5 text-xs font-semibold rounded-lg border border-slate-300 bg-white hover:bg-slate-100">Previous</a>
+                                <?php endif; ?>
 
-                        <?php if ($calendarDateFilter !== ''): ?>
-                            <div class="mt-4 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-800">
-                                Showing active repair jobs for <strong><?php echo h(date('F d, Y', strtotime($calendarDateFilter))); ?></strong>.
-                                <a class="font-bold underline ml-1" href="repairjobsadmin.php?<?php echo h(http_build_query(array_filter([
+                                <span class="px-2 py-1 text-xs font-semibold text-slate-600">Page
+                                    <?php echo (int) $jobsPage; ?> of <?php echo (int) $jobsTotalPages; ?></span>
+
+                                <?php if ($jobsPage < $jobsTotalPages): ?>
+                                    <a href="repairjobsadmin.php?<?php echo h(http_build_query(array_filter([
+                                        'shop' => $loginSlug,
+                                        'q' => $search,
+                                        'job_status' => $jobStatusFilter,
+                                        'service_status' => $serviceStatusFilter,
+                                        'priority' => $priorityFilter,
+                                        'upcoming_sort_by' => $upcomingSortBy,
+                                        'upcoming_sort_dir' => $upcomingSortDir,
+                                        'jobs_sort_by' => $jobsSortBy,
+                                        'jobs_sort_dir' => $jobsSortDir,
+                                        'diagnostics_sort_by' => $diagnosticsSortBy,
+                                        'diagnostics_sort_dir' => $diagnosticsSortDir,
+                                        'upcoming_page' => $upcomingPage,
+                                        'jobs_page' => $jobsPage + 1,
+                                        'diagnostics_page' => $diagnosticsPage,
+                                    ], static fn($v) => $v !== ''))); ?>"
+                                        class="px-3 py-1.5 text-xs font-semibold rounded-lg border border-slate-300 bg-white hover:bg-slate-100">Next</a>
+                                <?php endif; ?>
+                            </div>
+                        </div>
+                    </section>
+
+                    <section
+                        class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden min-w-0 xl:sticky xl:top-24">
+                        <div
+                            class="px-4 py-4 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                            <div>
+                                <h3 class="text-lg font-bold text-slate-900">Calendar</h3>
+                                <p class="text-xs text-slate-500 font-medium">Repair-job schedule by appointment date.
+                                </p>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <a href="repairjobsadmin.php?<?php echo h(http_build_query(array_filter([
                                     'shop' => $loginSlug,
                                     'q' => $search,
                                     'job_status' => $jobStatusFilter,
@@ -3064,705 +3116,993 @@ if ($historyStmt) {
                                     'jobs_sort_dir' => $jobsSortDir,
                                     'diagnostics_sort_by' => $diagnosticsSortBy,
                                     'diagnostics_sort_dir' => $diagnosticsSortDir,
-                                    'calendar_month' => $calendarMonth,
-                                'calendar_date' => $calendarDateFilter,
-                                ], static fn($v) => $v !== ''))); ?>">Clear date filter</a>
+                                    'calendar_month' => $calendarPrevMonth,
+                                ], static fn($v) => $v !== ''))); ?>"
+                                    class="inline-flex items-center justify-center w-8 h-8 rounded-lg border border-slate-300 text-slate-600 hover:bg-slate-100"><span
+                                        class="material-symbols-outlined text-lg">chevron_left</span></a>
+                                <span
+                                    class="min-w-[115px] text-center text-xs font-black text-slate-900"><?php echo h($calendarMonthLabel); ?></span>
+                                <a href="repairjobsadmin.php?<?php echo h(http_build_query(array_filter([
+                                    'shop' => $loginSlug,
+                                    'q' => $search,
+                                    'job_status' => $jobStatusFilter,
+                                    'service_status' => $serviceStatusFilter,
+                                    'priority' => $priorityFilter,
+                                    'upcoming_sort_by' => $upcomingSortBy,
+                                    'upcoming_sort_dir' => $upcomingSortDir,
+                                    'jobs_sort_by' => $jobsSortBy,
+                                    'jobs_sort_dir' => $jobsSortDir,
+                                    'diagnostics_sort_by' => $diagnosticsSortBy,
+                                    'diagnostics_sort_dir' => $diagnosticsSortDir,
+                                    'calendar_month' => $calendarNextMonth,
+                                ], static fn($v) => $v !== ''))); ?>"
+                                    class="inline-flex items-center justify-center w-8 h-8 rounded-lg border border-slate-300 text-slate-600 hover:bg-slate-100"><span
+                                        class="material-symbols-outlined text-lg">chevron_right</span></a>
                             </div>
-                        <?php endif; ?>
+                        </div>
+                        <div class="p-4">
+                            <div class="w-full">
+                                <div class="grid grid-cols-7 gap-1 mb-2">
+                                    <?php foreach (['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] as $dayName): ?>
+                                        <div
+                                            class="text-center text-[10px] font-black uppercase tracking-widest text-slate-400">
+                                            <?php echo h($dayName); ?>
+                                        </div>
+                                    <?php endforeach; ?>
+                                </div>
+                                <div class="grid grid-cols-7 gap-1">
+                                    <?php for ($blank = 1; $blank < $calendarFirstWeekday; $blank++): ?>
+                                        <div class="min-h-[46px] rounded-xl border border-transparent bg-slate-50/40"></div>
+                                    <?php endfor; ?>
+                                    <?php for ($day = 1; $day <= $calendarDaysInMonth; $day++): ?>
+                                        <?php
+                                        $dateKey = $calendarFirstDateObj->format('Y-m-') . str_pad((string) $day, 2, '0', STR_PAD_LEFT);
+                                        $dayData = $calendarAppointmentsByDate[$dateKey] ?? ['total' => 0, 'active' => 0, 'completed' => 0, 'cancelled' => 0];
+                                        $isToday = $dateKey === date('Y-m-d');
+                                        $isSelectedDate = $calendarDateFilter === $dateKey;
+                                        $hasJobs = ((int) $dayData['total']) > 0;
+                                        $dayUrl = 'repairjobsadmin.php?' . http_build_query(array_filter([
+                                            'shop' => $loginSlug,
+                                            'q' => $search,
+                                            'job_status' => $jobStatusFilter,
+                                            'service_status' => $serviceStatusFilter,
+                                            'priority' => $priorityFilter,
+                                            'upcoming_sort_by' => $upcomingSortBy,
+                                            'upcoming_sort_dir' => $upcomingSortDir,
+                                            'jobs_sort_by' => $jobsSortBy,
+                                            'jobs_sort_dir' => $jobsSortDir,
+                                            'diagnostics_sort_by' => $diagnosticsSortBy,
+                                            'diagnostics_sort_dir' => $diagnosticsSortDir,
+                                            'calendar_month' => $calendarMonth,
+                                            'calendar_date' => $dateKey,
+                                        ], static fn($v) => $v !== ''));
+                                        ?>
+                                        <a href="<?php echo h($dayUrl); ?>"
+                                            class="block min-h-[58px] rounded-lg border p-1.5 transition-colors <?php echo $isSelectedDate ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-100' : ($isToday ? 'border-blue-300 bg-blue-50' : ($hasJobs ? 'border-slate-300 bg-white hover:bg-slate-50' : 'border-slate-100 bg-slate-50/50 hover:bg-slate-100')); ?>">
+                                            <div class="flex items-center justify-between gap-1">
+                                                <span
+                                                    class="text-xs font-black <?php echo ($isToday || $isSelectedDate) ? 'text-blue-700' : 'text-slate-800'; ?>"><?php echo (int) $day; ?></span>
+                                                <?php if ($hasJobs): ?>
+                                                    <span
+                                                        class="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-slate-900 px-1 text-[9px] font-black text-white"><?php echo (int) $dayData['total']; ?></span>
+                                                <?php endif; ?>
+                                            </div>
+                                            <?php if ($hasJobs): ?>
+                                                <p class="mt-1 text-[9px] font-bold text-slate-600">
+                                                    <?php echo (int) $dayData['active']; ?> active
+                                                    job<?php echo (int) $dayData['active'] === 1 ? '' : 's'; ?>
+                                                </p>
+                                                <div class="mt-1 flex flex-wrap gap-0.5">
+                                                    <?php if ((int) $dayData['completed'] > 0): ?><span
+                                                            class="h-1 w-1 rounded-full bg-green-500"></span><?php endif; ?>
+                                                    <?php if ((int) $dayData['cancelled'] > 0): ?><span
+                                                            class="h-1 w-1 rounded-full bg-red-500"></span><?php endif; ?>
+                                                    <?php if ((int) $dayData['active'] > 0): ?><span
+                                                            class="h-1 w-1 rounded-full bg-blue-500"></span><?php endif; ?>
+                                                </div>
+                                            <?php else: ?>
+                                                <p class="mt-1 text-[9px] text-slate-400">No repair job</p>
+                                            <?php endif; ?>
+                                        </a>
+                                    <?php endfor; ?>
+                                </div>
+                                <div class="mt-3 flex flex-wrap items-center gap-3 text-[10px] text-slate-500">
+                                    <span class="inline-flex items-center gap-1"><span
+                                            class="w-2.5 h-2.5 rounded-full bg-slate-900"></span> Has repair job</span>
+                                    <span class="inline-flex items-center gap-1"><span
+                                            class="w-2.5 h-2.5 rounded-full bg-blue-100 border border-blue-300"></span>
+                                        Today</span>
+                                </div>
 
+                                <?php if ($calendarDateFilter !== ''): ?>
+                                    <div
+                                        class="mt-4 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-800">
+                                        Showing active repair jobs for
+                                        <strong><?php echo h(date('F d, Y', strtotime($calendarDateFilter))); ?></strong>.
+                                        <a class="font-bold underline ml-1" href="repairjobsadmin.php?<?php echo h(http_build_query(array_filter([
+                                            'shop' => $loginSlug,
+                                            'q' => $search,
+                                            'job_status' => $jobStatusFilter,
+                                            'service_status' => $serviceStatusFilter,
+                                            'priority' => $priorityFilter,
+                                            'upcoming_sort_by' => $upcomingSortBy,
+                                            'upcoming_sort_dir' => $upcomingSortDir,
+                                            'jobs_sort_by' => $jobsSortBy,
+                                            'jobs_sort_dir' => $jobsSortDir,
+                                            'diagnostics_sort_by' => $diagnosticsSortBy,
+                                            'diagnostics_sort_dir' => $diagnosticsSortDir,
+                                            'calendar_month' => $calendarMonth,
+                                            'calendar_date' => $calendarDateFilter,
+                                        ], static fn($v) => $v !== ''))); ?>">Clear date filter</a>
+                                    </div>
+                                <?php endif; ?>
+
+                            </div>
+                        </div>
+                    </section>
+                </div>
+
+                <section class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden mb-8"
+                    id="repairHistorySection">
+                    <div
+                        class="px-6 py-5 border-b border-slate-100 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                        <div>
+                            <h3 class="text-lg font-bold text-slate-900">Repair Jobs History</h3>
+                            <p class="text-xs text-slate-500 font-medium">Completed and cancelled repair jobs from the
+                                existing repair_jobs table.</p>
+                        </div>
+                        <span class="text-xs font-bold text-slate-500"><span
+                                id="historyVisibleCount"><?php echo number_format(count($historyRows)); ?></span>
+                            rows</span>
+                    </div>
+
+                    <div
+                        class="px-6 py-4 border-b border-slate-100 bg-slate-50/40 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                        <div class="relative flex-1 min-w-[240px] max-w-xl">
+                            <span
+                                class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">search</span>
+                            <input type="text" id="historySearch"
+                                placeholder="Search job order, customer, vehicle, service, technician..."
+                                class="w-full rounded-lg border-slate-300 pl-9 pr-3 py-2 text-sm" autocomplete="off" />
+                        </div>
+                        <div class="flex flex-wrap gap-2" id="historyFilterButtons">
+                            <button type="button" data-history-filter="All"
+                                class="history-filter-btn rounded-lg bg-slate-900 px-3 py-2 text-xs font-bold text-white hover:bg-slate-800">All</button>
+                            <button type="button" data-history-filter="Completed"
+                                class="history-filter-btn rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-100">Completed</button>
+                            <button type="button" data-history-filter="Cancelled"
+                                class="history-filter-btn rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-100">Cancelled</button>
+                        </div>
+                    </div>
+
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left" id="historyTable">
+                            <thead>
+                                <tr class="bg-slate-50/50">
+                                    <th
+                                        class="px-6 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                                        Order Details</th>
+                                    <th
+                                        class="px-6 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                                        Services</th>
+                                    <th
+                                        class="px-6 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                                        Technician / Bay</th>
+                                    <th
+                                        class="px-6 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                                        Totals</th>
+                                    <th
+                                        class="px-6 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                                        Final Status</th>
+                                    <th
+                                        class="px-6 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                                        Date</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php if (count($historyRows) === 0): ?>
+                                    <tr class="history-empty-row">
+                                        <td colspan="6" class="px-6 py-10 text-center text-sm font-semibold text-slate-500">
+                                            No completed or cancelled repair jobs yet.</td>
+                                    </tr>
+                                <?php else: ?>
+                                    <?php foreach ($historyRows as $history): ?>
+                                        <?php
+                                        $historyVehicle = trim((string) ($history['vehicle_name'] ?? ''));
+                                        $historyDateValue = $history['job_status'] === 'Completed'
+                                            ? ($history['completed_at'] ?: $history['updated_at'])
+                                            : ($history['updated_at'] ?: $history['completed_at']);
+                                        $historySearchText = strtolower(trim(implode(' ', [
+                                            $history['job_order_no'] ?? '',
+                                            $history['customer_name'] ?? '',
+                                            $historyVehicle,
+                                            $history['services'] ?? '',
+                                            $history['assigned_technician'] ?? '',
+                                            $history['bay_no'] ?? '',
+                                            $history['job_status'] ?? '',
+                                        ])));
+                                        ?>
+                                        <tr class="border-t border-slate-100 history-row"
+                                            data-history-status="<?php echo h($history['job_status']); ?>"
+                                            data-history-search="<?php echo h($historySearchText); ?>">
+                                            <td class="px-6 py-4 align-top">
+                                                <p class="text-sm font-bold text-slate-900">
+                                                    <?php echo h($history['job_order_no']); ?>
+                                                </p>
+                                                <p class="text-xs font-semibold text-slate-600 mt-1">
+                                                    <?php echo h($history['customer_name']); ?>
+                                                </p>
+                                                <p class="text-xs text-slate-500 mt-1">
+                                                    <?php echo h($historyVehicle !== '' ? $historyVehicle : 'Vehicle not set'); ?>
+                                                </p>
+                                            </td>
+                                            <td class="px-6 py-4 align-top max-w-[280px]">
+                                                <p class="text-xs text-slate-600 leading-relaxed">
+                                                    <?php echo h($history['services']); ?>
+                                                </p>
+                                            </td>
+                                            <td class="px-6 py-4 align-top">
+                                                <p class="text-xs font-semibold text-slate-700">
+                                                    <?php echo h($history['assigned_technician'] ?: 'Unassigned'); ?>
+                                                </p>
+                                                <p class="text-xs text-slate-500 mt-1">Bay:
+                                                    <?php echo h($history['bay_no'] ?: 'N/A'); ?>
+                                                </p>
+                                            </td>
+                                            <td class="px-6 py-4 align-top">
+                                                <p class="text-sm font-black text-slate-900">
+                                                    ₱<?php echo number_format((float) ($history['grand_total'] ?? 0), 2); ?></p>
+                                                <p class="text-[11px] text-slate-500 mt-1">Labor:
+                                                    ₱<?php echo number_format((float) ($history['labor_total'] ?? 0), 2); ?></p>
+                                                <p class="text-[11px] text-slate-500">Parts:
+                                                    ₱<?php echo number_format((float) ($history['parts_total'] ?? 0), 2); ?></p>
+                                            </td>
+                                            <td class="px-6 py-4 align-top">
+                                                <span
+                                                    class="inline-flex items-center rounded-full px-2.5 py-1 text-xs font-bold <?php echo h(statusBadgeClass((string) $history['job_status'])); ?>">
+                                                    <?php echo h($history['job_status']); ?>
+                                                </span>
+                                            </td>
+                                            <td class="px-6 py-4 align-top">
+                                                <p class="text-xs font-semibold text-slate-700">
+                                                    <?php echo !empty($historyDateValue) ? h(date('M d, Y', strtotime((string) $historyDateValue))) : '-'; ?>
+                                                </p>
+                                                <p class="text-[11px] text-slate-500 mt-1">
+                                                    <?php echo !empty($historyDateValue) ? h(date('h:i A', strtotime((string) $historyDateValue))) : ''; ?>
+                                                </p>
+                                            </td>
+                                        </tr>
+                                    <?php endforeach; ?>
+                                    <tr id="historyNoResultsRow" class="hidden">
+                                        <td colspan="6" class="px-6 py-10 text-center text-sm font-semibold text-slate-500">
+                                            No history records match your search/filter.</td>
+                                    </tr>
+                                <?php endif; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+
+                <section class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                    <div class="px-6 py-5 border-b border-slate-100 flex items-center justify-between">
+                        <div>
+                            <h3 class="text-lg font-bold text-slate-900">Diagnostic Reports</h3>
+                            <p class="text-xs text-slate-500 font-medium">Recommended sub-services waiting for customer
+                                approval.</p>
+                        </div>
+                        <div class="flex items-center gap-3">
+                            <form method="get" class="flex items-center gap-2">
+                                <input type="hidden" name="shop" value="<?php echo h($loginSlug); ?>">
+                                <input type="hidden" name="q" value="<?php echo h($search); ?>">
+                                <input type="hidden" name="job_status" value="<?php echo h($jobStatusFilter); ?>">
+                                <input type="hidden" name="service_status"
+                                    value="<?php echo h($serviceStatusFilter); ?>">
+                                <input type="hidden" name="priority" value="<?php echo h($priorityFilter); ?>">
+                                <input type="hidden" name="upcoming_sort_by" value="<?php echo h($upcomingSortBy); ?>">
+                                <input type="hidden" name="upcoming_sort_dir"
+                                    value="<?php echo h($upcomingSortDir); ?>">
+                                <input type="hidden" name="jobs_sort_by" value="<?php echo h($jobsSortBy); ?>">
+                                <input type="hidden" name="jobs_sort_dir" value="<?php echo h($jobsSortDir); ?>">
+                                <select name="diagnostics_sort_by"
+                                    class="rounded-lg border-slate-300 text-xs min-w-[170px]">
+                                    <option value="updated_at" <?php echo $diagnosticsSortBy === 'updated_at' ? 'selected' : ''; ?>>Sort: Last Updated</option>
+                                    <option value="created_at" <?php echo $diagnosticsSortBy === 'created_at' ? 'selected' : ''; ?>>Sort: Created Time</option>
+                                    <option value="diagnostic_id" <?php echo $diagnosticsSortBy === 'diagnostic_id' ? 'selected' : ''; ?>>Sort: Diagnostic ID</option>
+                                    <option value="repair_job_id" <?php echo $diagnosticsSortBy === 'repair_job_id' ? 'selected' : ''; ?>>Sort: Repair Job ID</option>
+                                    <option value="appointment_id" <?php echo $diagnosticsSortBy === 'appointment_id' ? 'selected' : ''; ?>>Sort: Appointment ID</option>
+                                    <option value="mechanic_name" <?php echo $diagnosticsSortBy === 'mechanic_name' ? 'selected' : ''; ?>>Sort: Mechanic</option>
+                                    <option value="estimated_total" <?php echo $diagnosticsSortBy === 'estimated_total' ? 'selected' : ''; ?>>Sort: Estimated Total</option>
+                                    <option value="customer_approval" <?php echo $diagnosticsSortBy === 'customer_approval' ? 'selected' : ''; ?>>Sort: Approval
+                                    </option>
+                                    <option value="diagnosis_status" <?php echo $diagnosticsSortBy === 'diagnosis_status' ? 'selected' : ''; ?>>Sort: Status</option>
+                                </select>
+                                <select name="diagnostics_sort_dir"
+                                    class="rounded-lg border-slate-300 text-xs min-w-[110px]">
+                                    <option value="DESC" <?php echo $diagnosticsSortDir === 'DESC' ? 'selected' : ''; ?>>
+                                        Descending</option>
+                                    <option value="ASC" <?php echo $diagnosticsSortDir === 'ASC' ? 'selected' : ''; ?>>
+                                        Ascending</option>
+                                </select>
+                                <button type="submit"
+                                    class="px-3 py-2 rounded-lg border border-slate-300 bg-white text-xs font-semibold text-slate-700 hover:bg-slate-100">Apply</button>
+                            </form>
+                            <span
+                                class="text-xs font-bold text-slate-500"><?php echo number_format($diagnosticTotalRows); ?>
+                                report(s)</span>
+                        </div>
+                    </div>
+
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left">
+                            <thead>
+                                <tr class="bg-slate-50/50">
+                                    <th
+                                        class="px-6 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                                        Report</th>
+                                    <th
+                                        class="px-6 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                                        Customer / Vehicle</th>
+                                    <th
+                                        class="px-6 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                                        Recommended Sub-Services</th>
+                                    <th
+                                        class="px-6 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                                        Estimated Total</th>
+                                    <th
+                                        class="px-6 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                                        Approval</th>
+                                    <th
+                                        class="px-6 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                                        Status</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-slate-100">
+                                <?php if (count($diagnosticRows) === 0): ?>
+                                    <tr>
+                                        <td colspan="6" class="px-6 py-10 text-center text-sm text-slate-500">No diagnostic
+                                            reports yet.</td>
+                                    </tr>
+                                <?php else: ?>
+                                    <?php foreach ($diagnosticRows as $report): ?>
+                                        <tr class="hover:bg-slate-50/50 transition-colors">
+                                            <td class="px-6 py-4">
+                                                <div class="font-bold text-sm text-slate-900">
+                                                    <?php echo h($report['job_order_no']); ?>
+                                                </div>
+                                                <div class="text-xs text-slate-500">Mechanic:
+                                                    <?php echo h($report['mechanic_name']); ?>
+                                                </div>
+                                                <div class="text-[11px] text-slate-400 mt-1">
+                                                    <?php echo h(date('M d, Y h:i A', strtotime((string) $report['updated_at']))); ?>
+                                                </div>
+                                            </td>
+                                            <td class="px-6 py-4 text-sm">
+                                                <div class="font-semibold text-slate-800">
+                                                    <?php echo h($report['customer_name']); ?>
+                                                </div>
+                                                <div class="text-xs text-slate-500">
+                                                    <?php echo h(trim((string) $report['vehicle_name']) !== '' ? $report['vehicle_name'] : 'Vehicle record'); ?>
+                                                </div>
+                                            </td>
+                                            <td class="px-6 py-4 text-sm text-slate-700 max-w-md">
+                                                <?php echo h($report['recommended_services']); ?>
+                                            </td>
+                                            <td class="px-6 py-4 text-sm font-bold text-slate-900">
+                                                ₱<?php echo number_format((float) ($report['estimated_total'] ?? 0), 2); ?></td>
+                                            <td class="px-6 py-4">
+                                                <span
+                                                    class="inline-flex px-2 py-1 rounded-full text-xs font-bold <?php echo h(statusBadgeClass((string) $report['customer_approval'])); ?>">
+                                                    <?php echo h($report['customer_approval']); ?>
+                                                </span>
+                                            </td>
+                                            <td class="px-6 py-4">
+                                                <span
+                                                    class="inline-flex px-2 py-1 rounded-full text-xs font-bold <?php echo h(statusBadgeClass((string) $report['diagnosis_status'])); ?>">
+                                                    <?php echo h($report['diagnosis_status']); ?>
+                                                </span>
+                                            </td>
+                                        </tr>
+                                    <?php endforeach; ?>
+                                <?php endif; ?>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div class="px-6 py-4 border-t border-slate-100 bg-slate-50/40 flex items-center justify-between">
+                        <p class="text-xs text-slate-500 font-medium">Showing
+                            <?php echo number_format(count($diagnosticRows)); ?> of
+                            <?php echo number_format($diagnosticTotalRows); ?> records
+                        </p>
+                        <div class="flex items-center gap-2">
+                            <?php if ($diagnosticsPage > 1): ?>
+                                <a href="repairjobsadmin.php?<?php echo h(http_build_query(array_filter([
+                                    'shop' => $loginSlug,
+                                    'q' => $search,
+                                    'job_status' => $jobStatusFilter,
+                                    'service_status' => $serviceStatusFilter,
+                                    'priority' => $priorityFilter,
+                                    'upcoming_sort_by' => $upcomingSortBy,
+                                    'upcoming_sort_dir' => $upcomingSortDir,
+                                    'jobs_sort_by' => $jobsSortBy,
+                                    'jobs_sort_dir' => $jobsSortDir,
+                                    'diagnostics_sort_by' => $diagnosticsSortBy,
+                                    'diagnostics_sort_dir' => $diagnosticsSortDir,
+                                    'upcoming_page' => $upcomingPage,
+                                    'jobs_page' => $jobsPage,
+                                    'diagnostics_page' => $diagnosticsPage - 1,
+                                ], static fn($v) => $v !== ''))); ?>"
+                                    class="px-3 py-1.5 text-xs font-semibold rounded-lg border border-slate-300 bg-white hover:bg-slate-100">Previous</a>
+                            <?php endif; ?>
+
+                            <span class="px-2 py-1 text-xs font-semibold text-slate-600">Page
+                                <?php echo (int) $diagnosticsPage; ?> of
+                                <?php echo (int) $diagnosticTotalPages; ?></span>
+
+                            <?php if ($diagnosticsPage < $diagnosticTotalPages): ?>
+                                <a href="repairjobsadmin.php?<?php echo h(http_build_query(array_filter([
+                                    'shop' => $loginSlug,
+                                    'q' => $search,
+                                    'job_status' => $jobStatusFilter,
+                                    'service_status' => $serviceStatusFilter,
+                                    'priority' => $priorityFilter,
+                                    'upcoming_sort_by' => $upcomingSortBy,
+                                    'upcoming_sort_dir' => $upcomingSortDir,
+                                    'jobs_sort_by' => $jobsSortBy,
+                                    'jobs_sort_dir' => $jobsSortDir,
+                                    'diagnostics_sort_by' => $diagnosticsSortBy,
+                                    'diagnostics_sort_dir' => $diagnosticsSortDir,
+                                    'upcoming_page' => $upcomingPage,
+                                    'jobs_page' => $jobsPage,
+                                    'diagnostics_page' => $diagnosticsPage + 1,
+                                ], static fn($v) => $v !== ''))); ?>"
+                                    class="px-3 py-1.5 text-xs font-semibold rounded-lg border border-slate-300 bg-white hover:bg-slate-100">Next</a>
+                            <?php endif; ?>
                         </div>
                     </div>
                 </section>
-            </div>
-
-            <section class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden mb-8" id="repairHistorySection">
-                <div class="px-6 py-5 border-b border-slate-100 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-                    <div>
-                        <h3 class="text-lg font-bold text-slate-900">Repair Jobs History</h3>
-                        <p class="text-xs text-slate-500 font-medium">Completed and cancelled repair jobs from the existing repair_jobs table.</p>
-                    </div>
-                    <span class="text-xs font-bold text-slate-500"><span id="historyVisibleCount"><?php echo number_format(count($historyRows)); ?></span> rows</span>
-                </div>
-
-                <div class="px-6 py-4 border-b border-slate-100 bg-slate-50/40 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                    <div class="relative flex-1 min-w-[240px] max-w-xl">
-                        <span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">search</span>
-                        <input type="text" id="historySearch" placeholder="Search job order, customer, vehicle, service, technician..." class="w-full rounded-lg border-slate-300 pl-9 pr-3 py-2 text-sm" autocomplete="off" />
-                    </div>
-                    <div class="flex flex-wrap gap-2" id="historyFilterButtons">
-                        <button type="button" data-history-filter="All" class="history-filter-btn rounded-lg bg-slate-900 px-3 py-2 text-xs font-bold text-white hover:bg-slate-800">All</button>
-                        <button type="button" data-history-filter="Completed" class="history-filter-btn rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-100">Completed</button>
-                        <button type="button" data-history-filter="Cancelled" class="history-filter-btn rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-100">Cancelled</button>
-                    </div>
-                </div>
-
-                <div class="overflow-x-auto">
-                    <table class="w-full text-left" id="historyTable">
-                        <thead>
-                        <tr class="bg-slate-50/50">
-                            <th class="px-6 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">Order Details</th>
-                            <th class="px-6 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">Services</th>
-                            <th class="px-6 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">Technician / Bay</th>
-                            <th class="px-6 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">Totals</th>
-                            <th class="px-6 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">Final Status</th>
-                            <th class="px-6 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">Date</th>
-                        </tr>
-                        </thead>
-                        <tbody>
-                        <?php if (count($historyRows) === 0): ?>
-                            <tr class="history-empty-row">
-                                <td colspan="6" class="px-6 py-10 text-center text-sm font-semibold text-slate-500">No completed or cancelled repair jobs yet.</td>
-                            </tr>
-                        <?php else: ?>
-                            <?php foreach ($historyRows as $history): ?>
-                                <?php
-                                    $historyVehicle = trim((string) ($history['vehicle_name'] ?? ''));
-                                    $historyDateValue = $history['job_status'] === 'Completed'
-                                        ? ($history['completed_at'] ?: $history['updated_at'])
-                                        : ($history['updated_at'] ?: $history['completed_at']);
-                                    $historySearchText = strtolower(trim(implode(' ', [
-                                        $history['job_order_no'] ?? '',
-                                        $history['customer_name'] ?? '',
-                                        $historyVehicle,
-                                        $history['services'] ?? '',
-                                        $history['assigned_technician'] ?? '',
-                                        $history['bay_no'] ?? '',
-                                        $history['job_status'] ?? '',
-                                    ])));
-                                ?>
-                                <tr class="border-t border-slate-100 history-row" data-history-status="<?php echo h($history['job_status']); ?>" data-history-search="<?php echo h($historySearchText); ?>">
-                                    <td class="px-6 py-4 align-top">
-                                        <p class="text-sm font-bold text-slate-900"><?php echo h($history['job_order_no']); ?></p>
-                                        <p class="text-xs font-semibold text-slate-600 mt-1"><?php echo h($history['customer_name']); ?></p>
-                                        <p class="text-xs text-slate-500 mt-1"><?php echo h($historyVehicle !== '' ? $historyVehicle : 'Vehicle not set'); ?></p>
-                                    </td>
-                                    <td class="px-6 py-4 align-top max-w-[280px]">
-                                        <p class="text-xs text-slate-600 leading-relaxed"><?php echo h($history['services']); ?></p>
-                                    </td>
-                                    <td class="px-6 py-4 align-top">
-                                        <p class="text-xs font-semibold text-slate-700"><?php echo h($history['assigned_technician'] ?: 'Unassigned'); ?></p>
-                                        <p class="text-xs text-slate-500 mt-1">Bay: <?php echo h($history['bay_no'] ?: 'N/A'); ?></p>
-                                    </td>
-                                    <td class="px-6 py-4 align-top">
-                                        <p class="text-sm font-black text-slate-900">₱<?php echo number_format((float) ($history['grand_total'] ?? 0), 2); ?></p>
-                                        <p class="text-[11px] text-slate-500 mt-1">Labor: ₱<?php echo number_format((float) ($history['labor_total'] ?? 0), 2); ?></p>
-                                        <p class="text-[11px] text-slate-500">Parts: ₱<?php echo number_format((float) ($history['parts_total'] ?? 0), 2); ?></p>
-                                    </td>
-                                    <td class="px-6 py-4 align-top">
-                                        <span class="inline-flex items-center rounded-full px-2.5 py-1 text-xs font-bold <?php echo h(statusBadgeClass((string) $history['job_status'])); ?>">
-                                            <?php echo h($history['job_status']); ?>
-                                        </span>
-                                    </td>
-                                    <td class="px-6 py-4 align-top">
-                                        <p class="text-xs font-semibold text-slate-700">
-                                            <?php echo !empty($historyDateValue) ? h(date('M d, Y', strtotime((string) $historyDateValue))) : '-'; ?>
-                                        </p>
-                                        <p class="text-[11px] text-slate-500 mt-1">
-                                            <?php echo !empty($historyDateValue) ? h(date('h:i A', strtotime((string) $historyDateValue))) : ''; ?>
-                                        </p>
-                                    </td>
-                                </tr>
-                            <?php endforeach; ?>
-                            <tr id="historyNoResultsRow" class="hidden">
-                                <td colspan="6" class="px-6 py-10 text-center text-sm font-semibold text-slate-500">No history records match your search/filter.</td>
-                            </tr>
-                        <?php endif; ?>
-                        </tbody>
-                    </table>
-                </div>
-            </section>
-
-            <section class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-                <div class="px-6 py-5 border-b border-slate-100 flex items-center justify-between">
-                    <div>
-                        <h3 class="text-lg font-bold text-slate-900">Diagnostic Reports</h3>
-                        <p class="text-xs text-slate-500 font-medium">Recommended sub-services waiting for customer approval.</p>
-                    </div>
-                    <div class="flex items-center gap-3">
-                        <form method="get" class="flex items-center gap-2">
-                            <input type="hidden" name="shop" value="<?php echo h($loginSlug); ?>">
-                            <input type="hidden" name="q" value="<?php echo h($search); ?>">
-                            <input type="hidden" name="job_status" value="<?php echo h($jobStatusFilter); ?>">
-                            <input type="hidden" name="service_status" value="<?php echo h($serviceStatusFilter); ?>">
-                            <input type="hidden" name="priority" value="<?php echo h($priorityFilter); ?>">
-                            <input type="hidden" name="upcoming_sort_by" value="<?php echo h($upcomingSortBy); ?>">
-                            <input type="hidden" name="upcoming_sort_dir" value="<?php echo h($upcomingSortDir); ?>">
-                            <input type="hidden" name="jobs_sort_by" value="<?php echo h($jobsSortBy); ?>">
-                            <input type="hidden" name="jobs_sort_dir" value="<?php echo h($jobsSortDir); ?>">
-                            <select name="diagnostics_sort_by" class="rounded-lg border-slate-300 text-xs min-w-[170px]">
-                                <option value="updated_at" <?php echo $diagnosticsSortBy === 'updated_at' ? 'selected' : ''; ?>>Sort: Last Updated</option>
-                                <option value="created_at" <?php echo $diagnosticsSortBy === 'created_at' ? 'selected' : ''; ?>>Sort: Created Time</option>
-                                <option value="diagnostic_id" <?php echo $diagnosticsSortBy === 'diagnostic_id' ? 'selected' : ''; ?>>Sort: Diagnostic ID</option>
-                                <option value="repair_job_id" <?php echo $diagnosticsSortBy === 'repair_job_id' ? 'selected' : ''; ?>>Sort: Repair Job ID</option>
-                                <option value="appointment_id" <?php echo $diagnosticsSortBy === 'appointment_id' ? 'selected' : ''; ?>>Sort: Appointment ID</option>
-                                <option value="mechanic_name" <?php echo $diagnosticsSortBy === 'mechanic_name' ? 'selected' : ''; ?>>Sort: Mechanic</option>
-                                <option value="estimated_total" <?php echo $diagnosticsSortBy === 'estimated_total' ? 'selected' : ''; ?>>Sort: Estimated Total</option>
-                                <option value="customer_approval" <?php echo $diagnosticsSortBy === 'customer_approval' ? 'selected' : ''; ?>>Sort: Approval</option>
-                                <option value="diagnosis_status" <?php echo $diagnosticsSortBy === 'diagnosis_status' ? 'selected' : ''; ?>>Sort: Status</option>
-                            </select>
-                            <select name="diagnostics_sort_dir" class="rounded-lg border-slate-300 text-xs min-w-[110px]">
-                                <option value="DESC" <?php echo $diagnosticsSortDir === 'DESC' ? 'selected' : ''; ?>>Descending</option>
-                                <option value="ASC" <?php echo $diagnosticsSortDir === 'ASC' ? 'selected' : ''; ?>>Ascending</option>
-                            </select>
-                            <button type="submit" class="px-3 py-2 rounded-lg border border-slate-300 bg-white text-xs font-semibold text-slate-700 hover:bg-slate-100">Apply</button>
-                        </form>
-                        <span class="text-xs font-bold text-slate-500"><?php echo number_format($diagnosticTotalRows); ?> report(s)</span>
-                    </div>
-                </div>
-
-                <div class="overflow-x-auto">
-                    <table class="w-full text-left">
-                        <thead>
-                        <tr class="bg-slate-50/50">
-                            <th class="px-6 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">Report</th>
-                            <th class="px-6 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">Customer / Vehicle</th>
-                            <th class="px-6 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">Recommended Sub-Services</th>
-                            <th class="px-6 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">Estimated Total</th>
-                            <th class="px-6 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">Approval</th>
-                            <th class="px-6 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">Status</th>
-                        </tr>
-                        </thead>
-                        <tbody class="divide-y divide-slate-100">
-                        <?php if (count($diagnosticRows) === 0): ?>
-                            <tr>
-                                <td colspan="6" class="px-6 py-10 text-center text-sm text-slate-500">No diagnostic reports yet.</td>
-                            </tr>
-                        <?php else: ?>
-                            <?php foreach ($diagnosticRows as $report): ?>
-                                <tr class="hover:bg-slate-50/50 transition-colors">
-                                    <td class="px-6 py-4">
-                                        <div class="font-bold text-sm text-slate-900"><?php echo h($report['job_order_no']); ?></div>
-                                        <div class="text-xs text-slate-500">Mechanic: <?php echo h($report['mechanic_name']); ?></div>
-                                        <div class="text-[11px] text-slate-400 mt-1"><?php echo h(date('M d, Y h:i A', strtotime((string) $report['updated_at']))); ?></div>
-                                    </td>
-                                    <td class="px-6 py-4 text-sm">
-                                        <div class="font-semibold text-slate-800"><?php echo h($report['customer_name']); ?></div>
-                                        <div class="text-xs text-slate-500"><?php echo h(trim((string) $report['vehicle_name']) !== '' ? $report['vehicle_name'] : 'Vehicle record'); ?></div>
-                                    </td>
-                                    <td class="px-6 py-4 text-sm text-slate-700 max-w-md"><?php echo h($report['recommended_services']); ?></td>
-                                    <td class="px-6 py-4 text-sm font-bold text-slate-900">₱<?php echo number_format((float) ($report['estimated_total'] ?? 0), 2); ?></td>
-                                    <td class="px-6 py-4">
-                                        <span class="inline-flex px-2 py-1 rounded-full text-xs font-bold <?php echo h(statusBadgeClass((string) $report['customer_approval'])); ?>">
-                                            <?php echo h($report['customer_approval']); ?>
-                                        </span>
-                                    </td>
-                                    <td class="px-6 py-4">
-                                        <span class="inline-flex px-2 py-1 rounded-full text-xs font-bold <?php echo h(statusBadgeClass((string) $report['diagnosis_status'])); ?>">
-                                            <?php echo h($report['diagnosis_status']); ?>
-                                        </span>
-                                    </td>
-                                </tr>
-                            <?php endforeach; ?>
-                        <?php endif; ?>
-                        </tbody>
-                    </table>
-                </div>
-
-                <div class="px-6 py-4 border-t border-slate-100 bg-slate-50/40 flex items-center justify-between">
-                    <p class="text-xs text-slate-500 font-medium">Showing <?php echo number_format(count($diagnosticRows)); ?> of <?php echo number_format($diagnosticTotalRows); ?> records</p>
-                    <div class="flex items-center gap-2">
-                        <?php if ($diagnosticsPage > 1): ?>
-                            <a href="repairjobsadmin.php?<?php echo h(http_build_query(array_filter([
-                                'shop' => $loginSlug,
-                                'q' => $search,
-                                'job_status' => $jobStatusFilter,
-                                'service_status' => $serviceStatusFilter,
-                                'priority' => $priorityFilter,
-                                'upcoming_sort_by' => $upcomingSortBy,
-                                'upcoming_sort_dir' => $upcomingSortDir,
-                                'jobs_sort_by' => $jobsSortBy,
-                                'jobs_sort_dir' => $jobsSortDir,
-                                'diagnostics_sort_by' => $diagnosticsSortBy,
-                                'diagnostics_sort_dir' => $diagnosticsSortDir,
-                                'upcoming_page' => $upcomingPage,
-                                'jobs_page' => $jobsPage,
-                                'diagnostics_page' => $diagnosticsPage - 1,
-                            ], static fn($v) => $v !== ''))); ?>" class="px-3 py-1.5 text-xs font-semibold rounded-lg border border-slate-300 bg-white hover:bg-slate-100">Previous</a>
-                        <?php endif; ?>
-
-                        <span class="px-2 py-1 text-xs font-semibold text-slate-600">Page <?php echo (int) $diagnosticsPage; ?> of <?php echo (int) $diagnosticTotalPages; ?></span>
-
-                        <?php if ($diagnosticsPage < $diagnosticTotalPages): ?>
-                            <a href="repairjobsadmin.php?<?php echo h(http_build_query(array_filter([
-                                'shop' => $loginSlug,
-                                'q' => $search,
-                                'job_status' => $jobStatusFilter,
-                                'service_status' => $serviceStatusFilter,
-                                'priority' => $priorityFilter,
-                                'upcoming_sort_by' => $upcomingSortBy,
-                                'upcoming_sort_dir' => $upcomingSortDir,
-                                'jobs_sort_by' => $jobsSortBy,
-                                'jobs_sort_dir' => $jobsSortDir,
-                                'diagnostics_sort_by' => $diagnosticsSortBy,
-                                'diagnostics_sort_dir' => $diagnosticsSortDir,
-                                'upcoming_page' => $upcomingPage,
-                                'jobs_page' => $jobsPage,
-                                'diagnostics_page' => $diagnosticsPage + 1,
-                            ], static fn($v) => $v !== ''))); ?>" class="px-3 py-1.5 text-xs font-semibold rounded-lg border border-slate-300 bg-white hover:bg-slate-100">Next</a>
-                        <?php endif; ?>
-                    </div>
-                </div>
-            </section>
 
 
-            <div class="mt-8">
-            <div class="space-y-6 mb-8">
-                <section class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden min-w-0">
-                <div class="px-6 py-5 border-b border-slate-100 flex flex-col xl:flex-row xl:items-center xl:justify-between gap-4">
-                    <div class="min-w-0">
-                        <h3 class="text-lg font-bold text-slate-900">Upcoming Appointments</h3>
-                        <p class="text-xs text-slate-500 font-medium">Pending, confirmed, diagnostic, approval, and in-progress appointments.</p>
-                    </div>
-                    <div class="w-full xl:w-auto flex flex-col sm:flex-row sm:items-center gap-2">
-                        <form method="get" class="flex flex-wrap items-center gap-2">
-                            <input type="hidden" name="shop" value="<?php echo h($loginSlug); ?>">
-                            <input type="hidden" name="q" value="<?php echo h($search); ?>">
-                            <input type="hidden" name="job_status" value="<?php echo h($jobStatusFilter); ?>">
-                            <input type="hidden" name="service_status" value="<?php echo h($serviceStatusFilter); ?>">
-                            <input type="hidden" name="priority" value="<?php echo h($priorityFilter); ?>">
-                            <input type="hidden" name="jobs_sort_by" value="<?php echo h($jobsSortBy); ?>">
-                            <input type="hidden" name="jobs_sort_dir" value="<?php echo h($jobsSortDir); ?>">
-                            <input type="hidden" name="diagnostics_sort_by" value="<?php echo h($diagnosticsSortBy); ?>">
-                            <input type="hidden" name="diagnostics_sort_dir" value="<?php echo h($diagnosticsSortDir); ?>">
-                            <input type="hidden" name="calendar_month" value="<?php echo h($calendarMonth); ?>">
-                        <input type="hidden" name="calendar_date" value="<?php echo h($calendarDateFilter); ?>">
-                            <select name="upcoming_sort_by" class="rounded-lg border-slate-300 text-xs min-w-[150px]">
-                                <option value="appointment_id" <?php echo $upcomingSortBy === 'appointment_id' ? 'selected' : ''; ?>>Sort: Appointment ID</option>
-                                <option value="appointment_date" <?php echo $upcomingSortBy === 'appointment_date' ? 'selected' : ''; ?>>Sort: Date</option>
-                                <option value="appointment_time" <?php echo $upcomingSortBy === 'appointment_time' ? 'selected' : ''; ?>>Sort: Time</option>
-                                <option value="status" <?php echo $upcomingSortBy === 'status' ? 'selected' : ''; ?>>Sort: Status</option>
-                                <option value="total_amount" <?php echo $upcomingSortBy === 'total_amount' ? 'selected' : ''; ?>>Sort: Amount</option>
-                            </select>
-                            <select name="upcoming_sort_dir" class="rounded-lg border-slate-300 text-xs min-w-[110px]">
-                                <option value="DESC" <?php echo $upcomingSortDir === 'DESC' ? 'selected' : ''; ?>>Descending</option>
-                                <option value="ASC" <?php echo $upcomingSortDir === 'ASC' ? 'selected' : ''; ?>>Ascending</option>
-                            </select>
-                            <button type="submit" class="px-3 py-2 rounded-lg border border-slate-300 bg-white text-xs font-semibold text-slate-700 hover:bg-slate-100">Apply</button>
-                        </form>
-                        <a href="appointmentadmin.php?shop=<?php echo h($shopQuery); ?>" class="text-xs font-semibold text-blue-700 hover:underline">Open Appointments Page</a>
-                    </div>
-                </div>
-
-                <div class="overflow-x-auto">
-                    <table class="w-full min-w-[760px] text-left">
-                        <thead>
-                        <tr class="bg-slate-50/50">
-                            <th class="px-6 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">Appointment</th>
-                            <th class="px-6 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">Customer</th>
-                            <th class="px-6 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">Vehicle</th>
-                            <th class="px-6 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">Date / Time</th>
-                            <th class="px-6 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">Status</th>
-                            <th class="px-6 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">Amount</th>
-                        </tr>
-                        </thead>
-                        <tbody class="divide-y divide-slate-100">
-                        <?php if (count($upcomingAppointments) === 0): ?>
-                            <tr>
-                                <td colspan="6" class="px-6 py-10 text-center text-sm text-slate-500">No upcoming appointments found.</td>
-                            </tr>
-                        <?php else: ?>
-                            <?php foreach ($upcomingAppointments as $appointment): ?>
-                                <?php
-                                $vehicleText = trim((string) ($appointment['vehicle_name'] ?? ''));
-                                if ($vehicleText === '') $vehicleText = 'Vehicle record';
-                                $plateText = trim((string) ($appointment['plate_number'] ?? ''));
-                                ?>
-                                <tr class="hover:bg-slate-50/50 transition-colors">
-                                    <td class="px-6 py-4 text-sm font-bold text-slate-900">#<?php echo (int) $appointment['appointment_id']; ?></td>
-                                    <td class="px-6 py-4 text-sm text-slate-700"><?php echo h($appointment['customer_name']); ?></td>
-                                    <td class="px-6 py-4 text-sm text-slate-700">
-                                        <?php echo h($vehicleText); ?>
-                                        <?php if ($plateText !== ''): ?>
-                                            <div class="text-xs text-slate-500 mt-0.5">Plate: <?php echo h($plateText); ?></div>
-                                        <?php endif; ?>
-                                    </td>
-                                    <td class="px-6 py-4 text-sm text-slate-700">
-                                        <div class="font-semibold"><?php echo h(date('M d, Y', strtotime((string) $appointment['appointment_date']))); ?></div>
-                                        <div class="text-xs text-slate-500"><?php echo h(date('h:i A', strtotime((string) $appointment['appointment_time']))); ?></div>
-                                    </td>
-                                    <td class="px-6 py-4 text-sm">
-                                        <span class="inline-flex px-2 py-1 rounded-full text-xs font-bold <?php echo h(statusBadgeClass((string) $appointment['status'])); ?>">
-                                            <?php echo h($appointment['status']); ?>
-                                        </span>
-                                    </td>
-                                    <td class="px-6 py-4 text-sm font-semibold text-slate-900">₱<?php echo number_format((float) ($appointment['total_amount'] ?? 0), 2); ?></td>
-                                </tr>
-                            <?php endforeach; ?>
-                        <?php endif; ?>
-                        </tbody>
-                    </table>
-                </div>
-
-                <div class="px-6 py-4 border-t border-slate-100 bg-slate-50/40 flex items-center justify-between">
-                    <p class="text-xs text-slate-500 font-medium">Showing <?php echo number_format(count($upcomingAppointments)); ?> of <?php echo number_format($upcomingTotalRows); ?> records</p>
-                    <div class="flex items-center gap-2">
-                        <?php if ($upcomingPage > 1): ?>
-                            <a href="repairjobsadmin.php?<?php echo h(http_build_query(array_filter([
-                                'shop' => $loginSlug,
-                                'q' => $search,
-                                'job_status' => $jobStatusFilter,
-                                'service_status' => $serviceStatusFilter,
-                                'priority' => $priorityFilter,
-                                'upcoming_sort_by' => $upcomingSortBy,
-                                'upcoming_sort_dir' => $upcomingSortDir,
-                                'jobs_sort_by' => $jobsSortBy,
-                                'jobs_sort_dir' => $jobsSortDir,
-                                'diagnostics_sort_by' => $diagnosticsSortBy,
-                                'diagnostics_sort_dir' => $diagnosticsSortDir,
-                                'calendar_month' => $calendarMonth,
-                                'upcoming_page' => $upcomingPage - 1,
-                                'jobs_page' => $jobsPage,
-                                'diagnostics_page' => $diagnosticsPage,
-                            ], static fn($v) => $v !== ''))); ?>" class="px-3 py-1.5 text-xs font-semibold rounded-lg border border-slate-300 bg-white hover:bg-slate-100">Previous</a>
-                        <?php endif; ?>
-
-                        <span class="px-2 py-1 text-xs font-semibold text-slate-600">Page <?php echo (int) $upcomingPage; ?> of <?php echo (int) $upcomingTotalPages; ?></span>
-
-                        <?php if ($upcomingPage < $upcomingTotalPages): ?>
-                            <a href="repairjobsadmin.php?<?php echo h(http_build_query(array_filter([
-                                'shop' => $loginSlug,
-                                'q' => $search,
-                                'job_status' => $jobStatusFilter,
-                                'service_status' => $serviceStatusFilter,
-                                'priority' => $priorityFilter,
-                                'upcoming_sort_by' => $upcomingSortBy,
-                                'upcoming_sort_dir' => $upcomingSortDir,
-                                'jobs_sort_by' => $jobsSortBy,
-                                'jobs_sort_dir' => $jobsSortDir,
-                                'diagnostics_sort_by' => $diagnosticsSortBy,
-                                'diagnostics_sort_dir' => $diagnosticsSortDir,
-                                'calendar_month' => $calendarMonth,
-                                'calendar_date' => $calendarDateFilter,
-                                'upcoming_page' => $upcomingPage + 1,
-                                'jobs_page' => $jobsPage,
-                                'diagnostics_page' => $diagnosticsPage,
-                            ], static fn($v) => $v !== ''))); ?>" class="px-3 py-1.5 text-xs font-semibold rounded-lg border border-slate-300 bg-white hover:bg-slate-100">Next</a>
-                        <?php endif; ?>
-                    </div>
-                </div>
-            </section>
-
-                
-            </div>
-
-            </div>
-        </div>
-    </main>
-</div>
-
-<?php if ($showDiagnosticModal && $diagnosticModalJob): ?>
-    <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
-        <section class="relative w-full max-w-5xl max-h-[90vh] overflow-y-auto bg-white rounded-2xl border border-slate-200 shadow-2xl">
-            <div class="sticky top-0 z-10 bg-white border-b border-slate-100 px-6 py-5 flex items-center justify-between gap-3">
-                <div>
-                    <h3 class="font-bold text-slate-900 text-lg">Diagnostic Report & Recommended Sub-Services</h3>
-                    <p class="text-xs text-slate-500 mt-1">
-                        <?php echo h($diagnosticModalJob['job_order_no']); ?> |
-                        <?php echo h($diagnosticModalJob['customer_name']); ?> |
-                        <?php echo h(trim((string) $diagnosticModalJob['vehicle_name'])); ?>
-                    </p>
-                </div>
-                <a href="repairjobsadmin.php?<?php echo h(http_build_query(array_filter([
-                    'shop' => $loginSlug,
-                    'q' => $search,
-                    'job_status' => $jobStatusFilter,
-                    'service_status' => $serviceStatusFilter,
-                    'priority' => $priorityFilter,
-                ], static fn($v) => $v !== ''))); ?>" class="inline-flex items-center justify-center w-8 h-8 rounded-full text-slate-500 hover:text-slate-700 hover:bg-slate-100 transition-colors">
-                    <span class="material-symbols-outlined">close</span>
-                </a>
-            </div>
-
-            <form method="post" class="p-6 space-y-6" id="diagnosticForm">
-                <input type="hidden" name="csrf_token" value="<?php echo h($csrfToken); ?>">
-                <input type="hidden" name="repair_job_id" value="<?php echo (int) $diagnosticModalJobId; ?>">
-                <input type="hidden" name="submit_diagnostic_report" value="1">
-
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                        <label class="text-xs font-bold uppercase text-slate-500">Mechanic Name</label>
-                        <input
-                            type="text"
-                            name="mechanic_name"
-                            value="<?php echo h($existingDiagnosticReport['mechanic_name'] ?? $diagnosticModalJob['assigned_technician'] ?? ''); ?>"
-                            class="mt-1 w-full rounded-lg border-slate-300 text-sm"
-                            required>
-                    </div>
-                    <div>
-                        <label class="text-xs font-bold uppercase text-slate-500">Customer Concern</label>
-                        <input
-                            type="text"
-                            value="<?php echo h($diagnosticModalJob['concern'] ?? ''); ?>"
-                            class="mt-1 w-full rounded-lg border-slate-300 text-sm bg-slate-50"
-                            readonly>
-                    </div>
-                    <div class="md:col-span-2">
-                        <label class="text-xs font-bold uppercase text-slate-500">Problem Description</label>
-                        <textarea name="problem_description" rows="3" class="mt-1 w-full rounded-lg border-slate-300 text-sm" required><?php echo h($existingDiagnosticReport['problem_description'] ?? $diagnosticModalJob['concern'] ?? ''); ?></textarea>
-                    </div>
-                    <div class="md:col-span-2">
-                        <label class="text-xs font-bold uppercase text-slate-500">Findings</label>
-                        <textarea name="findings" rows="4" class="mt-1 w-full rounded-lg border-slate-300 text-sm" required><?php echo h($existingDiagnosticReport['findings'] ?? ''); ?></textarea>
-                    </div>
-                    <div class="md:col-span-2">
-                        <label class="text-xs font-bold uppercase text-slate-500">Recommended Action</label>
-                        <textarea name="recommended_action" rows="3" class="mt-1 w-full rounded-lg border-slate-300 text-sm" required><?php echo h($existingDiagnosticReport['recommended_action'] ?? ''); ?></textarea>
-                    </div>
-                </div>
-
-                <div class="rounded-2xl border border-slate-200 overflow-hidden">
-                    <div class="px-5 py-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
-                        <div>
-                            <h4 class="font-bold text-slate-900">Select Recommended Sub-Services</h4>
-                            <p class="text-xs text-slate-500">These will be sent to the customer in the mobile app for approval.</p>
-                        </div>
-                        <div class="text-right">
-                            <p class="text-xs font-bold text-slate-500 uppercase">Estimated Total</p>
-                            <p class="text-xl font-black text-blue-700" id="diagnosticTotal">₱0.00</p>
-                            <p class="text-[11px] text-slate-500 mt-1">
-                                Main diagnostic: ₱<?php echo number_format((float) $diagnosticMainServiceTotal, 2); ?>
-                            </p>
-                        </div>
-                    </div>
-
-                    <div class="max-h-96 overflow-y-auto divide-y divide-slate-100">
-                        <?php if (count($subServiceOptions) === 0): ?>
-                            <div class="px-5 py-8 text-sm text-slate-500 text-center">No active sub-services found. Add sub-services in Services first.</div>
-                        <?php else: ?>
-                            <?php
-                            $currentParent = '';
-                            foreach ($subServiceOptions as $service):
-                                $parentName = (string) ($service['parent_service_name'] ?? 'Other Services');
-                                if ($parentName !== $currentParent):
-                                    $currentParent = $parentName;
-                            ?>
-                                <div class="px-5 py-3 bg-slate-50 text-xs font-black uppercase tracking-widest text-slate-500">
-                                    <?php echo h($currentParent); ?>
+                <div class="mt-8">
+                    <div class="space-y-6 mb-8">
+                        <section class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden min-w-0">
+                            <div
+                                class="px-6 py-5 border-b border-slate-100 flex flex-col xl:flex-row xl:items-center xl:justify-between gap-4">
+                                <div class="min-w-0">
+                                    <h3 class="text-lg font-bold text-slate-900">Upcoming Appointments</h3>
+                                    <p class="text-xs text-slate-500 font-medium">Pending, confirmed, diagnostic,
+                                        approval, and in-progress appointments.</p>
                                 </div>
-                            <?php endif; ?>
+                                <div class="w-full xl:w-auto flex flex-col sm:flex-row sm:items-center gap-2">
+                                    <form method="get" class="flex flex-wrap items-center gap-2">
+                                        <input type="hidden" name="shop" value="<?php echo h($loginSlug); ?>">
+                                        <input type="hidden" name="q" value="<?php echo h($search); ?>">
+                                        <input type="hidden" name="job_status"
+                                            value="<?php echo h($jobStatusFilter); ?>">
+                                        <input type="hidden" name="service_status"
+                                            value="<?php echo h($serviceStatusFilter); ?>">
+                                        <input type="hidden" name="priority" value="<?php echo h($priorityFilter); ?>">
+                                        <input type="hidden" name="jobs_sort_by" value="<?php echo h($jobsSortBy); ?>">
+                                        <input type="hidden" name="jobs_sort_dir"
+                                            value="<?php echo h($jobsSortDir); ?>">
+                                        <input type="hidden" name="diagnostics_sort_by"
+                                            value="<?php echo h($diagnosticsSortBy); ?>">
+                                        <input type="hidden" name="diagnostics_sort_dir"
+                                            value="<?php echo h($diagnosticsSortDir); ?>">
+                                        <input type="hidden" name="calendar_month"
+                                            value="<?php echo h($calendarMonth); ?>">
+                                        <input type="hidden" name="calendar_date"
+                                            value="<?php echo h($calendarDateFilter); ?>">
+                                        <select name="upcoming_sort_by"
+                                            class="rounded-lg border-slate-300 text-xs min-w-[150px]">
+                                            <option value="appointment_id" <?php echo $upcomingSortBy === 'appointment_id' ? 'selected' : ''; ?>>Sort: Appointment ID</option>
+                                            <option value="appointment_date" <?php echo $upcomingSortBy === 'appointment_date' ? 'selected' : ''; ?>>Sort: Date
+                                            </option>
+                                            <option value="appointment_time" <?php echo $upcomingSortBy === 'appointment_time' ? 'selected' : ''; ?>>Sort: Time
+                                            </option>
+                                            <option value="status" <?php echo $upcomingSortBy === 'status' ? 'selected' : ''; ?>>Sort: Status</option>
+                                            <option value="total_amount" <?php echo $upcomingSortBy === 'total_amount' ? 'selected' : ''; ?>>Sort: Amount</option>
+                                        </select>
+                                        <select name="upcoming_sort_dir"
+                                            class="rounded-lg border-slate-300 text-xs min-w-[110px]">
+                                            <option value="DESC" <?php echo $upcomingSortDir === 'DESC' ? 'selected' : ''; ?>>Descending</option>
+                                            <option value="ASC" <?php echo $upcomingSortDir === 'ASC' ? 'selected' : ''; ?>>Ascending</option>
+                                        </select>
+                                        <button type="submit"
+                                            class="px-3 py-2 rounded-lg border border-slate-300 bg-white text-xs font-semibold text-slate-700 hover:bg-slate-100">Apply</button>
+                                    </form>
+                                    <a href="appointmentadmin.php?shop=<?php echo h($shopQuery); ?>"
+                                        class="text-xs font-semibold text-blue-700 hover:underline">Open Appointments
+                                        Page</a>
+                                </div>
+                            </div>
 
-                                <?php
-                                $sid = (int) $service['service_id'];
-                                $checked = in_array($sid, $existingDiagnosticServiceIds, true);
-                                ?>
-                                <label class="flex items-start gap-4 px-5 py-4 hover:bg-slate-50 cursor-pointer">
-                                    <input
-                                        type="checkbox"
-                                        name="recommended_service_ids[]"
-                                        value="<?php echo $sid; ?>"
-                                        data-price="<?php echo h((float) ($service['price'] ?? 0)); ?>"
-                                        class="diagnostic-service-checkbox mt-1 rounded border-slate-300 text-blue-600"
-                                        <?php echo $checked ? 'checked' : ''; ?>>
-                                    <div class="flex-1 min-w-0">
-                                        <div class="font-bold text-sm text-slate-900"><?php echo h($service['service_name']); ?></div>
-                                        <div class="text-xs text-slate-500 mt-1"><?php echo h($service['description'] ?? ''); ?></div>
-                                        <div class="text-xs text-slate-400 mt-1">
-                                            <?php echo h($service['category'] ?? 'Other'); ?> ·
-                                            <?php echo (int) ($service['duration_minutes'] ?? 0); ?> mins
-                                        </div>
-                                    </div>
-                                    <div class="text-sm font-bold text-slate-900">₱<?php echo number_format((float) ($service['price'] ?? 0), 2); ?></div>
-                                </label>
-                            <?php endforeach; ?>
-                        <?php endif; ?>
+                            <div class="overflow-x-auto">
+                                <table class="w-full min-w-[760px] text-left">
+                                    <thead>
+                                        <tr class="bg-slate-50/50">
+                                            <th
+                                                class="px-6 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                                                Appointment</th>
+                                            <th
+                                                class="px-6 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                                                Customer</th>
+                                            <th
+                                                class="px-6 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                                                Vehicle</th>
+                                            <th
+                                                class="px-6 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                                                Date / Time</th>
+                                            <th
+                                                class="px-6 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                                                Status</th>
+                                            <th
+                                                class="px-6 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                                                Amount</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="divide-y divide-slate-100">
+                                        <?php if (count($upcomingAppointments) === 0): ?>
+                                            <tr>
+                                                <td colspan="6" class="px-6 py-10 text-center text-sm text-slate-500">No
+                                                    upcoming appointments found.</td>
+                                            </tr>
+                                        <?php else: ?>
+                                            <?php foreach ($upcomingAppointments as $appointment): ?>
+                                                <?php
+                                                $vehicleText = trim((string) ($appointment['vehicle_name'] ?? ''));
+                                                if ($vehicleText === '')
+                                                    $vehicleText = 'Vehicle record';
+                                                $plateText = trim((string) ($appointment['plate_number'] ?? ''));
+                                                ?>
+                                                <tr class="hover:bg-slate-50/50 transition-colors">
+                                                    <td class="px-6 py-4 text-sm font-bold text-slate-900">
+                                                        #<?php echo (int) $appointment['appointment_id']; ?></td>
+                                                    <td class="px-6 py-4 text-sm text-slate-700">
+                                                        <?php echo h($appointment['customer_name']); ?>
+                                                    </td>
+                                                    <td class="px-6 py-4 text-sm text-slate-700">
+                                                        <?php echo h($vehicleText); ?>
+                                                        <?php if ($plateText !== ''): ?>
+                                                            <div class="text-xs text-slate-500 mt-0.5">Plate:
+                                                                <?php echo h($plateText); ?>
+                                                            </div>
+                                                        <?php endif; ?>
+                                                    </td>
+                                                    <td class="px-6 py-4 text-sm text-slate-700">
+                                                        <div class="font-semibold">
+                                                            <?php echo h(date('M d, Y', strtotime((string) $appointment['appointment_date']))); ?>
+                                                        </div>
+                                                        <div class="text-xs text-slate-500">
+                                                            <?php echo h(date('h:i A', strtotime((string) $appointment['appointment_time']))); ?>
+                                                        </div>
+                                                    </td>
+                                                    <td class="px-6 py-4 text-sm">
+                                                        <span
+                                                            class="inline-flex px-2 py-1 rounded-full text-xs font-bold <?php echo h(statusBadgeClass((string) $appointment['status'])); ?>">
+                                                            <?php echo h($appointment['status']); ?>
+                                                        </span>
+                                                    </td>
+                                                    <td class="px-6 py-4 text-sm font-semibold text-slate-900">
+                                                        ₱<?php echo number_format((float) ($appointment['total_amount'] ?? 0), 2); ?>
+                                                    </td>
+                                                </tr>
+                                            <?php endforeach; ?>
+                                        <?php endif; ?>
+                                    </tbody>
+                                </table>
+                            </div>
+
+                            <div
+                                class="px-6 py-4 border-t border-slate-100 bg-slate-50/40 flex items-center justify-between">
+                                <p class="text-xs text-slate-500 font-medium">Showing
+                                    <?php echo number_format(count($upcomingAppointments)); ?> of
+                                    <?php echo number_format($upcomingTotalRows); ?> records
+                                </p>
+                                <div class="flex items-center gap-2">
+                                    <?php if ($upcomingPage > 1): ?>
+                                        <a href="repairjobsadmin.php?<?php echo h(http_build_query(array_filter([
+                                            'shop' => $loginSlug,
+                                            'q' => $search,
+                                            'job_status' => $jobStatusFilter,
+                                            'service_status' => $serviceStatusFilter,
+                                            'priority' => $priorityFilter,
+                                            'upcoming_sort_by' => $upcomingSortBy,
+                                            'upcoming_sort_dir' => $upcomingSortDir,
+                                            'jobs_sort_by' => $jobsSortBy,
+                                            'jobs_sort_dir' => $jobsSortDir,
+                                            'diagnostics_sort_by' => $diagnosticsSortBy,
+                                            'diagnostics_sort_dir' => $diagnosticsSortDir,
+                                            'calendar_month' => $calendarMonth,
+                                            'upcoming_page' => $upcomingPage - 1,
+                                            'jobs_page' => $jobsPage,
+                                            'diagnostics_page' => $diagnosticsPage,
+                                        ], static fn($v) => $v !== ''))); ?>"
+                                            class="px-3 py-1.5 text-xs font-semibold rounded-lg border border-slate-300 bg-white hover:bg-slate-100">Previous</a>
+                                    <?php endif; ?>
+
+                                    <span class="px-2 py-1 text-xs font-semibold text-slate-600">Page
+                                        <?php echo (int) $upcomingPage; ?> of
+                                        <?php echo (int) $upcomingTotalPages; ?></span>
+
+                                    <?php if ($upcomingPage < $upcomingTotalPages): ?>
+                                        <a href="repairjobsadmin.php?<?php echo h(http_build_query(array_filter([
+                                            'shop' => $loginSlug,
+                                            'q' => $search,
+                                            'job_status' => $jobStatusFilter,
+                                            'service_status' => $serviceStatusFilter,
+                                            'priority' => $priorityFilter,
+                                            'upcoming_sort_by' => $upcomingSortBy,
+                                            'upcoming_sort_dir' => $upcomingSortDir,
+                                            'jobs_sort_by' => $jobsSortBy,
+                                            'jobs_sort_dir' => $jobsSortDir,
+                                            'diagnostics_sort_by' => $diagnosticsSortBy,
+                                            'diagnostics_sort_dir' => $diagnosticsSortDir,
+                                            'calendar_month' => $calendarMonth,
+                                            'calendar_date' => $calendarDateFilter,
+                                            'upcoming_page' => $upcomingPage + 1,
+                                            'jobs_page' => $jobsPage,
+                                            'diagnostics_page' => $diagnosticsPage,
+                                        ], static fn($v) => $v !== ''))); ?>"
+                                            class="px-3 py-1.5 text-xs font-semibold rounded-lg border border-slate-300 bg-white hover:bg-slate-100">Next</a>
+                                    <?php endif; ?>
+                                </div>
+                            </div>
+                        </section>
+
+
                     </div>
-                </div>
 
-                <div class="border-t border-slate-100 pt-4 flex gap-3 justify-end">
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <?php if ($showDiagnosticModal && $diagnosticModalJob): ?>
+        <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+            <section
+                class="relative w-full max-w-5xl max-h-[90vh] overflow-y-auto bg-white rounded-2xl border border-slate-200 shadow-2xl">
+                <div
+                    class="sticky top-0 z-10 bg-white border-b border-slate-100 px-6 py-5 flex items-center justify-between gap-3">
+                    <div>
+                        <h3 class="font-bold text-slate-900 text-lg">Diagnostic Report & Recommended Sub-Services</h3>
+                        <p class="text-xs text-slate-500 mt-1">
+                            <?php echo h($diagnosticModalJob['job_order_no']); ?> |
+                            <?php echo h($diagnosticModalJob['customer_name']); ?> |
+                            <?php echo h(trim((string) $diagnosticModalJob['vehicle_name'])); ?>
+                        </p>
+                    </div>
                     <a href="repairjobsadmin.php?<?php echo h(http_build_query(array_filter([
                         'shop' => $loginSlug,
                         'q' => $search,
                         'job_status' => $jobStatusFilter,
                         'service_status' => $serviceStatusFilter,
                         'priority' => $priorityFilter,
-                    ], static fn($v) => $v !== ''))); ?>" class="px-4 py-2.5 rounded-lg border border-slate-300 bg-white text-slate-700 font-semibold hover:bg-slate-50 transition-colors">
-                        Cancel
+                    ], static fn($v) => $v !== ''))); ?>"
+                        class="inline-flex items-center justify-center w-8 h-8 rounded-full text-slate-500 hover:text-slate-700 hover:bg-slate-100 transition-colors">
+                        <span class="material-symbols-outlined">close</span>
                     </a>
-                    <button type="submit" class="px-6 py-2.5 rounded-lg bg-indigo-600 text-white font-semibold hover:bg-indigo-700 transition-colors">
-                        Submit to Customer Approval
-                    </button>
                 </div>
-            </form>
-        </section>
-    </div>
-<?php endif; ?>
 
-<?php if ($showPartsModal && $partsModalJobDetails): ?>
-    <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
-        <section class="relative w-full max-w-2xl max-h-[85vh] overflow-y-auto bg-white rounded-2xl border border-slate-200 shadow-2xl">
-            <div class="sticky top-0 z-10 bg-white border-b border-slate-100 px-6 py-5 flex items-center justify-between gap-3">
-                <div>
-                    <h3 class="font-bold text-slate-900 text-lg">Complete Repair Job - Select Parts Used</h3>
-                    <p class="text-xs text-slate-500 mt-1"><?php echo h($partsModalJobDetails['job_order_no']); ?> | <?php echo h($partsModalJobDetails['customer_name']); ?></p>
-                </div>
-                <a href="repairjobsadmin.php?<?php echo h(http_build_query(array_filter([
-                    'shop' => $loginSlug,
-                    'q' => $search,
-                    'job_status' => $jobStatusFilter,
-                    'service_status' => $serviceStatusFilter,
-                    'priority' => $priorityFilter,
-                ], static fn($v) => $v !== ''))); ?>" class="inline-flex items-center justify-center w-8 h-8 rounded-full text-slate-500 hover:text-slate-700 hover:bg-slate-100 transition-colors">
-                    <span class="material-symbols-outlined">close</span>
-                </a>
-            </div>
+                <form method="post" class="p-6 space-y-6" id="diagnosticForm">
+                    <input type="hidden" name="csrf_token" value="<?php echo h($csrfToken); ?>">
+                    <input type="hidden" name="repair_job_id" value="<?php echo (int) $diagnosticModalJobId; ?>">
+                    <input type="hidden" name="submit_diagnostic_report" value="1">
 
-            <form method="post" class="p-6 space-y-6" id="completePartsForm">
-                <input type="hidden" name="csrf_token" value="<?php echo h($csrfToken); ?>"/>
-                <input type="hidden" name="repair_job_id" value="<?php echo (int) $partsModalJobId; ?>"/>
-                <input type="hidden" name="complete_with_parts" value="1"/>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label class="text-xs font-bold uppercase text-slate-500">Mechanic Name</label>
+                            <input type="text" name="mechanic_name"
+                                value="<?php echo h($existingDiagnosticReport['mechanic_name'] ?? $diagnosticModalJob['assigned_technician'] ?? ''); ?>"
+                                class="mt-1 w-full rounded-lg border-slate-300 text-sm" required>
+                        </div>
+                        <div>
+                            <label class="text-xs font-bold uppercase text-slate-500">Customer Concern</label>
+                            <input type="text" value="<?php echo h($diagnosticModalJob['concern'] ?? ''); ?>"
+                                class="mt-1 w-full rounded-lg border-slate-300 text-sm bg-slate-50" readonly>
+                        </div>
+                        <div class="md:col-span-2">
+                            <label class="text-xs font-bold uppercase text-slate-500">Problem Description</label>
+                            <textarea name="problem_description" rows="3"
+                                class="mt-1 w-full rounded-lg border-slate-300 text-sm"
+                                required><?php echo h($existingDiagnosticReport['problem_description'] ?? $diagnosticModalJob['concern'] ?? ''); ?></textarea>
+                        </div>
+                        <div class="md:col-span-2">
+                            <label class="text-xs font-bold uppercase text-slate-500">Findings</label>
+                            <textarea name="findings" rows="4" class="mt-1 w-full rounded-lg border-slate-300 text-sm"
+                                required><?php echo h($existingDiagnosticReport['findings'] ?? ''); ?></textarea>
+                        </div>
+                        <div class="md:col-span-2">
+                            <label class="text-xs font-bold uppercase text-slate-500">Recommended Action</label>
+                            <textarea name="recommended_action" rows="3"
+                                class="mt-1 w-full rounded-lg border-slate-300 text-sm"
+                                required><?php echo h($existingDiagnosticReport['recommended_action'] ?? ''); ?></textarea>
+                        </div>
+                    </div>
 
-                <div class="space-y-4">
-                    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                        <p class="text-sm text-slate-600 font-medium">Select the parts/inventory items used in this repair:</p>
-                        <button type="button" id="add_sourced_part_btn" onclick="addSourcedPartRow()" class="inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-slate-900 text-white text-sm font-semibold hover:bg-slate-800 transition-colors">
-                            <span class="material-symbols-outlined text-base">add</span>
-                            Add Part
+                    <div class="rounded-2xl border border-slate-200 overflow-hidden">
+                        <div class="px-5 py-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+                            <div>
+                                <h4 class="font-bold text-slate-900">Select Recommended Sub-Services</h4>
+                                <p class="text-xs text-slate-500">These will be sent to the customer in the mobile app for
+                                    approval.</p>
+                            </div>
+                            <div class="text-right">
+                                <p class="text-xs font-bold text-slate-500 uppercase">Estimated Total</p>
+                                <p class="text-xl font-black text-blue-700" id="diagnosticTotal">₱0.00</p>
+                                <p class="text-[11px] text-slate-500 mt-1">
+                                    Main diagnostic: ₱<?php echo number_format((float) $diagnosticMainServiceTotal, 2); ?>
+                                </p>
+                            </div>
+                        </div>
+
+                        <div class="max-h-96 overflow-y-auto divide-y divide-slate-100">
+                            <?php if (count($subServiceOptions) === 0): ?>
+                                <div class="px-5 py-8 text-sm text-slate-500 text-center">No active sub-services found. Add
+                                    sub-services in Services first.</div>
+                            <?php else: ?>
+                                <?php
+                                $currentParent = '';
+                                foreach ($subServiceOptions as $service):
+                                    $parentName = (string) ($service['parent_service_name'] ?? 'Other Services');
+                                    if ($parentName !== $currentParent):
+                                        $currentParent = $parentName;
+                                        ?>
+                                        <div class="px-5 py-3 bg-slate-50 text-xs font-black uppercase tracking-widest text-slate-500">
+                                            <?php echo h($currentParent); ?>
+                                        </div>
+                                    <?php endif; ?>
+
+                                    <?php
+                                    $sid = (int) $service['service_id'];
+                                    $checked = in_array($sid, $existingDiagnosticServiceIds, true);
+                                    ?>
+                                    <label class="flex items-start gap-4 px-5 py-4 hover:bg-slate-50 cursor-pointer">
+                                        <input type="checkbox" name="recommended_service_ids[]" value="<?php echo $sid; ?>"
+                                            data-price="<?php echo h((float) ($service['price'] ?? 0)); ?>"
+                                            class="diagnostic-service-checkbox mt-1 rounded border-slate-300 text-blue-600" <?php echo $checked ? 'checked' : ''; ?>>
+                                        <div class="flex-1 min-w-0">
+                                            <div class="font-bold text-sm text-slate-900"><?php echo h($service['service_name']); ?>
+                                            </div>
+                                            <div class="text-xs text-slate-500 mt-1"><?php echo h($service['description'] ?? ''); ?>
+                                            </div>
+                                            <div class="text-xs text-slate-400 mt-1">
+                                                <?php echo h($service['category'] ?? 'Other'); ?> ·
+                                                <?php echo (int) ($service['duration_minutes'] ?? 0); ?> mins
+                                            </div>
+                                        </div>
+                                        <div class="text-sm font-bold text-slate-900">
+                                            ₱<?php echo number_format((float) ($service['price'] ?? 0), 2); ?></div>
+                                    </label>
+                                <?php endforeach; ?>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+
+                    <div class="border-t border-slate-100 pt-4 flex gap-3 justify-end">
+                        <a href="repairjobsadmin.php?<?php echo h(http_build_query(array_filter([
+                            'shop' => $loginSlug,
+                            'q' => $search,
+                            'job_status' => $jobStatusFilter,
+                            'service_status' => $serviceStatusFilter,
+                            'priority' => $priorityFilter,
+                        ], static fn($v) => $v !== ''))); ?>"
+                            class="px-4 py-2.5 rounded-lg border border-slate-300 bg-white text-slate-700 font-semibold hover:bg-slate-50 transition-colors">
+                            Cancel
+                        </a>
+                        <button type="submit"
+                            class="px-6 py-2.5 rounded-lg bg-indigo-600 text-white font-semibold hover:bg-indigo-700 transition-colors">
+                            Submit to Customer Approval
                         </button>
                     </div>
+                </form>
+            </section>
+        </div>
+    <?php endif; ?>
 
-                    <div class="border rounded-lg p-4 transition-colors bg-blue-50 border-blue-200">
-                        <div class="flex items-start gap-4">
-                            <input type="checkbox" name="no_parts_used" value="1" class="mt-1" id="no_parts_checkbox" onchange="toggleNoPartsMode()">
-                            <div class="flex-1 min-w-0">
-                                <label for="no_parts_checkbox" class="font-semibold text-slate-900 cursor-pointer">No Parts Used</label>
-                                <p class="text-xs text-slate-600 mt-1">Complete this job without using inventory parts.</p>
-                            </div>
-                        </div>
+    <?php if ($showPartsModal && $partsModalJobDetails): ?>
+        <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+            <section
+                class="relative w-full max-w-2xl max-h-[85vh] overflow-y-auto bg-white rounded-2xl border border-slate-200 shadow-2xl">
+                <div
+                    class="sticky top-0 z-10 bg-white border-b border-slate-100 px-6 py-5 flex items-center justify-between gap-3">
+                    <div>
+                        <h3 class="font-bold text-slate-900 text-lg">Complete Repair Job - Select Parts Used</h3>
+                        <p class="text-xs text-slate-500 mt-1"><?php echo h($partsModalJobDetails['job_order_no']); ?> |
+                            <?php echo h($partsModalJobDetails['customer_name']); ?>
+                        </p>
                     </div>
-
-                    <div id="sourced-parts-section" class="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4 space-y-3">
-                        <div>
-                            <p class="text-sm font-semibold text-slate-900">External / sourced-out parts</p>
-                            <p class="text-xs text-slate-500 mt-1">Use this for parts not available in shop inventory. These are added to parts total only and will not deduct stock.</p>
-                        </div>
-                        <div id="sourced-parts-list" class="space-y-3"></div>
-                    </div>
-
-                    <div id="parts-selection-container">
-                        <?php if (count($inventoryItems) === 0): ?>
-                            <div class="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
-                                No active inventory items available. You can mark the job as completed without parts or add items to inventory first.
-                            </div>
-                        <?php else: ?>
-                            <div class="space-y-3 max-h-96 overflow-y-auto">
-                                <?php foreach ($inventoryItems as $item): ?>
-                                    <div class="border border-slate-200 rounded-lg p-4 hover:bg-slate-50 transition-colors">
-                                        <div class="flex items-start gap-4">
-                                            <input type="checkbox" name="part_selected" value="<?php echo (int) $item['item_id']; ?>" class="mt-1 part-checkbox" id="part_<?php echo (int) $item['item_id']; ?>" onchange="togglePartQuantity(<?php echo (int) $item['item_id']; ?>)">
-                                            <div class="flex-1 min-w-0">
-                                                <label for="part_<?php echo (int) $item['item_id']; ?>" class="font-semibold text-slate-900 cursor-pointer"><?php echo h($item['part_name']); ?></label>
-                                                <p class="text-xs text-slate-500">Code: <?php echo h($item['part_code'] ?? 'N/A'); ?> | Category: <?php echo h($item['category']); ?></p>
-                                                <p class="text-xs text-slate-600 mt-1">Available: <?php echo (int) $item['stock_quantity']; ?> | Price: ₱<?php echo number_format((float) $item['unit_price'], 2); ?></p>
-                                            </div>
-                                            <input type="number" data-item-id="<?php echo (int) $item['item_id']; ?>" min="1" max="<?php echo (int) $item['stock_quantity']; ?>" value="1" class="part-quantity w-16 rounded-lg border-slate-300 text-sm text-center disabled:opacity-50 disabled:cursor-not-allowed" disabled>
-                                        </div>
-                                    </div>
-                                <?php endforeach; ?>
-                            </div>
-                        <?php endif; ?>
-                    </div>
-                </div>
-
-                <div class="border-t border-slate-100 pt-4 flex gap-3 justify-end">
                     <a href="repairjobsadmin.php?<?php echo h(http_build_query(array_filter([
                         'shop' => $loginSlug,
                         'q' => $search,
                         'job_status' => $jobStatusFilter,
                         'service_status' => $serviceStatusFilter,
                         'priority' => $priorityFilter,
-                    ], static fn($v) => $v !== ''))); ?>" class="px-4 py-2.5 rounded-lg border border-slate-300 bg-white text-slate-700 font-semibold hover:bg-slate-50 transition-colors">
-                        Cancel
+                    ], static fn($v) => $v !== ''))); ?>"
+                        class="inline-flex items-center justify-center w-8 h-8 rounded-full text-slate-500 hover:text-slate-700 hover:bg-slate-100 transition-colors">
+                        <span class="material-symbols-outlined">close</span>
                     </a>
-                    <button type="submit" class="px-6 py-2.5 rounded-lg bg-green-600 text-white font-semibold hover:bg-green-700 transition-colors">
-                        Complete Job & Use Parts
-                    </button>
                 </div>
-            </form>
-        </section>
-    </div>
-<?php endif; ?>
 
-<script>
-function handleJobStatusChange(selectElement, jobId) {
-    const selectedStatus = selectElement.value;
+                <form method="post" class="p-6 space-y-6" id="completePartsForm">
+                    <input type="hidden" name="csrf_token" value="<?php echo h($csrfToken); ?>" />
+                    <input type="hidden" name="repair_job_id" value="<?php echo (int) $partsModalJobId; ?>" />
+                    <input type="hidden" name="complete_with_parts" value="1" />
 
-    if (selectedStatus === 'Completed') {
-        const params = new URLSearchParams(window.location.search);
-        params.set('show_parts_modal', jobId);
-        window.location.href = '?' + params.toString();
-        return;
-    }
+                    <div class="space-y-4">
+                        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                            <p class="text-sm text-slate-600 font-medium">Select the parts/inventory items used in this
+                                repair:</p>
+                            <button type="button" id="add_sourced_part_btn" onclick="addSourcedPartRow()"
+                                class="inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-slate-900 text-white text-sm font-semibold hover:bg-slate-800 transition-colors">
+                                <span class="material-symbols-outlined text-base">add</span>
+                                Add Part
+                            </button>
+                        </div>
 
-    const postForm = document.createElement('form');
-    postForm.method = 'post';
-    postForm.innerHTML = `
+                        <div class="border rounded-lg p-4 transition-colors bg-blue-50 border-blue-200">
+                            <div class="flex items-start gap-4">
+                                <input type="checkbox" name="no_parts_used" value="1" class="mt-1" id="no_parts_checkbox"
+                                    onchange="toggleNoPartsMode()">
+                                <div class="flex-1 min-w-0">
+                                    <label for="no_parts_checkbox" class="font-semibold text-slate-900 cursor-pointer">No
+                                        Parts Used</label>
+                                    <p class="text-xs text-slate-600 mt-1">Complete this job without using inventory parts.
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div id="sourced-parts-section"
+                            class="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4 space-y-3">
+                            <div>
+                                <p class="text-sm font-semibold text-slate-900">External / sourced-out parts</p>
+                                <p class="text-xs text-slate-500 mt-1">Use this for parts not available in shop inventory.
+                                    These are added to parts total only and will not deduct stock.</p>
+                            </div>
+                            <div id="sourced-parts-list" class="space-y-3"></div>
+                        </div>
+
+                        <div id="parts-selection-container">
+                            <?php if (count($inventoryItems) === 0): ?>
+                                <div class="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
+                                    No active inventory items available. You can mark the job as completed without parts or add
+                                    items to inventory first.
+                                </div>
+                            <?php else: ?>
+                                <div class="space-y-3 max-h-96 overflow-y-auto">
+                                    <?php foreach ($inventoryItems as $item): ?>
+                                        <div class="border border-slate-200 rounded-lg p-4 hover:bg-slate-50 transition-colors">
+                                            <div class="flex items-start gap-4">
+                                                <input type="checkbox" name="part_selected"
+                                                    value="<?php echo (int) $item['item_id']; ?>" class="mt-1 part-checkbox"
+                                                    id="part_<?php echo (int) $item['item_id']; ?>"
+                                                    onchange="togglePartQuantity(<?php echo (int) $item['item_id']; ?>)">
+                                                <div class="flex-1 min-w-0">
+                                                    <label for="part_<?php echo (int) $item['item_id']; ?>"
+                                                        class="font-semibold text-slate-900 cursor-pointer"><?php echo h($item['part_name']); ?></label>
+                                                    <p class="text-xs text-slate-500">Code:
+                                                        <?php echo h($item['part_code'] ?? 'N/A'); ?> | Category:
+                                                        <?php echo h($item['category']); ?>
+                                                    </p>
+                                                    <p class="text-xs text-slate-600 mt-1">Available:
+                                                        <?php echo (int) $item['stock_quantity']; ?> | Price:
+                                                        ₱<?php echo number_format((float) $item['unit_price'], 2); ?>
+                                                    </p>
+                                                </div>
+                                                <input type="number" data-item-id="<?php echo (int) $item['item_id']; ?>" min="1"
+                                                    max="<?php echo (int) $item['stock_quantity']; ?>" value="1"
+                                                    class="part-quantity w-16 rounded-lg border-slate-300 text-sm text-center disabled:opacity-50 disabled:cursor-not-allowed"
+                                                    disabled>
+                                            </div>
+                                        </div>
+                                    <?php endforeach; ?>
+                                </div>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+
+                    <div class="border-t border-slate-100 pt-4 flex gap-3 justify-end">
+                        <a href="repairjobsadmin.php?<?php echo h(http_build_query(array_filter([
+                            'shop' => $loginSlug,
+                            'q' => $search,
+                            'job_status' => $jobStatusFilter,
+                            'service_status' => $serviceStatusFilter,
+                            'priority' => $priorityFilter,
+                        ], static fn($v) => $v !== ''))); ?>"
+                            class="px-4 py-2.5 rounded-lg border border-slate-300 bg-white text-slate-700 font-semibold hover:bg-slate-50 transition-colors">
+                            Cancel
+                        </a>
+                        <button type="submit"
+                            class="px-6 py-2.5 rounded-lg bg-green-600 text-white font-semibold hover:bg-green-700 transition-colors">
+                            Complete Job & Use Parts
+                        </button>
+                    </div>
+                </form>
+            </section>
+        </div>
+    <?php endif; ?>
+
+    <script>
+        function handleJobStatusChange(selectElement, jobId) {
+            const selectedStatus = selectElement.value;
+
+            if (selectedStatus === 'Completed') {
+                const params = new URLSearchParams(window.location.search);
+                params.set('show_parts_modal', jobId);
+                window.location.href = '?' + params.toString();
+                return;
+            }
+
+            const postForm = document.createElement('form');
+            postForm.method = 'post';
+            postForm.innerHTML = `
         <input type="hidden" name="csrf_token" value="<?php echo h($csrfToken); ?>">
         <input type="hidden" name="repair_job_id" value="${jobId}">
         <input type="hidden" name="job_status" value="${selectedStatus}">
         <input type="hidden" name="update_job_status" value="1">
     `;
-    document.body.appendChild(postForm);
-    postForm.submit();
-}
-
-function toggleNoPartsMode() {
-    const noPartsCheckbox = document.getElementById('no_parts_checkbox');
-    const partCheckboxes = document.querySelectorAll('.part-checkbox');
-    const noPartsChecked = noPartsCheckbox && noPartsCheckbox.checked;
-
-    partCheckboxes.forEach((checkbox) => {
-        checkbox.disabled = noPartsChecked;
-        checkbox.checked = false;
-
-        const quantityInput = document.querySelector('input[data-item-id="' + checkbox.value + '"]');
-        if (quantityInput) {
-            quantityInput.disabled = true;
+            document.body.appendChild(postForm);
+            postForm.submit();
         }
-    });
 
-    const addSourcedPartBtn = document.getElementById('add_sourced_part_btn');
-    if (addSourcedPartBtn) {
-        addSourcedPartBtn.disabled = noPartsChecked;
-        addSourcedPartBtn.classList.toggle('opacity-50', noPartsChecked);
-        addSourcedPartBtn.classList.toggle('cursor-not-allowed', noPartsChecked);
-    }
+        function toggleNoPartsMode() {
+            const noPartsCheckbox = document.getElementById('no_parts_checkbox');
+            const partCheckboxes = document.querySelectorAll('.part-checkbox');
+            const noPartsChecked = noPartsCheckbox && noPartsCheckbox.checked;
 
-    document.querySelectorAll('.sourced-part-input').forEach((input) => {
-        input.disabled = noPartsChecked;
-    });
-}
+            partCheckboxes.forEach((checkbox) => {
+                checkbox.disabled = noPartsChecked;
+                checkbox.checked = false;
 
-function togglePartQuantity(itemId) {
-    const checkbox = document.getElementById('part_' + itemId);
-    const quantityInput = document.querySelector('input[data-item-id="' + itemId + '"]');
+                const quantityInput = document.querySelector('input[data-item-id="' + checkbox.value + '"]');
+                if (quantityInput) {
+                    quantityInput.disabled = true;
+                }
+            });
 
-    if (checkbox && quantityInput) {
-        quantityInput.disabled = !checkbox.checked;
-        if (checkbox.checked) {
-            quantityInput.focus();
+            const addSourcedPartBtn = document.getElementById('add_sourced_part_btn');
+            if (addSourcedPartBtn) {
+                addSourcedPartBtn.disabled = noPartsChecked;
+                addSourcedPartBtn.classList.toggle('opacity-50', noPartsChecked);
+                addSourcedPartBtn.classList.toggle('cursor-not-allowed', noPartsChecked);
+            }
+
+            document.querySelectorAll('.sourced-part-input').forEach((input) => {
+                input.disabled = noPartsChecked;
+            });
         }
-    }
-}
+
+        function togglePartQuantity(itemId) {
+            const checkbox = document.getElementById('part_' + itemId);
+            const quantityInput = document.querySelector('input[data-item-id="' + itemId + '"]');
+
+            if (checkbox && quantityInput) {
+                quantityInput.disabled = !checkbox.checked;
+                if (checkbox.checked) {
+                    quantityInput.focus();
+                }
+            }
+        }
 
 
-let sourcedPartIndex = 0;
+        let sourcedPartIndex = 0;
 
-function addSourcedPartRow() {
-    const noPartsCheckbox = document.getElementById('no_parts_checkbox');
-    if (noPartsCheckbox && noPartsCheckbox.checked) {
-        alert('Uncheck No Parts Used before adding sourced-out parts.');
-        return;
-    }
+        function addSourcedPartRow() {
+            const noPartsCheckbox = document.getElementById('no_parts_checkbox');
+            if (noPartsCheckbox && noPartsCheckbox.checked) {
+                alert('Uncheck No Parts Used before adding sourced-out parts.');
+                return;
+            }
 
-    const list = document.getElementById('sourced-parts-list');
-    if (!list) {
-        return;
-    }
+            const list = document.getElementById('sourced-parts-list');
+            if (!list) {
+                return;
+            }
 
-    const index = sourcedPartIndex++;
-    const row = document.createElement('div');
-    row.className = 'sourced-part-row rounded-lg border border-slate-200 bg-white p-3 space-y-3';
-    row.innerHTML = `
+            const index = sourcedPartIndex++;
+            const row = document.createElement('div');
+            row.className = 'sourced-part-row rounded-lg border border-slate-200 bg-white p-3 space-y-3';
+            row.innerHTML = `
         <div class="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
             <div class="md:col-span-4">
                 <label class="text-[11px] font-bold uppercase text-slate-500">Part Name</label>
@@ -3787,250 +4127,251 @@ function addSourcedPartRow() {
             </div>
         </div>
     `;
-    list.appendChild(row);
-}
+            list.appendChild(row);
+        }
 
-function removeSourcedPartRow(button) {
-    const row = button.closest('.sourced-part-row');
-    if (row) {
-        row.remove();
-    }
-}
-
-document.querySelectorAll('form[method="post"]').forEach((form) => {
-    if (form.querySelector('input[name="complete_with_parts"]')) {
-        form.addEventListener('submit', function () {
-            form.querySelectorAll('input[name="selected_parts[]"]').forEach((input) => input.remove());
-
-            const noPartsCheckbox = form.querySelector('input[name="no_parts_used"]');
-            if (noPartsCheckbox && noPartsCheckbox.checked) {
-                form.querySelectorAll('.sourced-part-row').forEach((row) => row.remove());
-                return;
+        function removeSourcedPartRow(button) {
+            const row = button.closest('.sourced-part-row');
+            if (row) {
+                row.remove();
             }
+        }
 
-            form.querySelectorAll('.part-checkbox:checked').forEach((checkbox) => {
-                const itemId = checkbox.value;
-                const quantityInput = document.querySelector('input[data-item-id="' + itemId + '"]');
+        document.querySelectorAll('form[method="post"]').forEach((form) => {
+            if (form.querySelector('input[name="complete_with_parts"]')) {
+                form.addEventListener('submit', function () {
+                    form.querySelectorAll('input[name="selected_parts[]"]').forEach((input) => input.remove());
 
-                if (quantityInput && quantityInput.value && parseInt(quantityInput.value, 10) > 0) {
-                    const input = document.createElement('input');
-                    input.type = 'hidden';
-                    input.name = 'selected_parts[]';
-                    input.value = JSON.stringify({
-                        item_id: itemId,
-                        quantity: quantityInput.value
+                    const noPartsCheckbox = form.querySelector('input[name="no_parts_used"]');
+                    if (noPartsCheckbox && noPartsCheckbox.checked) {
+                        form.querySelectorAll('.sourced-part-row').forEach((row) => row.remove());
+                        return;
+                    }
+
+                    form.querySelectorAll('.part-checkbox:checked').forEach((checkbox) => {
+                        const itemId = checkbox.value;
+                        const quantityInput = document.querySelector('input[data-item-id="' + itemId + '"]');
+
+                        if (quantityInput && quantityInput.value && parseInt(quantityInput.value, 10) > 0) {
+                            const input = document.createElement('input');
+                            input.type = 'hidden';
+                            input.name = 'selected_parts[]';
+                            input.value = JSON.stringify({
+                                item_id: itemId,
+                                quantity: quantityInput.value
+                            });
+                            form.appendChild(input);
+                        }
                     });
-                    form.appendChild(input);
+                });
+            }
+        });
+
+        document.querySelectorAll('.settings-dropdown-btn').forEach((button) => {
+            button.addEventListener('click', function (e) {
+                e.preventDefault();
+                const dropdown = document.querySelector('[data-dropdown="settings"].settings-dropdown');
+                if (dropdown) {
+                    dropdown.classList.toggle('hidden');
                 }
             });
         });
-    }
-});
 
-document.querySelectorAll('.settings-dropdown-btn').forEach((button) => {
-    button.addEventListener('click', function (e) {
-        e.preventDefault();
-        const dropdown = document.querySelector('[data-dropdown="settings"].settings-dropdown');
-        if (dropdown) {
-            dropdown.classList.toggle('hidden');
-        }
-    });
-});
+        document.addEventListener('click', function (e) {
+            const dropdownBtn = document.querySelector('.settings-dropdown-btn');
+            const dropdown = document.querySelector('[data-dropdown="settings"].settings-dropdown');
 
-document.addEventListener('click', function (e) {
-    const dropdownBtn = document.querySelector('.settings-dropdown-btn');
-    const dropdown = document.querySelector('[data-dropdown="settings"].settings-dropdown');
-
-    if (dropdown && dropdownBtn && !dropdownBtn.contains(e.target) && !dropdown.contains(e.target)) {
-        dropdown.classList.add('hidden');
-    }
-});
-
-const notificationBtn = document.getElementById('notificationBtn');
-const notificationPanel = document.getElementById('notificationPanel');
-
-if (notificationBtn && notificationPanel) {
-    let notificationHideTimer = null;
-
-    function hideNotificationPanel() {
-        if (notificationHideTimer) {
-            clearTimeout(notificationHideTimer);
-            notificationHideTimer = null;
-        }
-
-        notificationPanel.classList.add('opacity-0', 'translate-y-2');
-        notificationPanel.classList.remove('opacity-100', 'translate-y-0');
-
-        window.setTimeout(() => {
-            notificationPanel.classList.add('hidden');
-        }, 300);
-    }
-
-    function showNotificationPanel(autoHide = false) {
-        if (notificationHideTimer) {
-            clearTimeout(notificationHideTimer);
-            notificationHideTimer = null;
-        }
-
-        notificationPanel.classList.remove('hidden');
-        requestAnimationFrame(() => {
-            notificationPanel.classList.remove('opacity-0', 'translate-y-2');
-            notificationPanel.classList.add('opacity-100', 'translate-y-0');
-        });
-
-        if (autoHide) {
-            notificationHideTimer = window.setTimeout(() => {
-                hideNotificationPanel();
-            }, 5000);
-        }
-    }
-
-    notificationBtn.addEventListener('click', function (e) {
-        e.stopPropagation();
-        if (notificationPanel.classList.contains('hidden')) {
-            showNotificationPanel(false);
-        } else {
-            hideNotificationPanel();
-        }
-    });
-
-    <?php if ($notificationCount > 0): ?>
-    showNotificationPanel(true);
-    <?php endif; ?>
-
-    document.addEventListener('click', function (e) {
-        if (!notificationPanel.contains(e.target) && !notificationBtn.contains(e.target)) {
-            hideNotificationPanel();
-        }
-    });
-}
-
-
-let activeHistoryFilter = 'All';
-
-function applyHistoryFilters() {
-    const searchInput = document.getElementById('historySearch');
-    const rows = document.querySelectorAll('.history-row');
-    const noResultsRow = document.getElementById('historyNoResultsRow');
-    const visibleCountElement = document.getElementById('historyVisibleCount');
-    const searchValue = searchInput ? searchInput.value.trim().toLowerCase() : '';
-    let visibleCount = 0;
-
-    rows.forEach((row) => {
-        const rowStatus = row.getAttribute('data-history-status') || '';
-        const rowText = row.getAttribute('data-history-search') || row.textContent.toLowerCase();
-        const matchesStatus = activeHistoryFilter === 'All' || rowStatus === activeHistoryFilter;
-        const matchesSearch = searchValue === '' || rowText.includes(searchValue);
-        const isVisible = matchesStatus && matchesSearch;
-
-        row.classList.toggle('hidden', !isVisible);
-        if (isVisible) {
-            visibleCount += 1;
-        }
-    });
-
-    if (noResultsRow) {
-        noResultsRow.classList.toggle('hidden', visibleCount !== 0 || rows.length === 0);
-    }
-
-    if (visibleCountElement) {
-        visibleCountElement.textContent = visibleCount.toLocaleString();
-    }
-}
-
-const historySearchInput = document.getElementById('historySearch');
-if (historySearchInput) {
-    historySearchInput.addEventListener('input', applyHistoryFilters);
-}
-
-document.querySelectorAll('.history-filter-btn').forEach((button) => {
-    button.addEventListener('click', function () {
-        activeHistoryFilter = button.getAttribute('data-history-filter') || 'All';
-
-        document.querySelectorAll('.history-filter-btn').forEach((btn) => {
-            btn.classList.remove('bg-slate-900', 'text-white', 'hover:bg-slate-800');
-            btn.classList.add('border', 'border-slate-300', 'bg-white', 'text-slate-700', 'hover:bg-slate-100');
-        });
-
-        button.classList.add('bg-slate-900', 'text-white', 'hover:bg-slate-800');
-        button.classList.remove('border', 'border-slate-300', 'bg-white', 'text-slate-700', 'hover:bg-slate-100');
-
-        applyHistoryFilters();
-    });
-});
-applyHistoryFilters();
-
-const diagnosticMainServiceTotal = Number('<?php echo isset($diagnosticMainServiceTotal) ? (float) $diagnosticMainServiceTotal : 0; ?>');
-
-function updateDiagnosticTotal() {
-    let total = diagnosticMainServiceTotal;
-    document.querySelectorAll('.diagnostic-service-checkbox:checked').forEach((checkbox) => {
-        total += Number(checkbox.getAttribute('data-price') || 0);
-    });
-
-    const totalElement = document.getElementById('diagnosticTotal');
-    if (totalElement) {
-        totalElement.textContent = '₱' + total.toLocaleString(undefined, {
-            minimumFractionDigits: 2,
-            maximumFractionDigits: 2
-        });
-    }
-}
-
-document.querySelectorAll('.diagnostic-service-checkbox').forEach((checkbox) => {
-    checkbox.addEventListener('change', updateDiagnosticTotal);
-});
-updateDiagnosticTotal();
-
-const diagnosticForm = document.getElementById('diagnosticForm');
-if (diagnosticForm) {
-    diagnosticForm.addEventListener('submit', function (e) {
-        const checked = diagnosticForm.querySelectorAll('.diagnostic-service-checkbox:checked');
-        if (checked.length === 0) {
-            e.preventDefault();
-            alert('Please select at least one recommended sub-service.');
-        }
-    });
-}
-</script>
-
-<script>
-(function() {
-    const sidebarToggle = document.getElementById('sidebarToggle');
-    const sidebar = document.getElementById('sidebar');
-    const sidebarOverlay = document.getElementById('sidebarOverlay');
-    const navLinks = document.querySelectorAll('aside a');
-
-    if (sidebarToggle) {
-        sidebarToggle.addEventListener('click', function() {
-            sidebar.classList.toggle('-translate-x-full');
-            sidebarOverlay.classList.toggle('hidden');
-        });
-    }
-
-    if (sidebarOverlay) {
-        sidebarOverlay.addEventListener('click', function() {
-            sidebar.classList.add('-translate-x-full');
-            sidebarOverlay.classList.add('hidden');
-        });
-    }
-
-    navLinks.forEach(link => {
-        link.addEventListener('click', function() {
-            if (window.innerWidth < 768) {
-                sidebar.classList.add('-translate-x-full');
-                sidebarOverlay.classList.add('hidden');
+            if (dropdown && dropdownBtn && !dropdownBtn.contains(e.target) && !dropdown.contains(e.target)) {
+                dropdown.classList.add('hidden');
             }
         });
-    });
 
-    window.addEventListener('resize', function() {
-        if (window.innerWidth >= 768) {
-            sidebar.classList.remove('-translate-x-full');
-            sidebarOverlay.classList.add('hidden');
+        const notificationBtn = document.getElementById('notificationBtn');
+        const notificationPanel = document.getElementById('notificationPanel');
+
+        if (notificationBtn && notificationPanel) {
+            let notificationHideTimer = null;
+
+            function hideNotificationPanel() {
+                if (notificationHideTimer) {
+                    clearTimeout(notificationHideTimer);
+                    notificationHideTimer = null;
+                }
+
+                notificationPanel.classList.add('opacity-0', 'translate-y-2');
+                notificationPanel.classList.remove('opacity-100', 'translate-y-0');
+
+                window.setTimeout(() => {
+                    notificationPanel.classList.add('hidden');
+                }, 300);
+            }
+
+            function showNotificationPanel(autoHide = false) {
+                if (notificationHideTimer) {
+                    clearTimeout(notificationHideTimer);
+                    notificationHideTimer = null;
+                }
+
+                notificationPanel.classList.remove('hidden');
+                requestAnimationFrame(() => {
+                    notificationPanel.classList.remove('opacity-0', 'translate-y-2');
+                    notificationPanel.classList.add('opacity-100', 'translate-y-0');
+                });
+
+                if (autoHide) {
+                    notificationHideTimer = window.setTimeout(() => {
+                        hideNotificationPanel();
+                    }, 5000);
+                }
+            }
+
+            notificationBtn.addEventListener('click', function (e) {
+                e.stopPropagation();
+                if (notificationPanel.classList.contains('hidden')) {
+                    showNotificationPanel(false);
+                } else {
+                    hideNotificationPanel();
+                }
+            });
+
+            <?php if ($notificationCount > 0): ?>
+                showNotificationPanel(true);
+            <?php endif; ?>
+
+            document.addEventListener('click', function (e) {
+                if (!notificationPanel.contains(e.target) && !notificationBtn.contains(e.target)) {
+                    hideNotificationPanel();
+                }
+            });
         }
-    });
-})();
-</script>
+
+
+        let activeHistoryFilter = 'All';
+
+        function applyHistoryFilters() {
+            const searchInput = document.getElementById('historySearch');
+            const rows = document.querySelectorAll('.history-row');
+            const noResultsRow = document.getElementById('historyNoResultsRow');
+            const visibleCountElement = document.getElementById('historyVisibleCount');
+            const searchValue = searchInput ? searchInput.value.trim().toLowerCase() : '';
+            let visibleCount = 0;
+
+            rows.forEach((row) => {
+                const rowStatus = row.getAttribute('data-history-status') || '';
+                const rowText = row.getAttribute('data-history-search') || row.textContent.toLowerCase();
+                const matchesStatus = activeHistoryFilter === 'All' || rowStatus === activeHistoryFilter;
+                const matchesSearch = searchValue === '' || rowText.includes(searchValue);
+                const isVisible = matchesStatus && matchesSearch;
+
+                row.classList.toggle('hidden', !isVisible);
+                if (isVisible) {
+                    visibleCount += 1;
+                }
+            });
+
+            if (noResultsRow) {
+                noResultsRow.classList.toggle('hidden', visibleCount !== 0 || rows.length === 0);
+            }
+
+            if (visibleCountElement) {
+                visibleCountElement.textContent = visibleCount.toLocaleString();
+            }
+        }
+
+        const historySearchInput = document.getElementById('historySearch');
+        if (historySearchInput) {
+            historySearchInput.addEventListener('input', applyHistoryFilters);
+        }
+
+        document.querySelectorAll('.history-filter-btn').forEach((button) => {
+            button.addEventListener('click', function () {
+                activeHistoryFilter = button.getAttribute('data-history-filter') || 'All';
+
+                document.querySelectorAll('.history-filter-btn').forEach((btn) => {
+                    btn.classList.remove('bg-slate-900', 'text-white', 'hover:bg-slate-800');
+                    btn.classList.add('border', 'border-slate-300', 'bg-white', 'text-slate-700', 'hover:bg-slate-100');
+                });
+
+                button.classList.add('bg-slate-900', 'text-white', 'hover:bg-slate-800');
+                button.classList.remove('border', 'border-slate-300', 'bg-white', 'text-slate-700', 'hover:bg-slate-100');
+
+                applyHistoryFilters();
+            });
+        });
+        applyHistoryFilters();
+
+        const diagnosticMainServiceTotal = Number('<?php echo isset($diagnosticMainServiceTotal) ? (float) $diagnosticMainServiceTotal : 0; ?>');
+
+        function updateDiagnosticTotal() {
+            let total = diagnosticMainServiceTotal;
+            document.querySelectorAll('.diagnostic-service-checkbox:checked').forEach((checkbox) => {
+                total += Number(checkbox.getAttribute('data-price') || 0);
+            });
+
+            const totalElement = document.getElementById('diagnosticTotal');
+            if (totalElement) {
+                totalElement.textContent = '₱' + total.toLocaleString(undefined, {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2
+                });
+            }
+        }
+
+        document.querySelectorAll('.diagnostic-service-checkbox').forEach((checkbox) => {
+            checkbox.addEventListener('change', updateDiagnosticTotal);
+        });
+        updateDiagnosticTotal();
+
+        const diagnosticForm = document.getElementById('diagnosticForm');
+        if (diagnosticForm) {
+            diagnosticForm.addEventListener('submit', function (e) {
+                const checked = diagnosticForm.querySelectorAll('.diagnostic-service-checkbox:checked');
+                if (checked.length === 0) {
+                    e.preventDefault();
+                    alert('Please select at least one recommended sub-service.');
+                }
+            });
+        }
+    </script>
+
+    <script>
+        (function () {
+            const sidebarToggle = document.getElementById('sidebarToggle');
+            const sidebar = document.getElementById('sidebar');
+            const sidebarOverlay = document.getElementById('sidebarOverlay');
+            const navLinks = document.querySelectorAll('aside a');
+
+            if (sidebarToggle) {
+                sidebarToggle.addEventListener('click', function () {
+                    sidebar.classList.toggle('-translate-x-full');
+                    sidebarOverlay.classList.toggle('hidden');
+                });
+            }
+
+            if (sidebarOverlay) {
+                sidebarOverlay.addEventListener('click', function () {
+                    sidebar.classList.add('-translate-x-full');
+                    sidebarOverlay.classList.add('hidden');
+                });
+            }
+
+            navLinks.forEach(link => {
+                link.addEventListener('click', function () {
+                    if (window.innerWidth < 768) {
+                        sidebar.classList.add('-translate-x-full');
+                        sidebarOverlay.classList.add('hidden');
+                    }
+                });
+            });
+
+            window.addEventListener('resize', function () {
+                if (window.innerWidth >= 768) {
+                    sidebar.classList.remove('-translate-x-full');
+                    sidebarOverlay.classList.add('hidden');
+                }
+            });
+        })();
+    </script>
 </body>
+
 </html>

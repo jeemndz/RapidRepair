@@ -813,6 +813,107 @@ if (isset($_GET['export']) && $_GET['export'] === '1') {
             size: A4;
             margin: 1cm;
         }
+
+        /* Mobile and tablet responsive improvements */
+        .mobile-header { display: none; }
+
+        @media (max-width: 767px) {
+            body { overflow-x: hidden; }
+
+            .mobile-header { display: flex; }
+
+            .admin-sidebar {
+                position: fixed !important;
+                top: 0;
+                left: 0;
+                height: 100vh !important;
+                width: min(18rem, 86vw) !important;
+                z-index: 50;
+                padding-top: 4rem;
+            }
+
+            .admin-main {
+                margin-left: 0 !important;
+                padding-top: 4rem;
+                width: 100%;
+                min-width: 0;
+            }
+
+            .desktop-header { display: none !important; }
+
+            .admin-content-wrap {
+                padding: 1rem !important;
+                gap: 1rem !important;
+            }
+
+            .responsive-card-grid {
+                grid-template-columns: 1fr !important;
+                gap: 1rem !important;
+            }
+
+            .responsive-toolbar {
+                flex-direction: column !important;
+                align-items: stretch !important;
+            }
+
+            .responsive-toolbar > div,
+            .responsive-toolbar form,
+            .responsive-toolbar select,
+            .responsive-toolbar input,
+            .responsive-toolbar button,
+            .responsive-toolbar a {
+                width: 100% !important;
+            }
+
+            .responsive-toolbar .badge-row {
+                display: grid !important;
+                grid-template-columns: 1fr !important;
+                width: 100%;
+            }
+
+            .responsive-table-wrap {
+                overflow-x: auto;
+                -webkit-overflow-scrolling: touch;
+            }
+
+            .responsive-table {
+                min-width: 920px;
+            }
+
+            .responsive-details-grid,
+            .responsive-form-grid {
+                grid-template-columns: 1fr !important;
+            }
+
+            .responsive-modal-card {
+                width: calc(100vw - 2rem) !important;
+                max-width: calc(100vw - 2rem) !important;
+                max-height: 90vh;
+                overflow-y: auto;
+            }
+
+            .mobile-stack-actions {
+                flex-direction: column !important;
+                align-items: stretch !important;
+            }
+
+            .mobile-stack-actions a,
+            .mobile-stack-actions button {
+                width: 100% !important;
+                justify-content: center;
+            }
+        }
+
+        @media (min-width: 768px) and (max-width: 1180px) {
+            .admin-content-wrap { padding: 1.25rem !important; }
+            .responsive-card-grid {
+                grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+            }
+            .responsive-toolbar {
+                align-items: stretch !important;
+            }
+        }
+
     </style>
 </head>
 <body>
@@ -894,6 +995,96 @@ if (isset($_GET['export']) && $_GET['export'] === '1') {
             <p>This is an official AutoFix Pro vehicle inventory report. Generated on <?php echo date('l, F j, Y \a\t g:i A'); ?></p>
         </div>
     </div>
+
+
+
+
+    <script>
+        (function () {
+            const sidebarToggle = document.getElementById('sidebarToggle');
+            const sidebar = document.getElementById('sidebar');
+            const overlay = document.getElementById('sidebarOverlay');
+            const sidebarLinks = document.querySelectorAll('#sidebar a');
+
+            function openSidebar() {
+                if (!sidebar || !overlay) return;
+                sidebar.classList.remove('-translate-x-full');
+                sidebar.classList.add('translate-x-0');
+                overlay.classList.remove('hidden');
+                document.body.classList.add('overflow-hidden');
+                if (sidebarToggle) {
+                    sidebarToggle.setAttribute('aria-label', 'Close menu');
+                }
+            }
+
+            function closeSidebar() {
+                if (!sidebar || !overlay) return;
+                sidebar.classList.add('-translate-x-full');
+                sidebar.classList.remove('translate-x-0');
+                overlay.classList.add('hidden');
+                document.body.classList.remove('overflow-hidden');
+                if (sidebarToggle) {
+                    sidebarToggle.setAttribute('aria-label', 'Open menu');
+                }
+            }
+
+            function isSidebarOpen() {
+                return sidebar && !sidebar.classList.contains('-translate-x-full');
+            }
+
+            if (sidebarToggle) {
+                sidebarToggle.addEventListener('click', function (event) {
+                    event.preventDefault();
+                    event.stopPropagation();
+
+                    if (isSidebarOpen()) {
+                        closeSidebar();
+                    } else {
+                        openSidebar();
+                    }
+                });
+            }
+
+            if (overlay) {
+                overlay.addEventListener('click', closeSidebar);
+            }
+
+            sidebarLinks.forEach(function (link) {
+                link.addEventListener('click', function () {
+                    if (window.innerWidth < 768) {
+                        closeSidebar();
+                    }
+                });
+            });
+
+            document.addEventListener('keydown', function (event) {
+                if (event.key === 'Escape') {
+                    closeSidebar();
+                }
+            });
+
+            window.addEventListener('resize', function () {
+                if (window.innerWidth >= 768) {
+                    if (sidebar) {
+                        sidebar.classList.remove('-translate-x-full');
+                        sidebar.classList.add('translate-x-0');
+                    }
+                    if (overlay) {
+                        overlay.classList.add('hidden');
+                    }
+                    document.body.classList.remove('overflow-hidden');
+                } else {
+                    closeSidebar();
+                }
+            });
+
+            if (window.innerWidth >= 768 && sidebar) {
+                sidebar.classList.remove('-translate-x-full');
+                sidebar.classList.add('translate-x-0');
+            }
+        })();
+    </script>
+
 </body>
 </html>
         <?php
@@ -1159,10 +1350,28 @@ if ($editVehicleId > 0) {
     </style>
 </head>
 
-<body class="bg-background text-on-background min-h-screen">
+<body class="bg-[#eef1f5] text-on-background min-h-screen">
+    <div class="mobile-header md:hidden fixed top-0 left-0 right-0 h-16 bg-white border-b border-slate-200 z-[60] items-center justify-between px-4">
+        <button id="sidebarToggle" type="button" aria-label="Open menu" class="inline-flex items-center justify-center w-10 h-10 rounded-xl bg-slate-100 text-slate-700 active:scale-95 transition">
+            <span class="material-symbols-outlined">menu</span>
+        </button>
+
+        <div class="flex items-center gap-2 min-w-0">
+            <?php if ($logoPath !== ''): ?>
+                <img src="<?php echo h($logoPath); ?>" alt="<?php echo h($shopName); ?> logo" class="w-8 h-8 object-contain shrink-0">
+            <?php endif; ?>
+            <h2 class="text-sm font-black truncate max-w-[190px]"><?php echo h($shopName); ?></h2>
+        </div>
+
+        <a href="vehicleadmin.php?<?php echo h(http_build_query(array_filter(['shop' => $loginSlug, 'add_vehicle' => 1], static fn ($value) => $value !== null))); ?>" class="inline-flex items-center justify-center w-10 h-10 rounded-xl bg-primary text-white">
+            <span class="material-symbols-outlined">add</span>
+        </a>
+    </div>
+
+    <div id="sidebarOverlay" class="hidden fixed inset-0 bg-black/50 z-40 md:hidden"></div>
     <!-- Updated SideNavBar Implementation based on SCREEN_106 -->
-    <aside
-        class="fixed inset-y-0 left-0 flex flex-col z-40 h-full w-64 border-r border-slate-200 bg-white overflow-y-auto">
+    <aside id="sidebar"
+        class="admin-sidebar fixed inset-y-0 left-0 flex flex-col z-40 h-full w-64 border-r border-slate-200 bg-white overflow-y-auto -translate-x-full md:translate-x-0 transition-transform duration-300 ease-in-out">
         <div class="p-6">
             <div class="flex items-center gap-3 mb-8">
                 
@@ -1313,7 +1522,7 @@ $shopParts = explode(' ', trim($shopName), 2);
                 <form method="post" action="../logout/logout.php" class="inline">
                     <input type="hidden" name="action" value="confirm" />
                     <input type="hidden" name="shop" value="<?php echo h($loginSlug); ?>" />
-                    <button type="submit" class="text-slate-400 hover:text-error transition-colors" title="Logout">
+                    <button type="submit" class="text-slate-400 hover:text-red-500 transition-colors" title="Logout">
                         <span class="material-symbols-outlined text-xl">logout</span>
                     </button>
                 </form>
@@ -1321,10 +1530,10 @@ $shopParts = explode(' ', trim($shopName), 2);
         </div>
     </aside>
     <!-- Main Content Area -->
-    <main class="ml-64 min-h-screen">
+    <main class="admin-main ml-64 min-h-screen">
         <!-- Top Nav Bar -->
         <header
-            class="sticky top-0 z-40 w-full border-b border-slate-200 bg-white/80 backdrop-blur-md flex items-center justify-between px-8 h-16">
+            class="desktop-header sticky top-0 z-40 w-full border-b border-slate-200 bg-white/80 backdrop-blur-md flex items-center justify-between px-8 h-16">
             <h2 class="text-lg font-black text-slate-900 dark:text-white tracking-tight">Vehicle Management</h2>
             <div class="flex items-center gap-4">
                 <button class="p-2 text-slate-500 hover:text-primary transition-all">
@@ -1337,9 +1546,9 @@ $shopParts = explode(' ', trim($shopName), 2);
         </header>
 
         <!-- Dashboard Canvas -->
-        <div class="p-8 space-y-8">
+        <div class="admin-content-wrap p-8 space-y-8">
             <!-- Summary Metrics (Bento Style) -->
-            <div class="grid grid-cols-1 md:grid-cols-4 gap-6">
+            <div class="responsive-card-grid grid grid-cols-1 md:grid-cols-4 gap-6">
                 <div class="bg-white p-6 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between">
                     <div class="flex justify-between items-start mb-4">
                         <div class="p-2 bg-primary/10 rounded-lg text-primary">
@@ -1401,10 +1610,10 @@ $shopParts = explode(' ', trim($shopName), 2);
             <!-- Main Table Section -->
             <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
                 <!-- Table Controls -->
-                <div class="p-6 border-b border-slate-100 flex flex-col md:flex-row justify-between items-center gap-4">
+                <div class="responsive-toolbar p-6 border-b border-slate-100 flex flex-col md:flex-row justify-between items-center gap-4">
                     <div class="flex items-center gap-4 w-full md:w-auto">
                         <h3 class="font-bold text-slate-900">Vehicle Inventory</h3>
-                        <div class="flex gap-2">
+                        <div class="badge-row flex gap-2">
                             <span
                                 class="bg-blue-50 text-primary text-[10px] font-bold px-2 py-1 rounded border border-blue-100">ALL
                                 (<?php echo number_format($stats['total']); ?>)</span>
@@ -1416,7 +1625,7 @@ $shopParts = explode(' ', trim($shopName), 2);
                                 (<?php echo number_format($stats['inactive']); ?>)</span>
                         </div>
                     </div>
-                    <div class="flex items-center gap-2 w-full md:w-auto flex-wrap justify-end">
+                    <div class="mobile-stack-actions flex items-center gap-2 w-full md:w-auto flex-wrap justify-end">
                         <a href="vehicleadmin.php?<?php echo h(http_build_query(array_filter([
                             'shop' => $loginSlug,
                             'add_vehicle' => 1,
@@ -1498,7 +1707,7 @@ $shopParts = explode(' ', trim($shopName), 2);
                                 'user_id' => $customerUserId > 0 ? $customerUserId : null,
                             ], static fn ($value) => $value !== null && $value !== ''))); ?>" class="text-xs font-semibold text-slate-500 hover:text-slate-700">Close</a>
                         </div>
-                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+                        <div class="responsive-details-grid grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
                             <div><span class="text-xs text-slate-500 uppercase font-semibold">Customer</span><p class="font-semibold text-slate-800 mt-1"><?php echo h($selectedVehicleForView['customer_name'] ?: 'Unassigned'); ?></p></div>
                             <div><span class="text-xs text-slate-500 uppercase font-semibold">Contact</span><p class="font-semibold text-slate-800 mt-1"><?php echo h($selectedVehicleForView['customer_contact'] ?: ($selectedVehicleForView['customer_email'] ?: 'No contact info')); ?></p></div>
                             <div><span class="text-xs text-slate-500 uppercase font-semibold">Status</span><p class="font-semibold text-slate-800 mt-1"><?php echo h($selectedVehicleForView['status']); ?></p></div>
@@ -1525,7 +1734,7 @@ $shopParts = explode(' ', trim($shopName), 2);
                                 <?php echo h($formError); ?>
                             </div>
                         <?php endif; ?>
-                        <form action="vehicleadmin.php" method="POST" class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <form action="vehicleadmin.php" method="POST" class="responsive-form-grid grid grid-cols-1 md:grid-cols-3 gap-4">
                             <?php if ($customerUserId > 0): ?>
                                 <input type="hidden" name="user_id" value="<?php echo (int) $customerUserId; ?>">
                             <?php else: ?>
@@ -1642,7 +1851,7 @@ $shopParts = explode(' ', trim($shopName), 2);
                         <?php if (!$selectedVehicleForEdit && $editFormError === ''): ?>
                             <div class="mb-4 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">Vehicle record was not found for this tenant.</div>
                         <?php else: ?>
-                            <form action="vehicleadmin.php" method="POST" class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <form action="vehicleadmin.php" method="POST" class="responsive-form-grid grid grid-cols-1 md:grid-cols-3 gap-4">
                                 <input type="hidden" name="edit_vehicle_id" value="<?php echo (int) $editVehicleId; ?>">
                                 <input type="hidden" name="shop" value="<?php echo h($loginSlug); ?>">
                                 <input type="hidden" name="page" value="<?php echo (int) $page; ?>">
@@ -1705,8 +1914,8 @@ $shopParts = explode(' ', trim($shopName), 2);
                     </div>
                 <?php endif; ?>
                 <!-- Table Content -->
-                <div class="overflow-x-auto">
-                    <table class="w-full text-left border-collapse">
+                <div class="responsive-table-wrap overflow-x-auto">
+                    <table class="responsive-table w-full text-left border-collapse">
                         <thead>
                             <tr class="bg-slate-50/50">
                                 <th class="px-6 py-4 text-[11px] font-black text-slate-400 uppercase tracking-widest">

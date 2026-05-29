@@ -832,38 +832,158 @@ $lastRow = min($offset + $perPage, $filteredTotal);
         .material-symbols-outlined {
             font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
         }
+
+        /* Mobile and tablet responsive improvements */
+        .mobile-header { display: none; }
+
+        @media (max-width: 767px) {
+            body { overflow-x: hidden; }
+            .mobile-header { display: flex; }
+
+            .admin-shell {
+                height: auto !important;
+                min-height: 100vh;
+                overflow: visible !important;
+                padding-top: 4rem;
+            }
+
+            .admin-sidebar {
+                position: fixed !important;
+                top: 0;
+                left: 0;
+                height: 100vh !important;
+                width: min(18rem, 86vw) !important;
+                z-index: 50;
+                transform: translateX(-100%);
+                transition: transform 0.3s ease-in-out;
+                padding-top: 4rem;
+            }
+
+            .admin-sidebar.sidebar-open { transform: translateX(0); }
+
+            .admin-content {
+                width: 100%;
+                min-width: 0;
+                overflow: visible !important;
+            }
+
+            .admin-main {
+                padding: 1rem !important;
+                max-width: 100% !important;
+            }
+
+            .page-heading {
+                flex-direction: column;
+                align-items: stretch !important;
+            }
+
+            .page-heading a,
+            .page-heading button { width: 100%; }
+
+            .responsive-card-grid {
+                grid-template-columns: 1fr !important;
+                gap: 1rem !important;
+            }
+
+            .responsive-form-grid { grid-template-columns: 1fr !important; }
+            .responsive-two-column { grid-template-columns: 1fr !important; }
+
+            .responsive-filter {
+                display: grid !important;
+                grid-template-columns: 1fr !important;
+            }
+
+            .responsive-filter form,
+            .responsive-filter select,
+            .responsive-filter button,
+            .responsive-filter input {
+                width: 100% !important;
+            }
+
+            .responsive-table-wrap {
+                overflow-x: auto;
+                -webkit-overflow-scrolling: touch;
+            }
+
+            .responsive-table { min-width: 760px; }
+
+            .mobile-stack-actions {
+                justify-content: stretch !important;
+            }
+
+            .mobile-stack-actions button,
+            .mobile-stack-actions a { width: 100%; }
+
+            .mobile-safe-text { word-break: break-word; }
+        }
+
+        @media (min-width: 768px) and (max-width: 1180px) {
+            .admin-main { padding: 1.25rem !important; }
+            .responsive-two-column { grid-template-columns: 1fr !important; }
+            .responsive-card-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+        }
+
     </style>
 </head>
 
-<body class="bg-background-light dark:bg-background-dark text-slate-900 dark:text-slate-100 font-display">
-    <div class="flex h-screen overflow-hidden">
-        <aside
-            class="w-64 flex-shrink-0 border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 h-screen sticky top-0 flex flex-col overflow-y-auto">
-            <div class="p-6 flex-1">
+<body class="bg-[#eef1f5] dark:bg-background-dark text-slate-900 dark:text-slate-100 font-display">
+    <div class="mobile-header md:hidden fixed top-0 left-0 right-0 h-16 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 z-[60] items-center justify-between px-4">
+        <button id="sidebarToggle" type="button" class="inline-flex items-center justify-center w-10 h-10 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200">
+            <span class="material-symbols-outlined">menu</span>
+        </button>
+
+        <div class="flex items-center gap-2 min-w-0">
+            <?php if ($logoPath !== ''): ?>
+                <img src="<?php echo h($logoPath); ?>" alt="<?php echo h($shopName); ?> logo" class="w-8 h-8 object-contain shrink-0">
+            <?php endif; ?>
+            <h2 class="text-sm font-black truncate max-w-[190px]"><?php echo h($shopName); ?></h2>
+        </div>
+
+        <a href="#item-form" class="inline-flex items-center justify-center w-10 h-10 rounded-xl bg-primary text-white">
+            <span class="material-symbols-outlined">add</span>
+        </a>
+    </div>
+
+    <div id="sidebarOverlay" class="hidden fixed inset-0 bg-black/50 z-40 md:hidden"></div>
+    <div class="admin-shell flex min-h-screen overflow-hidden">
+        <aside id="sidebar"
+            class="admin-sidebar w-64 flex-shrink-0 border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 h-screen sticky top-0 flex flex-col overflow-y-auto">
+           <div class="p-6 flex-1">
                 <div class="flex items-center gap-3 mb-8">
-                    
-<?php if ($logoPath !== ''): ?>
 
-    <div class="h-14 w-14 overflow-hidden flex items-center justify-center">
-        <img
-            src="<?php echo h($logoPath); ?>"
-            alt="<?php echo h($shopName); ?> logo"
-            class="w-full h-full object-contain">
-    </div>
+                    <?php if ($logoPath !== ''): ?>
 
-<?php else: ?>
+                        <div class="h-14 w-14 overflow-hidden flex items-center justify-center">
+                            <img src="<?php echo h($logoPath); ?>" alt="<?php echo h($shopName); ?> logo"
+                                class="w-full h-full object-contain">
+                        </div>
 
-    <div class="bg-primary rounded-2xl p-3 text-white shadow-lg">
-        <span class="material-symbols-outlined text-3xl">
-            directions_car
-        </span>
-    </div>
+                    <?php else: ?>
 
-<?php endif; ?>
+                        <div class="bg-primary rounded-2xl p-3 text-white shadow-lg">
+                            <span class="material-symbols-outlined text-3xl">
+                                directions_car
+                            </span>
+                        </div>
+
+                    <?php endif; ?>
 
                     <div>
-                        <h1 class="text-lg font-bold leading-none">
-                            <?php echo htmlspecialchars($shopName, ENT_QUOTES, 'UTF-8'); ?></h1>
+
+                        <?php
+                        $shopParts = explode(' ', trim($shopName), 2);
+                        ?>
+
+                        <h1 class="text-xl font-black leading-none tracking-tight">
+                            <span class="text-slate-900 dark:text-white">
+                                <?php echo htmlspecialchars($shopParts[0] ?? 'Rapid'); ?>
+                            </span>
+
+                            <span class="text-primary">
+                                <?php echo htmlspecialchars($shopParts[1] ?? 'Repair'); ?>
+                            </span>
+                        </h1>
+
                         <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Your Repair Shop</p>
                     </div>
                 </div>
@@ -956,16 +1076,16 @@ $lastRow = min($offset + $perPage, $filteredTotal);
                         <input type="hidden" name="action" value="confirm" />
                         <input type="hidden" name="shop"
                             value="<?php echo htmlspecialchars($loginSlug, ENT_QUOTES, 'UTF-8'); ?>" />
-                        <button type="submit" class="text-slate-400 hover:text-error transition-colors"
+                        <button type="submit" class="text-slate-400 hover:text-red-500 transition-colors"
                             title="Logout"><span class="material-symbols-outlined text-xl">logout</span></button>
                     </form>
                 </div>
             </div>
         </aside>
 
-        <div class="flex-1 flex flex-col min-w-0 bg-background-light dark:bg-background-dark overflow-y-auto">
+        <div class="admin-content flex-1 flex flex-col min-w-0 bg-[#eef1f5] dark:bg-background-dark overflow-y-auto">
             <header
-                class="sticky top-0 z-40 w-full border-b border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md flex items-center justify-between px-8 h-16">
+                class="hidden md:flex sticky top-0 z-40 w-full border-b border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md items-center justify-between px-8 h-16">
                 <h2 class="text-lg font-black text-slate-900 dark:text-white tracking-tight">Inventory Management</h2>
                 <div class="flex items-center gap-4">
                     <button class="p-2 text-slate-500 hover:text-primary transition-all"><span
@@ -975,8 +1095,8 @@ $lastRow = min($offset + $perPage, $filteredTotal);
                 </div>
             </header>
 
-            <main class="p-8 max-w-[1600px] mx-auto w-full space-y-8">
-                <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <main class="admin-main p-8 max-w-[1600px] mx-auto w-full space-y-8">
+                <div class="page-heading flex flex-col md:flex-row md:items-center justify-between gap-4">
                     <div>
                         <h2 class="text-3xl font-black text-slate-900 dark:text-white tracking-tight">Inventory Control
                         </h2>
@@ -995,7 +1115,7 @@ $lastRow = min($offset + $perPage, $filteredTotal);
                     </div>
                 <?php endif; ?>
 
-                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+                <div class="responsive-card-grid grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
                     <div
                         class="bg-white dark:bg-slate-900 p-6 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
                         <div class="flex justify-between items-start mb-4">
@@ -1045,7 +1165,7 @@ $lastRow = min($offset + $perPage, $filteredTotal);
                     </div>
                 </div>
 
-                <div class="grid grid-cols-1 xl:grid-cols-[1fr_380px] gap-8 items-start">
+                <div class="responsive-two-column grid grid-cols-1 xl:grid-cols-[1fr_380px] gap-8 items-start">
                     <div class="space-y-6">
                         <div id="item-form"
                             class="bg-white dark:bg-slate-900 p-6 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
@@ -1062,7 +1182,7 @@ $lastRow = min($offset + $perPage, $filteredTotal);
                                         class="text-sm font-semibold text-primary hover:underline">Cancel
                                         edit</a><?php endif; ?>
                             </div>
-                            <form method="post" action="/RapidRepair/tenant/inventoryadmin.php?shop=<?php echo $shopQuery; ?>#item-form" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                            <form method="post" action="/RapidRepair/tenant/inventoryadmin.php?shop=<?php echo $shopQuery; ?>#item-form" class="responsive-form-grid grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                                 <input type="hidden" name="inventory_action" value="save_item" />
                                 <input type="hidden" name="item_id" value="<?php echo (int) $formData['item_id']; ?>" />
                                 <div><label
@@ -1120,7 +1240,7 @@ $lastRow = min($offset + $perPage, $filteredTotal);
                                                 <?php echo htmlspecialchars($status, ENT_QUOTES, 'UTF-8'); ?></option>
                                         <?php endforeach; ?>
                                     </select></div>
-                                <div class="md:col-span-2 xl:col-span-3 flex justify-end"><button type="submit"
+                                <div class="md:col-span-2 xl:col-span-3 flex justify-end mobile-stack-actions"><button type="submit"
                                         class="inline-flex items-center gap-2 bg-primary text-white px-5 py-2.5 rounded-lg font-bold hover:bg-primary/90 transition-colors"><span
                                             class="material-symbols-outlined text-lg"><?php echo $formData['item_id'] > 0 ? 'save' : 'add'; ?></span><?php echo $formData['item_id'] > 0 ? 'Update Item' : 'Save Item'; ?></button>
                                 </div>
@@ -1128,7 +1248,7 @@ $lastRow = min($offset + $perPage, $filteredTotal);
                         </div>
 
                         <div
-                            class="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800 flex flex-wrap items-center gap-4">
+                            class="responsive-filter bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800 flex flex-wrap items-center gap-4">
                             <form method="get" action="/RapidRepair/tenant/inventoryadmin.php" class="flex-1 min-w-[220px] relative">
                                 <input type="hidden" name="shop"
                                     value="<?php echo htmlspecialchars($loginSlug, ENT_QUOTES, 'UTF-8'); ?>" />
@@ -1176,8 +1296,8 @@ $lastRow = min($offset + $perPage, $filteredTotal);
 
                         <div
                             class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm">
-                            <div class="overflow-x-auto">
-                                <table class="w-full text-left border-collapse">
+                            <div class="responsive-table-wrap overflow-x-auto">
+                                <table class="responsive-table w-full text-left border-collapse">
                                     <thead>
                                         <tr
                                             class="bg-slate-50 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-800">
@@ -1446,6 +1566,52 @@ $lastRow = min($offset + $perPage, $filteredTotal);
             }
         });
     </script>
+
+    <script>
+        (function () {
+            const sidebarToggle = document.getElementById('sidebarToggle');
+            const sidebar = document.getElementById('sidebar');
+            const overlay = document.getElementById('sidebarOverlay');
+            const sidebarLinks = document.querySelectorAll('#sidebar a');
+
+            function openSidebar() {
+                if (!sidebar || !overlay) return;
+                sidebar.classList.add('sidebar-open');
+                overlay.classList.remove('hidden');
+                document.body.style.overflow = 'hidden';
+            }
+
+            function closeSidebar() {
+                if (!sidebar || !overlay) return;
+                sidebar.classList.remove('sidebar-open');
+                overlay.classList.add('hidden');
+                document.body.style.overflow = '';
+            }
+
+            if (sidebarToggle) {
+                sidebarToggle.addEventListener('click', function () {
+                    if (sidebar && sidebar.classList.contains('sidebar-open')) {
+                        closeSidebar();
+                    } else {
+                        openSidebar();
+                    }
+                });
+            }
+
+            if (overlay) overlay.addEventListener('click', closeSidebar);
+
+            sidebarLinks.forEach(function (link) {
+                link.addEventListener('click', function () {
+                    if (window.innerWidth < 768) closeSidebar();
+                });
+            });
+
+            window.addEventListener('resize', function () {
+                if (window.innerWidth >= 768) closeSidebar();
+            });
+        })();
+    </script>
+
 </body>
 
 </html>

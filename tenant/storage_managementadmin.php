@@ -503,7 +503,7 @@ function setText(id, value) {
 }
 
 function loadStorage() {
-    fetch("storage_api.php")
+    fetch("storage_api.php?refresh=" + Date.now())
         .then(response => response.json())
         .then(data => {
             if (!data.success) {

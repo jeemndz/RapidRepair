@@ -1,17 +1,17 @@
 <?php
 session_start();
 include __DIR__ . '/../db.php';
-include __DIR__ . '/../session_security.php';
-include __DIR__ . '/../log_helper.php';
 
-// Safe fallback if access helper variables/functions are not loaded on this page
-$accessibleModules = $accessibleModules ?? [];
+if (file_exists(__DIR__ . '/../session_security.php')) {
+    include __DIR__ . '/../session_security.php';
+}
 
-if (!function_exists('canAccessModule')) {
-    function canAccessModule($moduleName, $accessibleModules = [])
-    {
-        return true;
-    }
+if (file_exists(__DIR__ . '/../log_helper.php')) {
+    include __DIR__ . '/../log_helper.php';
+}
+
+if (file_exists(__DIR__ . '/access_control.php')) {
+    include __DIR__ . '/access_control.php';
 }
 
 // Check if tenant is logged in
@@ -21,6 +21,34 @@ if (!isset($_SESSION['tenantID'])) {
 }
 
 $tenantID = (string) $_SESSION['tenantID'];
+
+// Enforce access to this page for staff accounts.
+// Owners can access all modules by default.
+if (function_exists('enforceModuleAccess')) {
+    enforceModuleAccess((int) $tenantID, basename(__FILE__));
+}
+
+// Load allowed modules for sidebar visibility.
+$accessibleModules = [];
+
+if (function_exists('getAccessibleModules')) {
+    $accessibleModules = getAccessibleModules((int) $tenantID);
+}
+
+if (!function_exists('canAccessModule')) {
+    function canAccessModule($moduleName, $accessibleModules = [])
+    {
+        if (($_SESSION['userType'] ?? 'owner') === 'owner') {
+            return true;
+        }
+
+        if (empty($accessibleModules)) {
+            return false;
+        }
+
+        return in_array($moduleName, $accessibleModules, true);
+    }
+}
 
 // Get logged-in user information
 $loggedInUserName = '';
@@ -104,46 +132,62 @@ if ($ownerStmt) {
                 </div>
             </div>
             <nav class="space-y-1">
+                <?php if (canAccessModule('dashboardadmin.php', $accessibleModules)): ?>
                 <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
                     href="dashboardadmin.php">
                     <span class="material-symbols-outlined text-[22px]">dashboard</span>
                     Dashboard
                 </a>
+                <?php endif; ?>
+                <?php if (canAccessModule('repairjobsadmin.php', $accessibleModules)): ?>
                 <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
                     href="repairjobsadmin.php">
                     <span class="material-symbols-outlined text-[22px]">build</span>
                     Repair Jobs
                 </a>
+                <?php endif; ?>
+                <?php if (canAccessModule('vehicleadmin.php', $accessibleModules)): ?>
                 <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
                     href="vehicleadmin.php">
                     <span class="material-symbols-outlined text-[22px]">directions_car</span>
                     Vehicles
                 </a>
+                <?php endif; ?>
+                <?php if (canAccessModule('appointmentadmin.php', $accessibleModules)): ?>
                 <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
                     href="appointmentadmin.php">
                     <span class="material-symbols-outlined text-[22px]">event</span>
                     Appointments
                 </a>
+                <?php endif; ?>
+                <?php if (canAccessModule('reportsadmin.php', $accessibleModules)): ?>
                 <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
                     href="reportsadmin.php">
                     <span class="material-symbols-outlined text-[22px]">description</span>
                     Reports
                 </a>
+                <?php endif; ?>
+                <?php if (canAccessModule('inventoryadmin.php', $accessibleModules)): ?>
                 <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
                     href="inventoryadmin.php">
                     <span class="material-symbols-outlined text-[22px]">inventory_2</span>
                     Inventory
                 </a>
+                <?php endif; ?>
+                <?php if (canAccessModule('customeradmin.php', $accessibleModules)): ?>
                 <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
                     href="customeradmin.php">
                     <span class="material-symbols-outlined text-[22px]">group</span>
                     Customers
                 </a>
+                <?php endif; ?>
+                <?php if (canAccessModule('paymentsadmin.php', $accessibleModules)): ?>
                 <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
                     href="paymentsadmin.php">
                     <span class="material-symbols-outlined text-[22px]">payments</span>
                     Payments
                 </a>
+                <?php endif; ?>
                 
                 <div class="pt-4 mt-4 border-t border-slate-100 dark:border-slate-800">
                     <div class="relative group">
@@ -153,21 +197,27 @@ if ($ownerStmt) {
                             <span class="material-symbols-outlined text-[16px] ml-auto">expand_more</span>
                         </button>
                         <div class="absolute left-0 top-full mt-1 w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-lg hidden z-50 settings-dropdown" data-dropdown="settings">
+                            <?php if (canAccessModule('accountbillingadmin.php', $accessibleModules)): ?>
                             <a class="flex items-center gap-3 px-3 py-2.5 rounded-t-lg text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors text-sm"
                                 href="accountbillingadmin.php">
                                 <span class="material-symbols-outlined text-[18px]">receipt_long</span>
                                 Account Billing
                             </a>
+                            <?php endif; ?>
+                            <?php if (canAccessModule('websitecustomeadmin.php', $accessibleModules)): ?>
                             <a class="flex items-center gap-3 px-3 py-2.5 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors text-sm border-t border-slate-100 dark:border-slate-700"
                                 href="websitecustomeadmin.php">
                                 <span class="material-symbols-outlined text-[18px]">palette</span>
                                 Website Customizer
                             </a>
+                            <?php endif; ?>
+                            <?php if (canAccessModule('settingsadmin.php', $accessibleModules)): ?>
                             <a class="flex items-center gap-3 px-3 py-2.5 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors text-sm border-t border-slate-100 dark:border-slate-700"
                                 href="settingsadmin.php">
                                 <span class="material-symbols-outlined text-[18px]">settings</span>
                                 Settings
                             </a>
+                            <?php endif; ?>
                             <?php if (canAccessModule('storage_managementadmin.php', $accessibleModules)): ?>
                             <a class="flex items-center gap-3 px-3 py-2.5 rounded-b-lg text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors text-sm border-t border-slate-100 dark:border-slate-700"
                                 href="storage_managementadmin.php">

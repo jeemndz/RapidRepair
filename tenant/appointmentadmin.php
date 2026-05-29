@@ -1297,47 +1297,45 @@ if ($historyStmt) {
     <div id="sidebarOverlay" class="hidden fixed inset-0 bg-black/50 z-30 md:hidden"></div>
     <div class="flex h-screen overflow-hidden pt-16 md:pt-0">
     <aside id="sidebar" class="fixed md:static md:flex left-0 top-0 h-screen md:h-screen w-64 md:w-64 flex-shrink-0 border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex flex-col overflow-y-auto z-40 -translate-x-full md:translate-x-0 transition-transform duration-300 ease-in-out md:transition-none pt-16 md:pt-0">
-        <div class="p-6 flex-1">
-            <div class="flex items-center gap-3 mb-8">
-                
-<?php if ($logoPath !== ''): ?>
+           <div class="p-6 flex-1">
+                <div class="flex items-center gap-3 mb-8">
 
-    <div class="h-14 w-14 overflow-hidden flex items-center justify-center">
-        <img
-            src="<?php echo h($logoPath); ?>"
-            alt="<?php echo h($shopName); ?> logo"
-            class="w-full h-full object-contain">
-    </div>
+                    <?php if ($logoPath !== ''): ?>
 
-<?php else: ?>
+                        <div class="h-14 w-14 overflow-hidden flex items-center justify-center">
+                            <img src="<?php echo h($logoPath); ?>" alt="<?php echo h($shopName); ?> logo"
+                                class="w-full h-full object-contain">
+                        </div>
 
-    <div class="bg-primary rounded-2xl p-3 text-white shadow-lg">
-        <span class="material-symbols-outlined text-3xl">
-            directions_car
-        </span>
-    </div>
+                    <?php else: ?>
 
-<?php endif; ?>
+                        <div class="bg-primary rounded-2xl p-3 text-white shadow-lg">
+                            <span class="material-symbols-outlined text-3xl">
+                                directions_car
+                            </span>
+                        </div>
 
-                <div>
-                    
-<?php
-$shopParts = explode(' ', trim($shopName), 2);
-?>
+                    <?php endif; ?>
 
-<h1 class="text-xl font-black leading-none tracking-tight">
-    <span class="text-slate-900 dark:text-white">
-        <?php echo htmlspecialchars($shopParts[0] ?? 'Rapid'); ?>
-    </span>
+                    <div>
 
-    <span class="text-primary">
-        <?php echo htmlspecialchars($shopParts[1] ?? 'Repair'); ?>
-    </span>
-</h1>
+                        <?php
+                        $shopParts = explode(' ', trim($shopName), 2);
+                        ?>
 
-                    <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Your Repair Shop</p>
+                        <h1 class="text-xl font-black leading-none tracking-tight">
+                            <span class="text-slate-900 dark:text-white">
+                                <?php echo htmlspecialchars($shopParts[0] ?? 'Rapid'); ?>
+                            </span>
+
+                            <span class="text-primary">
+                                <?php echo htmlspecialchars($shopParts[1] ?? 'Repair'); ?>
+                            </span>
+                        </h1>
+
+                        <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Your Repair Shop</p>
+                    </div>
                 </div>
-            </div>
             <nav class="space-y-1">
                 <?php if (canAccessModule('dashboardadmin.php', $accessibleModules)): ?>
                 <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 hover:bg-slate-100 transition-colors font-medium" href="dashboardadmin.php?shop=<?php echo $shopQuery; ?>"><span class="material-symbols-outlined text-[22px]">dashboard</span>Dashboard</a>

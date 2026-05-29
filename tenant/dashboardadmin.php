@@ -88,7 +88,8 @@ $accessibleModules = getAccessibleModules($tenantID);
 $isStaffUser = isset($_SESSION['userType']) && $_SESSION['userType'] === 'staff';
 
 // Helper function to check if a module should be accessible
-function canAccessModule($moduleFile, $accessibleModules) {
+function canAccessModule($moduleFile, $accessibleModules)
+{
     return in_array($moduleFile, $accessibleModules);
 }
 
@@ -442,10 +443,12 @@ if ($repairTableStmt) {
     </style>
 </head>
 
-<body class="bg-background-light dark:bg-background-dark text-slate-900 dark:text-slate-100 font-display">
+<body class="bg-[#eef1f5] dark:bg-[#111827] text-slate-900 dark:text-slate-100 font-display">
     <!-- Mobile Menu Toggle -->
-    <div class="md:hidden fixed top-0 left-0 right-0 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-4 py-3 z-50 flex items-center justify-between">
-        <button id="sidebarToggle" type="button" class="inline-flex items-center justify-center w-10 h-10 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
+    <div
+        class="md:hidden fixed top-0 left-0 right-0 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-4 py-3 z-50 flex items-center justify-between">
+        <button id="sidebarToggle" type="button"
+            class="inline-flex items-center justify-center w-10 h-10 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
             <span class="material-symbols-outlined">menu</span>
         </button>
         <h2 class="text-lg font-bold truncate flex-1 ml-3"><?php echo h($shopName); ?></h2>
@@ -456,13 +459,12 @@ if ($repairTableStmt) {
         <aside id="sidebar"
             class="fixed md:static md:flex left-0 top-0 h-screen md:h-screen w-64 md:w-64 flex-shrink-0 border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex flex-col overflow-y-auto z-40 -translate-x-full md:translate-x-0 transition-transform duration-300 ease-in-out md:transition-none pt-16 md:pt-0">
             <div class="p-6 flex-1">
-                <div class="flex items-center gap-4 mb-8">
+                <div class="flex items-center gap-3 mb-8">
+
                     <?php if ($logoPath !== ''): ?>
 
                         <div class="h-14 w-14 overflow-hidden flex items-center justify-center">
-                            <img
-                                src="<?php echo h($logoPath); ?>"
-                                alt="<?php echo h($shopName); ?> logo"
+                            <img src="<?php echo h($logoPath); ?>" alt="<?php echo h($shopName); ?> logo"
                                 class="w-full h-full object-contain">
                         </div>
 
@@ -475,7 +477,9 @@ if ($repairTableStmt) {
                         </div>
 
                     <?php endif; ?>
+
                     <div>
+
                         <?php
                         $shopParts = explode(' ', trim($shopName), 2);
                         ?>
@@ -489,88 +493,92 @@ if ($repairTableStmt) {
                                 <?php echo htmlspecialchars($shopParts[1] ?? 'Repair'); ?>
                             </span>
                         </h1>
-                        <p class="text-xs text-slate-500 dark:text-slate-400 mt-1 tracking-wide uppercase font-semibold">Your Repair Shop</p>
+
+                        <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Your Repair Shop</p>
                     </div>
                 </div>
                 <nav class="space-y-1">
                     <?php if (canAccessModule('dashboardadmin.php', $accessibleModules)): ?>
-                    <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-primary/10 text-primary font-medium"
-                        href="dashboardadmin.php?shop=<?php echo $shopQuery; ?>">
-                        <span class="material-symbols-outlined text-[22px]">dashboard</span>
-                        Dashboard
-                    </a>
+                        <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-primary/10 text-primary font-medium"
+                            href="dashboardadmin.php?shop=<?php echo $shopQuery; ?>">
+                            <span class="material-symbols-outlined text-[22px]">dashboard</span>
+                            Dashboard
+                        </a>
                     <?php endif; ?>
-                    
+
                     <?php if (canAccessModule('repairjobsadmin.php', $accessibleModules)): ?>
-                    <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 hover:bg-slate-100 transition-colors font-medium"
-                        href="repairjobsadmin.php?shop=<?php echo $shopQuery; ?>">
-                        <span class="material-symbols-outlined text-[22px]">build</span>
-                        Repair Jobs
-                    </a>
+                        <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 hover:bg-slate-100 transition-colors font-medium"
+                            href="repairjobsadmin.php?shop=<?php echo $shopQuery; ?>">
+                            <span class="material-symbols-outlined text-[22px]">build</span>
+                            Repair Jobs
+                        </a>
                     <?php endif; ?>
-                    
+
                     <?php if (canAccessModule('vehicleadmin.php', $accessibleModules)): ?>
-                    <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 hover:bg-slate-100 transition-colors"
-                        href="vehicleadmin.php?shop=<?php echo $shopQuery; ?>">
-                        <span class="material-symbols-outlined text-[22px]">directions_car</span>
-                        Vehicles
-                    </a>
+                        <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 hover:bg-slate-100 transition-colors"
+                            href="vehicleadmin.php?shop=<?php echo $shopQuery; ?>">
+                            <span class="material-symbols-outlined text-[22px]">directions_car</span>
+                            Vehicles
+                        </a>
                     <?php endif; ?>
-                    
+
                     <?php if (canAccessModule('appointmentadmin.php', $accessibleModules)): ?>
-                    <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 hover:bg-slate-100 transition-colors"
-                        href="appointmentadmin.php?shop=<?php echo $shopQuery; ?>">
-                        <span class="material-symbols-outlined text-[22px]">event</span>
-                        Appointments
-                    </a>
+                        <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 hover:bg-slate-100 transition-colors"
+                            href="appointmentadmin.php?shop=<?php echo $shopQuery; ?>">
+                            <span class="material-symbols-outlined text-[22px]">event</span>
+                            Appointments
+                        </a>
                     <?php endif; ?>
-                    
+
                     <?php if (canAccessModule('reportsadmin.php', $accessibleModules)): ?>
-                    <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 hover:bg-slate-100 transition-colors"
-                        href="reportsadmin.php?shop=<?php echo $shopQuery; ?>">
-                        <span class="material-symbols-outlined text-[22px]">description</span>
-                        Reports
-                    </a>
+                        <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 hover:bg-slate-100 transition-colors"
+                            href="reportsadmin.php?shop=<?php echo $shopQuery; ?>">
+                            <span class="material-symbols-outlined text-[22px]">description</span>
+                            Reports
+                        </a>
                     <?php endif; ?>
-                    
+
                     <?php if (canAccessModule('inventoryadmin.php', $accessibleModules)): ?>
-                    <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 hover:bg-slate-100 transition-colors"
-                        href="inventoryadmin.php?shop=<?php echo $shopQuery; ?>">
-                        <span class="material-symbols-outlined text-[22px]">inventory_2</span>
-                        Inventory
-                    </a>
+                        <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 hover:bg-slate-100 transition-colors"
+                            href="inventoryadmin.php?shop=<?php echo $shopQuery; ?>">
+                            <span class="material-symbols-outlined text-[22px]">inventory_2</span>
+                            Inventory
+                        </a>
                     <?php endif; ?>
-                    
+
                     <?php if (canAccessModule('customeradmin.php', $accessibleModules)): ?>
-                    <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 hover:bg-slate-100 transition-colors"
-                        href="customeradmin.php?shop=<?php echo $shopQuery; ?>">
-                        <span class="material-symbols-outlined text-[22px]">group</span>
-                        Customers
-                    </a>
+                        <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 hover:bg-slate-100 transition-colors"
+                            href="customeradmin.php?shop=<?php echo $shopQuery; ?>">
+                            <span class="material-symbols-outlined text-[22px]">group</span>
+                            Customers
+                        </a>
                     <?php endif; ?>
-                    
+
                     <?php if (canAccessModule('paymentsadmin.php', $accessibleModules)): ?>
-                    <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 hover:bg-slate-100 transition-colors"
-                        href="paymentsadmin.php?shop=<?php echo $shopQuery; ?>">
-                        <span class="material-symbols-outlined text-[22px]">payments</span>
-                        Payments
-                    </a>
+                        <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 hover:bg-slate-100 transition-colors"
+                            href="paymentsadmin.php?shop=<?php echo $shopQuery; ?>">
+                            <span class="material-symbols-outlined text-[22px]">payments</span>
+                            Payments
+                        </a>
                     <?php endif; ?>
-                    
+
                     <div class="pt-4 mt-4 border-t border-slate-100">
                         <div class="relative group">
-                            <button class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 hover:bg-slate-100 transition-colors w-full text-left settings-dropdown-btn" data-dropdown="settings">
+                            <button
+                                class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 hover:bg-slate-100 transition-colors w-full text-left settings-dropdown-btn"
+                                data-dropdown="settings">
                                 <span class="material-symbols-outlined text-[22px]">settings</span>
                                 <span>Settings</span>
                                 <span class="material-symbols-outlined text-[16px] ml-auto">expand_more</span>
                             </button>
-                            <div class="absolute left-0 top-full mt-1 w-full bg-white border border-slate-200 rounded-lg shadow-lg hidden z-50 settings-dropdown" data-dropdown="settings">
+                            <div class="absolute left-0 top-full mt-1 w-full bg-white border border-slate-200 rounded-lg shadow-lg hidden z-50 settings-dropdown"
+                                data-dropdown="settings">
                                 <?php if (canAccessModule('accountbillingadmin.php', $accessibleModules)): ?>
-                                <a class="flex items-center gap-3 px-3 py-2.5 rounded-t-lg text-slate-600 hover:bg-blue-50 transition-colors text-sm"
-                                    href="accountbillingadmin.php?shop=<?php echo $shopQuery; ?>">
-                                    <span class="material-symbols-outlined text-[18px]">receipt_long</span>
-                                    Account Billing
-                                </a>
+                                    <a class="flex items-center gap-3 px-3 py-2.5 rounded-t-lg text-slate-600 hover:bg-blue-50 transition-colors text-sm"
+                                        href="accountbillingadmin.php?shop=<?php echo $shopQuery; ?>">
+                                        <span class="material-symbols-outlined text-[18px]">receipt_long</span>
+                                        Account Billing
+                                    </a>
                                 <?php endif; ?>
                                 <a class="flex items-center gap-3 px-3 py-2.5 text-slate-600 hover:bg-blue-50 transition-colors text-sm border-t border-slate-100"
                                     href="websitecustomadmin.php?shop=<?php echo $shopQuery; ?>">
@@ -578,18 +586,18 @@ if ($repairTableStmt) {
                                     Website Customizer
                                 </a>
                                 <?php if (canAccessModule('settingsadmin.php', $accessibleModules)): ?>
-                                <a class="flex items-center gap-3 px-3 py-2.5 text-slate-600 hover:bg-blue-50 transition-colors text-sm border-t border-slate-100"
-                                    href="settingsadmin.php?shop=<?php echo $shopQuery; ?>">
-                                    <span class="material-symbols-outlined text-[18px]">settings</span>
-                                    Settings
-                                </a>
+                                    <a class="flex items-center gap-3 px-3 py-2.5 text-slate-600 hover:bg-blue-50 transition-colors text-sm border-t border-slate-100"
+                                        href="settingsadmin.php?shop=<?php echo $shopQuery; ?>">
+                                        <span class="material-symbols-outlined text-[18px]">settings</span>
+                                        Settings
+                                    </a>
                                 <?php endif; ?>
                                 <?php if (canAccessModule('storage_managementadmin.php', $accessibleModules)): ?>
-                                <a class="flex items-center gap-3 px-3 py-2.5 rounded-b-lg text-slate-600 hover:bg-blue-50 transition-colors text-sm border-t border-slate-100"
-                                    href="storage_managementadmin.php?shop=<?php echo $shopQuery; ?>">
-                                    <span class="material-symbols-outlined text-[18px]">storage</span>
-                                    Storage Management
-                                </a>
+                                    <a class="flex items-center gap-3 px-3 py-2.5 rounded-b-lg text-slate-600 hover:bg-blue-50 transition-colors text-sm border-t border-slate-100"
+                                        href="storage_managementadmin.php?shop=<?php echo $shopQuery; ?>">
+                                        <span class="material-symbols-outlined text-[18px]">storage</span>
+                                        Storage Management
+                                    </a>
                                 <?php endif; ?>
                             </div>
                         </div>
@@ -598,16 +606,20 @@ if ($repairTableStmt) {
             </div>
             <div class="p-4 border-t border-slate-200 dark:border-slate-800">
                 <div class="flex items-center gap-3">
-                    <div class="size-10 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center overflow-hidden">
+                    <div
+                        class="size-10 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center overflow-hidden">
                         <span class="material-symbols-outlined text-slate-500 dark:text-slate-400">person</span>
                     </div>
                     <div class="flex-1 min-w-0">
-                        <p class="text-sm font-semibold truncate text-slate-900 dark:text-white"><?php echo h($loggedInUserName); ?></p>
-                        <p class="text-xs text-slate-500 dark:text-slate-400 truncate"><?php echo h($loggedInUserRole); ?></p>
+                        <p class="text-sm font-semibold truncate text-slate-900 dark:text-white">
+                            <?php echo h($loggedInUserName); ?></p>
+                        <p class="text-xs text-slate-500 dark:text-slate-400 truncate">
+                            <?php echo h($loggedInUserRole); ?></p>
                     </div>
                     <form id="logoutForm" method="post" action="../logout/logout.php" class="inline">
                         <input type="hidden" name="action" value="confirm" />
-                        <input type="hidden" name="shop" value="<?php echo htmlspecialchars($shopSlug, ENT_QUOTES, 'UTF-8'); ?>" />
+                        <input type="hidden" name="shop"
+                            value="<?php echo htmlspecialchars($shopSlug, ENT_QUOTES, 'UTF-8'); ?>" />
                         <button type="submit" class="text-slate-400 hover:text-error transition-colors" title="Logout">
                             <span class="material-symbols-outlined text-xl">logout</span>
                         </button>
@@ -634,58 +646,72 @@ if ($repairTableStmt) {
             <div class="p-8">
                 <!-- Stats Grid -->
                 <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-                    <div class="bg-white dark:bg-slate-900 p-6 rounded-xl border border-slate-200 dark:border-slate-800">
+                    <div
+                        class="bg-white dark:bg-slate-900 p-6 rounded-xl border border-slate-200 dark:border-slate-800">
                         <div class="flex items-center justify-between mb-4">
                             <div class="p-2 bg-primary/10 rounded-lg text-primary">
                                 <span class="material-symbols-outlined">payments</span>
                             </div>
-                            <span class="text-xs font-semibold px-2 py-1 rounded <?php echo $revenueChange >= 0 ? 'text-green-600 bg-green-100 dark:bg-green-900/30' : 'text-red-600 bg-red-100 dark:bg-red-900/30'; ?>">
+                            <span
+                                class="text-xs font-semibold px-2 py-1 rounded <?php echo $revenueChange >= 0 ? 'text-green-600 bg-green-100 dark:bg-green-900/30' : 'text-red-600 bg-red-100 dark:bg-red-900/30'; ?>">
                                 <?php echo ($revenueChange >= 0 ? '+' : '') . number_format($revenueChange, 1); ?>%
                             </span>
                         </div>
                         <p class="text-sm text-slate-500 dark:text-slate-400 font-medium">Monthly Sales</p>
                         <p class="text-2xl font-bold mt-1"><?php echo h(format_money($monthlyRevenue)); ?></p>
                     </div>
-                    <div class="bg-white dark:bg-slate-900 p-6 rounded-xl border border-slate-200 dark:border-slate-800">
+                    <div
+                        class="bg-white dark:bg-slate-900 p-6 rounded-xl border border-slate-200 dark:border-slate-800">
                         <div class="flex items-center justify-between mb-4">
                             <div class="p-2 bg-orange-100 dark:bg-orange-900/20 rounded-lg text-orange-600">
                                 <span class="material-symbols-outlined">car_repair</span>
                             </div>
-                            <span class="text-xs font-semibold text-slate-500 bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded"><?php echo h((string) $inProgressRepairJobs); ?> In Progress</span>
+                            <span
+                                class="text-xs font-semibold text-slate-500 bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded"><?php echo h((string) $inProgressRepairJobs); ?>
+                                In Progress</span>
                         </div>
                         <p class="text-sm text-slate-500 dark:text-slate-400 font-medium">Active Repair Jobs</p>
                         <p class="text-2xl font-bold mt-1"><?php echo h((string) $activeRepairJobs); ?></p>
                     </div>
-                    <div class="bg-white dark:bg-slate-900 p-6 rounded-xl border border-slate-200 dark:border-slate-800">
+                    <div
+                        class="bg-white dark:bg-slate-900 p-6 rounded-xl border border-slate-200 dark:border-slate-800">
                         <div class="flex items-center justify-between mb-4">
                             <div class="p-2 bg-purple-100 dark:bg-purple-900/20 rounded-lg text-purple-600">
                                 <span class="material-symbols-outlined">calendar_month</span>
                             </div>
-                            <span class="text-xs font-semibold text-slate-500 bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded">Next 48h</span>
+                            <span
+                                class="text-xs font-semibold text-slate-500 bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded">Next
+                                48h</span>
                         </div>
                         <p class="text-sm text-slate-500 dark:text-slate-400 font-medium">Upcoming Appts</p>
                         <p class="text-2xl font-bold mt-1"><?php echo h((string) $upcomingAppointments); ?></p>
                     </div>
-                    <div class="bg-white dark:bg-slate-900 p-6 rounded-xl border border-slate-200 dark:border-slate-800">
+                    <div
+                        class="bg-white dark:bg-slate-900 p-6 rounded-xl border border-slate-200 dark:border-slate-800">
                         <div class="flex items-center justify-between mb-4">
                             <div class="p-2 bg-red-100 dark:bg-red-900/20 rounded-lg text-red-600">
                                 <span class="material-symbols-outlined">warning</span>
                             </div>
-                            <span class="text-xs font-semibold text-red-600 bg-red-100 dark:bg-red-900/30 px-2 py-1 rounded"><?php echo $inventoryAlerts > 0 ? 'Urgent' : 'Normal'; ?></span>
+                            <span
+                                class="text-xs font-semibold text-red-600 bg-red-100 dark:bg-red-900/30 px-2 py-1 rounded"><?php echo $inventoryAlerts > 0 ? 'Urgent' : 'Normal'; ?></span>
                         </div>
                         <p class="text-sm text-slate-500 dark:text-slate-400 font-medium">Inventory Alerts</p>
-                        <p class="text-2xl font-bold mt-1 <?php echo $inventoryAlerts > 0 ? 'text-red-600' : ''; ?>"><?php echo h((string) $inventoryAlerts); ?> Low Stock</p>
+                        <p class="text-2xl font-bold mt-1 <?php echo $inventoryAlerts > 0 ? 'text-red-600' : ''; ?>">
+                            <?php echo h((string) $inventoryAlerts); ?> Low Stock</p>
                     </div>
                 </div>
 
                 <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                    <div class="lg:col-span-2 bg-white dark:bg-slate-900 p-6 rounded-xl border border-slate-200 dark:border-slate-800">
+                    <div
+                        class="lg:col-span-2 bg-white dark:bg-slate-900 p-6 rounded-xl border border-slate-200 dark:border-slate-800">
                         <div class="flex items-center justify-between mb-8">
                             <div>
                                 <h3 class="text-lg font-bold">Weekly Performance</h3>
-                                <p class="text-sm text-slate-500">Sales tracking for the last 7 days (Total: <?php echo h(format_money($weekTotal)); ?>)</p>
+                                <p class="text-sm text-slate-500">Sales tracking for the last 7 days (Total:
+                                    <?php echo h(format_money($weekTotal)); ?>)</p>
                             </div>
-                            <select class="bg-slate-100 dark:bg-slate-800 border-none rounded-lg text-xs font-semibold focus:ring-primary">
+                            <select
+                                class="bg-slate-100 dark:bg-slate-800 border-none rounded-lg text-xs font-semibold focus:ring-primary">
                                 <option>This Week</option>
                                 <option disabled>Last Week</option>
                             </select>
@@ -699,33 +725,46 @@ if ($repairTableStmt) {
                                 }
                                 $fillPercent = $weekMax > 0 ? (int) max(10, round(($chartDay['amount'] / $weekMax) * 100)) : 10;
                                 ?>
-                                <div class="flex-1 flex flex-col items-center gap-2 group" title="<?php echo h(format_money($chartDay['amount'])); ?>">
-                                    <div class="w-full bg-slate-100 dark:bg-slate-800 rounded-t-lg relative overflow-hidden" style="height: <?php echo $heightPx; ?>px;">
-                                        <div class="absolute bottom-0 w-full bg-primary/40 group-hover:bg-primary/60 transition-all" style="height: <?php echo $fillPercent; ?>%;"></div>
+                                <div class="flex-1 flex flex-col items-center gap-2 group"
+                                    title="<?php echo h(format_money($chartDay['amount'])); ?>">
+                                    <div class="w-full bg-slate-100 dark:bg-slate-800 rounded-t-lg relative overflow-hidden"
+                                        style="height: <?php echo $heightPx; ?>px;">
+                                        <div class="absolute bottom-0 w-full bg-primary/40 group-hover:bg-primary/60 transition-all"
+                                            style="height: <?php echo $fillPercent; ?>%;"></div>
                                     </div>
-                                    <span class="text-xs font-medium text-slate-500"><?php echo h($chartDay['label']); ?></span>
+                                    <span
+                                        class="text-xs font-medium text-slate-500"><?php echo h($chartDay['label']); ?></span>
                                 </div>
                             <?php endforeach; ?>
                         </div>
                     </div>
 
-                    <div class="bg-white dark:bg-slate-900 p-6 rounded-xl border border-slate-200 dark:border-slate-800 flex flex-col">
+                    <div
+                        class="bg-white dark:bg-slate-900 p-6 rounded-xl border border-slate-200 dark:border-slate-800 flex flex-col">
                         <div class="flex items-center justify-between mb-6">
                             <div>
                                 <h3 class="text-lg font-bold">Recent Activity</h3>
                                 <p class="text-xs text-slate-500 mt-1">Showing logs for this repair shop only</p>
                             </div>
-                            <a href="tenantslogs.php?shop=<?php echo $shopQuery; ?>" class="text-xs text-primary font-semibold hover:underline">View All</a>
+                            <a href="tenantslogs.php?shop=<?php echo $shopQuery; ?>"
+                                class="text-xs text-primary font-semibold hover:underline">View All</a>
                         </div>
                         <div class="space-y-6 flex-1">
                             <?php if (!empty($recentActivities)): ?>
                                 <?php foreach ($recentActivities as $activity): ?>
                                     <div class="flex gap-4">
-                                        <div class="size-2 mt-2 rounded-full ring-4 shrink-0 <?php echo h(activity_color_class((string) ($activity['action'] ?? ''))); ?>"></div>
+                                        <div
+                                            class="size-2 mt-2 rounded-full ring-4 shrink-0 <?php echo h(activity_color_class((string) ($activity['action'] ?? ''))); ?>">
+                                        </div>
                                         <div>
-                                            <p class="text-sm font-semibold"><?php echo h((string) ($activity['action'] ?? 'Activity')); ?><?php echo !empty($activity['entity_type']) ? ' - ' . h((string) $activity['entity_type']) : ''; ?></p>
-                                            <p class="text-xs text-slate-500"><?php echo h((string) (($activity['details'] ?? '') !== '' ? $activity['details'] : (($activity['user_name'] ?? 'System') . ' performed an action'))); ?></p>
-                                            <p class="text-[10px] text-slate-400 mt-1 uppercase font-bold"><?php echo h(time_ago((string) ($activity['created_at'] ?? ''))); ?></p>
+                                            <p class="text-sm font-semibold">
+                                                <?php echo h((string) ($activity['action'] ?? 'Activity')); ?>        <?php echo !empty($activity['entity_type']) ? ' - ' . h((string) $activity['entity_type']) : ''; ?>
+                                            </p>
+                                            <p class="text-xs text-slate-500">
+                                                <?php echo h((string) (($activity['details'] ?? '') !== '' ? $activity['details'] : (($activity['user_name'] ?? 'System') . ' performed an action'))); ?>
+                                            </p>
+                                            <p class="text-[10px] text-slate-400 mt-1 uppercase font-bold">
+                                                <?php echo h(time_ago((string) ($activity['created_at'] ?? ''))); ?></p>
                                         </div>
                                     </div>
                                 <?php endforeach; ?>
@@ -733,15 +772,18 @@ if ($repairTableStmt) {
                                 <div class="text-sm text-slate-500">No recent activity found for this repair shop yet.</div>
                             <?php endif; ?>
                         </div>
-                        <a href="reportsadmin.php?shop=<?php echo $shopQuery; ?>" class="w-full py-2.5 mt-6 border border-slate-200 dark:border-slate-800 rounded-lg text-sm font-semibold hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors text-center block">
+                        <a href="reportsadmin.php?shop=<?php echo $shopQuery; ?>"
+                            class="w-full py-2.5 mt-6 border border-slate-200 dark:border-slate-800 rounded-lg text-sm font-semibold hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors text-center block">
                             Open Reports
                         </a>
                     </div>
                 </div>
 
                 <div class="mt-8 grid grid-cols-1 gap-6">
-                    <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden">
-                        <div class="px-6 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+                    <div
+                        class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+                        <div
+                            class="px-6 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
                             <h3 class="text-lg font-bold">Active Repair Status</h3>
                             <div class="flex gap-2">
                                 <span class="size-3 rounded-full bg-blue-500"></span>
@@ -752,7 +794,8 @@ if ($repairTableStmt) {
                         </div>
                         <div class="overflow-x-auto">
                             <table class="w-full text-left">
-                                <thead class="bg-slate-50 dark:bg-slate-800/50 text-slate-500 text-xs font-bold uppercase tracking-wider">
+                                <thead
+                                    class="bg-slate-50 dark:bg-slate-800/50 text-slate-500 text-xs font-bold uppercase tracking-wider">
                                     <tr>
                                         <th class="px-6 py-4">Customer</th>
                                         <th class="px-6 py-4">Vehicle</th>
@@ -773,19 +816,28 @@ if ($repairTableStmt) {
                                             }
                                             ?>
                                             <tr class="hover:bg-slate-50/50 dark:hover:bg-slate-800/20 transition-colors">
-                                                <td class="px-6 py-4 font-semibold text-sm"><?php echo h((string) ($repair['customer_name'] ?? 'Unknown Customer')); ?></td>
+                                                <td class="px-6 py-4 font-semibold text-sm">
+                                                    <?php echo h((string) ($repair['customer_name'] ?? 'Unknown Customer')); ?>
+                                                </td>
                                                 <td class="px-6 py-4 text-sm"><?php echo h($vehicleLabel); ?></td>
-                                                <td class="px-6 py-4 text-sm"><?php echo h((string) (($repair['assigned_technician'] ?? '') !== '' ? $repair['assigned_technician'] : 'Unassigned')); ?></td>
-                                                <td class="px-6 py-4">
-                                                    <span class="px-2 py-1 rounded text-[10px] font-bold <?php echo h(repair_status_badge((string) ($repair['job_status'] ?? 'Queued'))); ?>"><?php echo h(strtoupper((string) ($repair['job_status'] ?? 'Queued'))); ?></span>
+                                                <td class="px-6 py-4 text-sm">
+                                                    <?php echo h((string) (($repair['assigned_technician'] ?? '') !== '' ? $repair['assigned_technician'] : 'Unassigned')); ?>
                                                 </td>
                                                 <td class="px-6 py-4">
-                                                    <div class="w-32 h-1.5 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
-                                                        <div class="bg-orange-500 h-full" style="width: <?php echo $progress; ?>%;"></div>
+                                                    <span
+                                                        class="px-2 py-1 rounded text-[10px] font-bold <?php echo h(repair_status_badge((string) ($repair['job_status'] ?? 'Queued'))); ?>"><?php echo h(strtoupper((string) ($repair['job_status'] ?? 'Queued'))); ?></span>
+                                                </td>
+                                                <td class="px-6 py-4">
+                                                    <div
+                                                        class="w-32 h-1.5 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
+                                                        <div class="bg-orange-500 h-full"
+                                                            style="width: <?php echo $progress; ?>%;"></div>
                                                     </div>
                                                 </td>
                                                 <td class="px-6 py-4">
-                                                    <a href="repairjobsadmin.php?shop=<?php echo $shopQuery; ?>" class="text-slate-400 hover:text-primary transition-colors" title="Open repair jobs">
+                                                    <a href="repairjobsadmin.php?shop=<?php echo $shopQuery; ?>"
+                                                        class="text-slate-400 hover:text-primary transition-colors"
+                                                        title="Open repair jobs">
                                                         <span class="material-symbols-outlined">open_in_new</span>
                                                     </a>
                                                 </td>
@@ -793,7 +845,8 @@ if ($repairTableStmt) {
                                         <?php endforeach; ?>
                                     <?php else: ?>
                                         <tr>
-                                            <td colspan="6" class="px-6 py-8 text-center text-sm text-slate-500">No active repair jobs yet.</td>
+                                            <td colspan="6" class="px-6 py-8 text-center text-sm text-slate-500">No active
+                                                repair jobs yet.</td>
                                         </tr>
                                     <?php endif; ?>
                                 </tbody>
@@ -808,7 +861,7 @@ if ($repairTableStmt) {
     <script>
         // Dropdown menu click handler
         document.querySelectorAll('.settings-dropdown-btn').forEach(button => {
-            button.addEventListener('click', function(e) {
+            button.addEventListener('click', function (e) {
                 e.preventDefault();
                 const dropdown = document.querySelector('[data-dropdown="settings"].settings-dropdown');
                 if (dropdown) {
@@ -818,7 +871,7 @@ if ($repairTableStmt) {
         });
 
         // Close dropdown when clicking outside
-        document.addEventListener('click', function(e) {
+        document.addEventListener('click', function (e) {
             const dropdownBtn = document.querySelector('.settings-dropdown-btn');
             const dropdown = document.querySelector('[data-dropdown="settings"].settings-dropdown');
             if (dropdown && dropdownBtn && !dropdownBtn.contains(e.target) && !dropdown.contains(e.target)) {
@@ -828,42 +881,42 @@ if ($repairTableStmt) {
     </script>
 
     <script>
-    (function() {
-        const sidebarToggle = document.getElementById('sidebarToggle');
-        const sidebar = document.getElementById('sidebar');
-        const sidebarOverlay = document.getElementById('sidebarOverlay');
-        const navLinks = document.querySelectorAll('aside a');
+        (function () {
+            const sidebarToggle = document.getElementById('sidebarToggle');
+            const sidebar = document.getElementById('sidebar');
+            const sidebarOverlay = document.getElementById('sidebarOverlay');
+            const navLinks = document.querySelectorAll('aside a');
 
-        if (sidebarToggle) {
-            sidebarToggle.addEventListener('click', function() {
-                sidebar.classList.toggle('-translate-x-full');
-                sidebarOverlay.classList.toggle('hidden');
-            });
-        }
+            if (sidebarToggle) {
+                sidebarToggle.addEventListener('click', function () {
+                    sidebar.classList.toggle('-translate-x-full');
+                    sidebarOverlay.classList.toggle('hidden');
+                });
+            }
 
-        if (sidebarOverlay) {
-            sidebarOverlay.addEventListener('click', function() {
-                sidebar.classList.add('-translate-x-full');
-                sidebarOverlay.classList.add('hidden');
-            });
-        }
-
-        navLinks.forEach(link => {
-            link.addEventListener('click', function() {
-                if (window.innerWidth < 768) {
+            if (sidebarOverlay) {
+                sidebarOverlay.addEventListener('click', function () {
                     sidebar.classList.add('-translate-x-full');
+                    sidebarOverlay.classList.add('hidden');
+                });
+            }
+
+            navLinks.forEach(link => {
+                link.addEventListener('click', function () {
+                    if (window.innerWidth < 768) {
+                        sidebar.classList.add('-translate-x-full');
+                        sidebarOverlay.classList.add('hidden');
+                    }
+                });
+            });
+
+            window.addEventListener('resize', function () {
+                if (window.innerWidth >= 768) {
+                    sidebar.classList.remove('-translate-x-full');
                     sidebarOverlay.classList.add('hidden');
                 }
             });
-        });
-
-        window.addEventListener('resize', function() {
-            if (window.innerWidth >= 768) {
-                sidebar.classList.remove('-translate-x-full');
-                sidebarOverlay.classList.add('hidden');
-            }
-        });
-    })();
+        })();
     </script>
 </body>
 
