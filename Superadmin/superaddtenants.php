@@ -1015,14 +1015,7 @@ function loadTenantDocumentsForReview($conn, $tenantID)
 
 function requiredTenantDocumentTypesForReview($registrationType = '')
 {
-    $registrationType = trim((string) $registrationType);
-    $registrationDocument = in_array($registrationType, ['DTI Registration', 'SEC Registration'], true)
-        ? $registrationType
-        : 'DTI Registration / SEC Registration';
-
     return [
-        $registrationDocument,
-        'Barangay Clearance',
         'Business Permit',
         'BIR 2303',
         'Government ID'
@@ -3037,150 +3030,236 @@ if (isset($_POST['createTenant'])) {
                 .replaceAll("'", "&#039;");
         }
 
-        function renderDocumentCard(documentItem, requiredLabel) {
-            const hasDocument = !!(documentItem && documentItem.file_path);
-            const documentType = requiredLabel || documentItem?.document_type || "Document";
-
-            if (!hasDocument) {
-                return `
-                    <div class="border border-amber-200 bg-amber-50 rounded-xl p-4">
-                        <div class="flex items-start gap-3">
-                            <span class="material-symbols-outlined text-amber-600">warning</span>
-                            <div>
-                                <p class="text-xs font-black uppercase tracking-widest text-amber-700">${escapeHtml(documentType)}</p>
-                                <p class="text-sm font-semibold text-amber-900 mt-2">Missing document</p>
-                                <p class="text-xs text-amber-700 mt-1">Ask the applicant to upload this required file before approval.</p>
-                            </div>
-                        </div>
-                    </div>
-                `;
-            }
-
-            const fileUrl = resolveDocumentUrl(documentItem.file_path);
-            const extension = String(documentItem.file_extension || documentItem.file_name?.split(".").pop() || "").toLowerCase();
-            const isImage = ["jpg", "jpeg", "png", "webp", "gif"].includes(extension);
-            const isPdf = extension === "pdf";
-            const status = documentItem.verification_status || "Pending";
-            const uploadedAt = documentItem.uploaded_at || "-";
-            const fileName = documentItem.file_name || "Uploaded document";
-            const fileSize = formatFileSize(documentItem.file_size);
-
-            const preview = isImage
-                ? `<img src="${escapeHtml(fileUrl)}"
-                         alt="${escapeHtml(documentType)}"
-                         class="w-full h-40 object-cover rounded-lg border border-slate-200 bg-white mb-3"
-                         onerror="this.style.display='none'; this.nextElementSibling.classList.remove('hidden');" />
-                   <div class="hidden h-40 rounded-lg border border-dashed border-slate-300 mb-3 items-center justify-center text-xs text-slate-400 text-center px-3">
-                       Preview unavailable. Click View File to open it.
-                   </div>`
-                : `<div class="h-40 rounded-lg border border-slate-200 bg-white mb-3 flex flex-col items-center justify-center text-center px-4">
-                       <span class="material-symbols-outlined text-5xl ${isPdf ? 'text-red-600' : 'text-slate-500'}">${isPdf ? 'picture_as_pdf' : 'draft'}</span>
-                       <p class="text-xs font-bold text-slate-600 mt-2">${escapeHtml(extension.toUpperCase() || 'FILE')}</p>
-                       <p class="text-[11px] text-slate-400 mt-1">Preview opens in a new tab</p>
-                   </div>`;
-
-            return `
-                <div class="border border-slate-200 dark:border-slate-700 rounded-xl p-4 bg-slate-50 dark:bg-slate-800">
-                    <div class="flex items-start justify-between gap-3 mb-3">
-                        <div>
-                            <p class="text-xs font-black uppercase tracking-widest text-gray-500">${escapeHtml(documentType)}</p>
-                            <p class="text-sm font-semibold text-slate-800 dark:text-slate-100 mt-1 break-words">${escapeHtml(fileName)}</p>
-                        </div>
-                        <span class="shrink-0 px-2 py-1 rounded-md bg-blue-50 text-blue-700 text-[10px] font-black">${escapeHtml(status)}</span>
-                    </div>
-
-                    <a href="${escapeHtml(fileUrl)}" target="_blank" rel="noopener" class="block group">
-                        ${preview}
-                        <span class="inline-flex items-center justify-center w-full px-3 py-2 bg-red-600 text-white text-xs font-bold rounded-lg hover:bg-red-700 transition-colors">
-                            <span class="material-symbols-outlined text-sm mr-1">open_in_new</span>
-                            View File
-                        </span>
-                    </a>
-
-                    <div class="grid grid-cols-2 gap-3 mt-3 text-xs text-slate-500">
-                        <div>
-                            <p class="font-bold uppercase text-[10px] text-slate-400">Size</p>
-                            <p>${escapeHtml(fileSize)}</p>
-                        </div>
-                        <div>
-                            <p class="font-bold uppercase text-[10px] text-slate-400">Uploaded</p>
-                            <p>${escapeHtml(uploadedAt)}</p>
-                        </div>
-                    </div>
+// Get the document icon based on file type
+function getDocumentIcon(extension) {
+    const ext = String(extension || '').toLowerCase();
+    if (['jpg', 'jpeg', 'png', 'webp', 'gif'].includes(ext)) {
+        return 'image';
+    }
+    if (ext === 'pdf') {
+        return 'picture_as_pdf';
+    }
+    return 'draft';
+}
+ 
+// Get the document icon color
+function getDocumentIconColor(extension) {
+    const ext = String(extension || '').toLowerCase();
+    if (ext === 'pdf') return 'text-red-600';
+    if (['jpg', 'jpeg', 'png', 'webp', 'gif'].includes(ext)) return 'text-blue-600';
+    return 'text-slate-500';
+}
+ 
+// Format file size to human readable format
+function formatFileSize(bytes) {
+    const size = Number(bytes || 0);
+    if (size <= 0) return "-";
+    if (size < 1024 * 1024) return (size / 1024).toFixed(1) + " KB";
+    return (size / (1024 * 1024)).toFixed(2) + " MB";
+}
+ 
+// Resolve document URL
+function resolveDocumentUrl(filePath) {
+    if (!filePath || String(filePath).trim() === "") return "";
+    const cleanPath = String(filePath).replace(/^\/+/, "");
+    return cleanPath.startsWith("http://") || cleanPath.startsWith("https://") 
+        ? cleanPath 
+        : "../" + cleanPath;
+}
+ 
+// Escape HTML entities
+function escapeHtml(value) {
+    return String(value ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+}
+ 
+// Render a single document card
+function renderDocumentCard(documentItem, requiredLabel) {
+    const hasDocument = !!(documentItem && documentItem.file_path);
+    const documentType = requiredLabel || documentItem?.document_type || "Document";
+ 
+    // MISSING DOCUMENT
+    if (!hasDocument) {
+        return `
+            <div class="border-2 border-amber-200 bg-amber-50 rounded-xl p-4 flex flex-col items-center justify-center text-center h-full min-h-48">
+                <span class="material-symbols-outlined text-amber-600 text-5xl mb-3">file_present</span>
+                <p class="text-xs font-black uppercase tracking-widest text-amber-700 mb-2">${escapeHtml(documentType)}</p>
+                <p class="text-sm font-semibold text-amber-900">Missing</p>
+                <p class="text-xs text-amber-700 mt-2">Document not uploaded</p>
+            </div>
+        `;
+    }
+ 
+    // HAS DOCUMENT
+    const fileUrl = resolveDocumentUrl(documentItem.file_path);
+    const extension = String(documentItem.file_extension || documentItem.file_name?.split(".").pop() || "").toLowerCase();
+    const isImage = ["jpg", "jpeg", "png", "webp", "gif"].includes(extension);
+    const isPdf = extension === "pdf";
+    const status = documentItem.verification_status || "Pending";
+    const fileName = documentItem.file_name || "Uploaded document";
+    const fileSize = formatFileSize(documentItem.file_size);
+    const uploadedAt = documentItem.uploaded_at ? new Date(documentItem.uploaded_at).toLocaleDateString() : "-";
+ 
+    // Build preview section
+    let preview = '';
+    if (isImage) {
+        preview = `
+            <div class="mb-3 rounded-lg overflow-hidden border border-slate-200 bg-white">
+                <img src="${escapeHtml(fileUrl)}"
+                     alt="${escapeHtml(documentType)}"
+                     class="w-full h-40 object-cover"
+                     onerror="this.style.display='none'; this.nextElementSibling.classList.remove('hidden');" />
+                <div class="hidden h-40 rounded-lg border border-dashed border-slate-300 items-center justify-center text-xs text-slate-400 text-center px-3 bg-slate-50 flex">
+                    Image preview unavailable
                 </div>
-            `;
+            </div>
+        `;
+    } else if (isPdf) {
+        preview = `
+            <div class="mb-3 rounded-lg border border-slate-200 bg-white flex flex-col items-center justify-center h-40">
+                <span class="material-symbols-outlined text-red-600 text-4xl">picture_as_pdf</span>
+                <p class="text-xs text-slate-400 mt-2">PDF Document</p>
+            </div>
+        `;
+    } else {
+        preview = `
+            <div class="mb-3 rounded-lg border border-slate-200 bg-white flex flex-col items-center justify-center h-40">
+                <span class="material-symbols-outlined text-slate-400 text-4xl">draft</span>
+                <p class="text-xs text-slate-400 mt-2">${escapeHtml(extension.toUpperCase() || 'FILE')}</p>
+            </div>
+        `;
+    }
+ 
+    // Status badge colors
+    const statusStyles = {
+        'Pending': 'bg-amber-100 text-amber-700',
+        'Approved': 'bg-green-100 text-green-700',
+        'Verified': 'bg-green-100 text-green-700',
+        'Rejected': 'bg-red-100 text-red-700'
+    };
+    const statusClass = statusStyles[status] || 'bg-slate-100 text-slate-700';
+ 
+    return `
+        <div class="border border-slate-200 dark:border-slate-700 rounded-xl p-4 bg-white dark:bg-slate-800 flex flex-col h-full">
+            <div class="flex items-start justify-between gap-2 mb-3">
+                <div class="flex-1">
+                    <p class="text-xs font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">${escapeHtml(documentType)}</p>
+                    <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Uploaded: ${escapeHtml(uploadedAt)}</p>
+                </div>
+                <span class="shrink-0 px-2 py-1 rounded text-xs font-bold whitespace-nowrap ${statusClass}">
+                    ${escapeHtml(status)}
+                </span>
+            </div>
+ 
+            ${preview}
+ 
+            <a href="${escapeHtml(fileUrl)}" target="_blank" rel="noopener" 
+               class="inline-flex items-center justify-center gap-2 w-full px-3 py-2 bg-red-600 hover:bg-red-700 text-white text-xs font-bold rounded-lg transition-colors mb-3">
+                <span class="material-symbols-outlined text-sm">open_in_new</span>
+                Open File
+            </a>
+ 
+            <div class="text-xs text-slate-500 dark:text-slate-400 space-y-1">
+                <div class="flex justify-between">
+                    <span class="font-medium">File:</span>
+                    <span class="text-right break-words">${escapeHtml(fileName)}</span>
+                </div>
+                <div class="flex justify-between">
+                    <span class="font-medium">Size:</span>
+                    <span>${escapeHtml(fileSize)}</span>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+ function renderApplicantDocuments(documents, requiredTypes) {
+    const grid = document.getElementById("reviewDocumentsGrid");
+    const summary = document.getElementById("reviewDocumentSummary");
+    const missingBox = document.getElementById("reviewMissingDocuments");
+    const missingList = document.getElementById("missingDocList");
+ 
+    if (!grid) return;
+ 
+    // Normalize inputs
+    const docs = Array.isArray(documents) ? documents : [];
+    const required = Array.isArray(requiredTypes) && requiredTypes.length > 0
+        ? requiredTypes
+        : ["Business Permit", "BIR 2303", "Government ID"];
+ 
+    const normalizedDocs = docs.map((doc) => ({
+        ...doc,
+        document_type: String(doc.document_type || "").trim()
+    }));
+ 
+    const cards = [];
+    const missing = [];
+ 
+    // Process each required document type
+    required.forEach((requiredType) => {
+        let documentItem = null;
+ 
+        // Handle DTI/SEC Registration as a combined type
+        if (requiredType === "DTI Registration / SEC Registration") {
+            documentItem = normalizedDocs.find((doc) => 
+                doc.document_type === "DTI Registration" || 
+                doc.document_type === "SEC Registration"
+            );
+        } else {
+            documentItem = normalizedDocs.find((doc) => doc.document_type === requiredType);
         }
-
-        function renderApplicantDocuments(documents, requiredTypes) {
-            const grid = document.getElementById("reviewDocumentsGrid");
-            const summary = document.getElementById("reviewDocumentSummary");
-            const missingBox = document.getElementById("reviewMissingDocuments");
-
-            if (!grid) return;
-
-            const docs = Array.isArray(documents) ? documents : [];
-            const required = Array.isArray(requiredTypes) && requiredTypes.length > 0
-                ? requiredTypes
-                : ["DTI Registration / SEC Registration", "Barangay Clearance", "Business Permit", "BIR 2303", "Government ID"];
-
-            const normalizedDocs = docs.map((doc) => ({
-                ...doc,
-                document_type: String(doc.document_type || "").trim()
-            }));
-
-            const cards = [];
-            const missing = [];
-
-            required.forEach((requiredType) => {
-                let documentItem = null;
-
-                if (requiredType === "DTI Registration / SEC Registration") {
-                    documentItem = normalizedDocs.find((doc) => doc.document_type === "DTI Registration" || doc.document_type === "SEC Registration");
-                } else {
-                    documentItem = normalizedDocs.find((doc) => doc.document_type === requiredType);
-                }
-
-                if (!documentItem) {
-                    missing.push(requiredType);
-                }
-
-                cards.push(renderDocumentCard(documentItem, requiredType));
-            });
-
-            // Show any extra uploaded documents too.
-            normalizedDocs.forEach((doc) => {
-                const alreadyRendered = required.some((requiredType) => {
-                    if (requiredType === "DTI Registration / SEC Registration") {
-                        return doc.document_type === "DTI Registration" || doc.document_type === "SEC Registration";
-                    }
-                    return doc.document_type === requiredType;
-                });
-
-                if (!alreadyRendered) {
-                    cards.push(renderDocumentCard(doc, doc.document_type || "Other Document"));
-                }
-            });
-
-            grid.innerHTML = cards.join("");
-
-            if (summary) {
-                const uploadedCount = required.length - missing.length;
-                summary.textContent = `${uploadedCount} of ${required.length} uploaded`;
-                summary.className = missing.length === 0
-                    ? "text-xs font-bold px-3 py-1.5 rounded-full bg-green-100 text-green-700"
-                    : "text-xs font-bold px-3 py-1.5 rounded-full bg-amber-100 text-amber-700";
-            }
-
-            if (missingBox) {
-                if (missing.length > 0) {
-                    missingBox.classList.remove("hidden");
-                    missingBox.innerHTML = `<strong>Missing required document(s):</strong> ${missing.map(escapeHtml).join(", ")}`;
-                } else {
-                    missingBox.classList.add("hidden");
-                    missingBox.innerHTML = "";
-                }
-            }
+ 
+        if (!documentItem) {
+            missing.push(requiredType);
         }
+ 
+        cards.push(renderDocumentCard(documentItem, requiredType));
+    });
+ 
+    // Render any extra documents that were uploaded but not in required list
+    normalizedDocs.forEach((doc) => {
+        const alreadyRendered = required.some((requiredType) => {
+            if (requiredType === "DTI Registration / SEC Registration") {
+                return doc.document_type === "DTI Registration" || 
+                       doc.document_type === "SEC Registration";
+            }
+            return doc.document_type === requiredType;
+        });
+ 
+        if (!alreadyRendered) {
+            cards.push(renderDocumentCard(doc, doc.document_type || "Other Document"));
+        }
+    });
+ 
+    // Update grid
+    grid.innerHTML = cards.join("");
+ 
+    // Update summary badge
+    if (summary) {
+        const uploadedCount = required.length - missing.length;
+        summary.textContent = `${uploadedCount} of ${required.length} uploaded`;
+        summary.className = missing.length === 0
+            ? "text-xs font-bold px-3 py-1.5 rounded-full bg-green-100 text-green-700"
+            : missing.length === required.length
+            ? "text-xs font-bold px-3 py-1.5 rounded-full bg-red-100 text-red-700"
+            : "text-xs font-bold px-3 py-1.5 rounded-full bg-amber-100 text-amber-700";
+    }
+ 
+    // Update missing documents alert
+    if (missingBox && missingList) {
+        if (missing.length > 0) {
+            missingBox.classList.remove("hidden");
+            missingList.textContent = missing.map(escapeHtml).join(", ");
+        } else {
+            missingBox.classList.add("hidden");
+            missingList.textContent = "";
+        }
+    }
+}
 
         function openApplicantReview(tenantID, ownerName, shopName, shopAddress, email, contactNumber, subscriptionPlan, billingCycle, paymentStatus, paymentAmount, paymentMethod, planPrice, documentsOrBusinessPermit, requiredTypesOrValidId, birCertificateImage) {
             // Set applicant details

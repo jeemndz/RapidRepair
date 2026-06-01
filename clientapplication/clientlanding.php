@@ -1636,7 +1636,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['createTenantApplicati
 
                             <div class="grid grid-cols-2 gap-4">
                                 <div class="rounded-2xl bg-blue-50 border border-blue-100 p-5">
-                                    <p class="text-3xl font-black text-primary">6</p>
+                                    <p class="text-3xl font-black text-primary">8</p>
                                     <p class="text-xs font-bold text-slate-500 uppercase tracking-wider mt-1">Core Modules</p>
                                 </div>
 

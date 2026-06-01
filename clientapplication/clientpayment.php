@@ -453,14 +453,10 @@ $checkoutAmountCentavos = (int) round($displayAmount * 100);
                                 </div>
 
                                 <div class="flex justify-between items-center text-sm border-t border-slate-800 pt-4">
-                                    <span class="text-slate-400">Subtotal</span>
+                                    <span class="text-slate-400">Total</span>
                                     <span id="subtotalPrice">₱<?php echo number_format($displayAmount, 2); ?></span>
                                 </div>
 
-                                <div class="flex justify-between items-center text-sm">
-                                    <span class="text-slate-400">Tax (0%)</span>
-                                    <span>₱0.00</span>
-                                </div>
 
                                 <div class="flex justify-between items-center text-sm">
                                     <span class="text-slate-400">Setup Fee</span>
