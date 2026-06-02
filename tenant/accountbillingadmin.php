@@ -66,6 +66,18 @@ function get_plan_amount(array $plan, string $billingCycle): float
                 return (float) $plan[$column] * 12;
             }
         }
+    } elseif ($billingCycle === 'quarterly') {
+        foreach (['quarterly_price', 'quarter_price', 'price_quarterly'] as $column) {
+            if (isset($plan[$column]) && $plan[$column] !== '') {
+                return (float) $plan[$column];
+            }
+        }
+
+        foreach (['monthly_price', 'price', 'amount', 'plan_price'] as $column) {
+            if (isset($plan[$column]) && $plan[$column] !== '') {
+                return (float) $plan[$column] * 3;
+            }
+        }
     }
 
     foreach (['monthly_price', 'price', 'amount', 'plan_price'] as $column) {
@@ -83,6 +95,13 @@ function get_plan_features(array $plan): array
 
     if (!empty($plan['plan_features'])) {
         $decodedFeatures = json_decode((string) $plan['plan_features'], true);
+        if (is_array($decodedFeatures)) {
+            foreach ($decodedFeatures as $feature) {
+                if (trim((string) $feature) !== '') {
+                    $features[] = trim((string) $feature);
+                }
+            }
+        }
     } elseif (!empty($plan['features'])) {
         $decodedFeatures = json_decode((string) $plan['features'], true);
         if (is_array($decodedFeatures)) {
@@ -205,9 +224,40 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && (!isset($_GET['shop']) || trim((stri
 
 /*
 |--------------------------------------------------------------------------
+| Document Expiry & Suspension Logic
+|--------------------------------------------------------------------------
+*/
+$isDocExpired = false;
+$isDocExpiringSoon = false;
+$docExpiryDate = null;
+$hasDocumentRecord = false;
+
+$docStmt = mysqli_prepare($conn, "SELECT expiry_date FROM document_extractions WHERE tenantID = ? AND document_type = 'Business Permit' ORDER BY expiry_date DESC LIMIT 1");
+if ($docStmt) {
+    mysqli_stmt_bind_param($docStmt, 'i', $tenantID);
+    mysqli_stmt_execute($docStmt);
+    $docRes = mysqli_stmt_get_result($docStmt);
+    if ($row = mysqli_fetch_assoc($docRes)) {
+        $hasDocumentRecord = true;
+        $docExpiryDate = $row['expiry_date'];
+        $today = new DateTime();
+        $expiry = new DateTime($docExpiryDate);
+        $interval = $today->diff($expiry);
+        $daysRemaining = (int)$interval->format('%r%a');
+
+        if ($daysRemaining < 0) {
+            $isDocExpired = true;
+        } elseif ($daysRemaining <= 30) {
+            $isDocExpiringSoon = true;
+        }
+    }
+    mysqli_stmt_close($docStmt);
+}
+
+/*
+|--------------------------------------------------------------------------
 | Get latest subscription from subscriptions table
 |--------------------------------------------------------------------------
-| Do NOT read plan_id from owners because owners has no plan_id column.
 */
 $ownerSubscription = null;
 
@@ -260,7 +310,7 @@ if ($planNameColumn === '') {
     $planNameColumn = 'plan_name';
 }
 
-$planStatusColumn = get_first_existing_column($conn, 'subscription_plans', ['status', 'is_active']);
+$planStatusColumn = get_first_existing_column($conn, 'subscription_plans', ['is_active', 'status']);
 
 $planWhereSql = '';
 if ($planStatusColumn === 'is_active') {
@@ -279,7 +329,15 @@ if ($plansResult) {
     }
 }
 
-$selectedBillingCycle = isset($_GET['billing_cycle']) && $_GET['billing_cycle'] === 'yearly' ? 'yearly' : 'monthly';
+// Allowed values: monthly, quarterly, yearly
+$selectedBillingCycle = 'monthly';
+if (isset($_GET['billing_cycle'])) {
+    if ($_GET['billing_cycle'] === 'yearly') {
+        $selectedBillingCycle = 'yearly';
+    } elseif ($_GET['billing_cycle'] === 'quarterly') {
+        $selectedBillingCycle = 'quarterly';
+    }
+}
 
 /*
 |--------------------------------------------------------------------------
@@ -429,7 +487,6 @@ if ($invoiceStmt) {
 </head>
 
 <body class="bg-slate-50 text-slate-900 antialiased">
-    <!-- Mobile Menu Toggle -->
     <div class="md:hidden fixed top-0 left-0 right-0 bg-white border-b border-slate-200 px-4 py-3 z-50 flex items-center justify-between">
         <button id="sidebarToggle" type="button" class="inline-flex items-center justify-center w-10 h-10 rounded-lg hover:bg-slate-100 transition-colors">
             <span class="material-symbols-outlined">menu</span>
@@ -622,24 +679,66 @@ if ($invoiceStmt) {
                 <p class="text-slate-600 font-medium mt-1">Manage your professional shop plan and payment settings.</p>
             </div>
 
+            <?php if (!$hasDocumentRecord): ?>
+                <div class="mb-6 p-4 bg-green-50 border border-green-200 rounded-xl flex items-center gap-4">
+                    <span class="material-symbols-outlined text-green-600">info</span>
+                    <p class="text-green-800 text-sm font-medium">
+                        Your Documents are up to date. (No action needed for Business Permit cycle which requires renewal action at this time).
+                    </p>
+                </div>
+            <?php elseif ($hasDocumentRecord && !$isDocExpired && !$isDocExpiringSoon): ?>
+                <div class="mb-6 p-4 bg-green-50 border border-green-200 rounded-xl flex items-center gap-4">
+                    <span class="material-symbols-outlined text-green-600">check_circle</span>
+                    <p class="text-green-800 text-sm font-medium">
+                        Your Documents are up to date.
+                    </p>
+                </div>
+            <?php endif; ?>
+
+            <?php if ($isDocExpiringSoon): ?>
+                <div class="mb-6 p-4 bg-amber-50 border border-amber-200 rounded-xl flex items-start gap-4">
+                    <span class="material-symbols-outlined text-amber-600">warning</span>
+                    <p class="text-amber-800 text-sm font-medium">
+                        Your business permit is nearly expiring (<?php echo date('M d, Y', strtotime($docExpiryDate)); ?>) and might affect your subscription plan. 
+                        Please update your documents to avoid account suspension.
+                    </p>
+                </div>
+            <?php endif; ?>
+
+            <?php if ($isDocExpired): ?>
+                <div class="mb-6 p-8 bg-red-50 border border-red-200 rounded-xl text-center">
+                    <span class="material-symbols-outlined text-red-600 text-5xl mb-4">block</span>
+                    <h3 class="text-red-800 text-xl font-black">Account Suspended</h3>
+                    <p class="text-red-700 font-medium mt-2">
+                        Your Account is currently suspended because of expired documents. 
+                        The Business Permit on file expired on <strong><?php echo date('M d, Y', strtotime($docExpiryDate)); ?></strong>.
+                    </p>
+                    <a href="settingsadmin.php?shop=<?php echo h($shopQuery); ?>" class="inline-block mt-6 px-6 py-2 bg-red-600 text-white rounded-lg font-bold hover:bg-red-700">
+                        Update Documents
+                    </a>
+                </div>
+            <?php endif; ?>
+
             <div class="grid grid-cols-12 gap-6">
                 <div class="col-span-12 lg:col-span-5 bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden flex flex-col">
-                    <div class="p-6 bg-blue-700 text-white">
+                    <div class="p-6 <?php echo $isDocExpired ? 'bg-slate-400' : 'bg-blue-700'; ?> text-white">
                         <div class="flex justify-between items-start">
                             <div>
                                 <span class="bg-white/20 text-[10px] font-bold px-2 py-1 rounded-full uppercase tracking-widest">
-                                    <?php echo $ownerSubscription ? h(ucfirst($ownerSubscription['status'])) : 'No Plan'; ?>
+                                    <?php echo ($ownerSubscription && !$isDocExpired) ? h(ucfirst($ownerSubscription['status'])) : ($isDocExpired ? 'Suspended' : 'No Plan'); ?>
                                 </span>
 
                                 <h3 class="text-2xl font-black mt-2 tracking-tight">
-                                    <?php echo $ownerSubscription ? h($ownerSubscription['subscription_plan']) : 'No Active Subscription'; ?>
+                                    <?php echo ($ownerSubscription && !$isDocExpired) ? h($ownerSubscription['subscription_plan']) : ($isDocExpired ? 'Subscription Inactive' : 'No Active Subscription'); ?>
                                 </h3>
                             </div>
 
-                            <span class="material-symbols-outlined text-3xl opacity-50">verified</span>
+                            <span class="material-symbols-outlined text-3xl opacity-50">
+                                <?php echo $isDocExpired ? 'lock' : 'verified'; ?>
+                            </span>
                         </div>
 
-                        <?php if ($ownerSubscription && $ownerSubscription['amount']): ?>
+                        <?php if ($ownerSubscription && $ownerSubscription['amount'] && !$isDocExpired): ?>
                             <div class="mt-8">
                                 <span class="text-4xl font-black tracking-tighter">
                                     <?php echo format_currency($ownerSubscription['amount']); ?>
@@ -652,7 +751,7 @@ if ($invoiceStmt) {
                     </div>
 
                     <div class="p-6 flex-1 space-y-4">
-                        <?php if ($ownerSubscription): ?>
+                        <?php if ($ownerSubscription && !$isDocExpired): ?>
 
                             <div class="flex justify-between items-center text-sm border-b border-slate-100 pb-3">
                                 <span class="text-slate-600">Plan Started</span>
@@ -694,6 +793,11 @@ if ($invoiceStmt) {
                                 </form>
                             <?php endif; ?>
 
+                        <?php elseif ($isDocExpired): ?>
+                            <div class="text-sm text-slate-600 py-4 text-center">
+                                <p class="mb-2">Subscription features are locked.</p>
+                                <p class="text-xs">Once your documents are verified, your plan will be restored.</p>
+                            </div>
                         <?php else: ?>
                             <div class="text-sm text-slate-600 py-4">
                                 <p class="mb-4">No active subscription plan. Choose a plan to get started.</p>
@@ -766,6 +870,7 @@ if ($invoiceStmt) {
                                         </div>
                                     </div>
 
+                                    <?php if (!$isDocExpired): ?>
                                     <div class="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                                         <?php if (!$pm['is_primary']): ?>
                                             <form method="post" class="inline">
@@ -786,6 +891,7 @@ if ($invoiceStmt) {
                                             </button>
                                         </form>
                                     </div>
+                                    <?php endif; ?>
                                 </div>
                             <?php endforeach; ?>
                         <?php else: ?>
@@ -797,6 +903,7 @@ if ($invoiceStmt) {
                     </div>
                 </div>
 
+                <?php if (!$isDocExpired): ?>
                 <div id="change-plan" class="col-span-12 bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
                     <div class="p-6 border-b border-slate-100 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
                         <div>
@@ -808,6 +915,10 @@ if ($invoiceStmt) {
                             <a href="accountbillingadmin.php?shop=<?php echo h($shopQuery); ?>&billing_cycle=monthly"
                                class="px-4 py-2 rounded-lg text-sm font-bold <?php echo $selectedBillingCycle === 'monthly' ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-600 hover:text-blue-700'; ?>">
                                 Monthly
+                            </a>
+                            <a href="accountbillingadmin.php?shop=<?php echo h($shopQuery); ?>&billing_cycle=quarterly"
+                               class="px-4 py-2 rounded-lg text-sm font-bold <?php echo $selectedBillingCycle === 'quarterly' ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-600 hover:text-blue-700'; ?>">
+                                Quarterly
                             </a>
                             <a href="accountbillingadmin.php?shop=<?php echo h($shopQuery); ?>&billing_cycle=yearly"
                                class="px-4 py-2 rounded-lg text-sm font-bold <?php echo $selectedBillingCycle === 'yearly' ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-600 hover:text-blue-700'; ?>">
@@ -889,17 +1000,10 @@ if ($invoiceStmt) {
                                     </div>
                                 <?php endforeach; ?>
                             </div>
-
-                            <div class="mt-6 rounded-xl bg-amber-50 border border-amber-100 p-4 text-sm text-amber-800">
-                                <strong>Note:</strong> The plan will be changed after successful PayMongo payment and webhook/success confirmation updates the subscription record.
-                            </div>
-                        <?php else: ?>
-                            <div class="rounded-xl bg-slate-50 border border-slate-200 p-6 text-center text-sm text-slate-600">
-                                No subscription plans found. Add records in your <code class="font-bold">subscription_plans</code> table first.
-                            </div>
                         <?php endif; ?>
                     </div>
                 </div>
+                <?php endif; ?>
 
 
                 <div class="col-span-12 bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
