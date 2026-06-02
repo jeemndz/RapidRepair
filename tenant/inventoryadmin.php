@@ -94,7 +94,7 @@ if ($logoStmt) {
 $shopQuery = urlencode($loginSlug);
 $currentScript = basename($_SERVER['PHP_SELF']);
 if (!isset($_GET['shop']) || trim((string) $_GET['shop']) !== $loginSlug) {
-    header('Location: /RapidRepair/tenant/inventoryadmin.php?shop=' . $shopQuery);
+    header('Location: /tenant/inventoryadmin.php?shop=' . $shopQuery);
     exit;
 }
 
