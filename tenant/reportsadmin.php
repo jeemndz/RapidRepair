@@ -973,7 +973,7 @@ $shopParts = explode(' ', trim($shopName), 2);
                         <?php
                         $sectionLabels = [
                             'summary' => 'Summary',
-                            'revenue' => 'Revenue',
+                            'revenue' => 'Sales',
                             'appointments' => 'Appointments',
                             'payments' => 'Payments',
                             'technicians' => 'Technicians',

@@ -414,7 +414,7 @@ if (($_SESSION['userType'] ?? '') === 'owner') {
                         <div class="border border-slate-200 rounded-lg p-4 bg-white">
                             <div class="p-2 bg-purple-50 rounded-lg inline-flex mb-3"><span
                                     class="material-symbols-outlined text-purple-600">table_rows</span></div>
-                            <p class="text-sm text-slate-500">Database Records</p>
+                            <p class="text-sm text-slate-500">Total Records</p>
                             <p id="totalRecords" class="text-2xl font-black text-slate-800">0</p>
                         </div>
 

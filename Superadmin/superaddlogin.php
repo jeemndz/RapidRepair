@@ -60,39 +60,140 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
     <meta http-equiv="Pragma" content="no-cache" />
     <meta http-equiv="Expires" content="0" />
-    <title>Login | RepidRepair</title>
+    <title>Login | RapidRepair</title>
     <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link
-        href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap"
-        rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet">
         
     <style>
         body { 
             font-family: 'Inter', sans-serif; 
         }
+
+        /* --- BACKGROUND & CONTAINER ANIMATIONS --- */
+        
+        /* 1. Subtle Infinite Grid Panning */
+        @keyframes gridPan {
+            from { background-position: 0 0; }
+            to { background-position: 40px 40px; }
+        }
+
+        .tech-grid-bg {
+            background-color: #18181b;
+            background-image: 
+                linear-gradient(to right, rgba(255,255,255,0.03) 1px, transparent 1px),
+                linear-gradient(to bottom, rgba(255,255,255,0.03) 1px, transparent 1px);
+            background-size: 40px 40px;
+            animation: gridPan 24s linear infinite;
+        }
+
+        /* 2. Container Slide-Up and Fade-In on Load */
+        @keyframes fadeInUp {
+            from {
+                opacity: 0;
+                transform: translateY(15px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .animate-fade-in-up {
+            animation: fadeInUp 0.65s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        }
+
+        /* 3. Left Branding Mesh Shifting Gradient */
+        @keyframes gradientXY {
+            0%, 100% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+        }
+
+        .animate-gradient-xy {
+            background-size: 200% 200%;
+            animation: gradientXY 12s ease infinite;
+        }
+
+        /* 4. Floating Decorative Automotive Icons */
+        @keyframes floatSlow {
+            0%, 100% { transform: translateY(0px) rotate(0deg); }
+            50% { transform: translateY(-15px) rotate(6deg); }
+        }
+
+        @keyframes floatReverse {
+            0%, 100% { transform: translateY(0px) rotate(0deg); }
+            50% { transform: translateY(12px) rotate(-8deg); }
+        }
+
+        .animate-float-slow {
+            animation: floatSlow 8s ease-in-out infinite;
+        }
+
+        .animate-float-reverse {
+            animation: floatReverse 10s ease-in-out infinite;
+        }
     </style>
 </head>
 
-<body class="bg-zinc-900 min-h-screen flex items-center justify-center p-4">
-    <div class="w-full max-w-6xl bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden">
+<body class="tech-grid-bg min-h-screen flex items-center justify-center p-4 relative overflow-x-hidden">
+
+    <div class="absolute top-1/4 left-1/4 -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-red-900/10 rounded-full blur-[120px] pointer-events-none"></div>
+    <div class="absolute bottom-1/4 right-1/4 translate-x-1/2 translate-y-1/2 w-96 h-96 bg-zinc-800/40 rounded-full blur-[120px] pointer-events-none"></div>
+
+    <div class="absolute top-12 left-12 text-zinc-800/30 select-none pointer-events-none animate-float-slow hidden md:block">
+        <span class="material-symbols-outlined text-7xl" style="font-variation-settings: 'FILL' 1">build</span>
+    </div>
+    <div class="absolute bottom-16 left-24 text-zinc-800/20 select-none pointer-events-none animate-float-reverse hidden md:block">
+        <span class="material-symbols-outlined text-8xl">car_repair</span>
+    </div>
+    <div class="absolute top-24 right-24 text-zinc-800/20 select-none pointer-events-none animate-float-reverse hidden md:block">
+        <span class="material-symbols-outlined text-8xl">handyman</span>
+    </div>
+    <div class="absolute bottom-12 right-12 text-zinc-800/30 select-none pointer-events-none animate-float-slow hidden md:block">
+        <span class="material-symbols-outlined text-7xl" style="font-variation-settings: 'FILL' 1">settings</span>
+    </div>
+
+    <div class="w-full max-w-6xl bg-white rounded-2xl shadow-2xl border border-zinc-800/10 overflow-hidden animate-fade-in-up opacity-0 z-10">
         <div class="grid grid-cols-1 lg:grid-cols-2 min-h-[620px]">
-            <!-- Left Branding Container -->
-            <section class="bg-gradient-to-br from-black via-zinc-900 to-red-900 text-white p-10 lg:p-14 flex flex-col justify-center items-center text-center">
-                <img src="../pictures/RRlogo2.png" alt="Rapid Repair logo" class="w-44 md:w-56 h-auto object-contain mb-8 mx-auto">
-                <h1 class="text-3xl md:text-4xl font-bold leading-tight">RapidRepair Super Admin Portal</h1>
-                <p class="mt-3 text-slate-200 text-base md:text-lg max-w-md mx-auto">Car Repair Shop System</p>
-                <p class="mt-8 text-sm text-red-100/90 max-w-md mx-auto">Welcome back. Sign in to manage tenants, reports, and subscriptions.</p>
+            
+            <section class="bg-gradient-to-br from-black via-zinc-950 to-red-950 text-white p-10 lg:p-14 flex flex-col justify-center items-center text-center animate-gradient-xy relative group overflow-hidden">
+                <div class="absolute inset-0 bg-radial-gradient from-transparent via-black/20 to-black/50 pointer-events-none"></div>
+                
+                <div class="absolute top-6 left-6 text-white/5 select-none pointer-events-none animate-float-slow">
+                    <span class="material-symbols-outlined text-6xl">minor_crash</span>
+                </div>
+                <div class="absolute bottom-8 right-6 text-white/5 select-none pointer-events-none animate-float-reverse">
+                    <span class="material-symbols-outlined text-7xl" style="font-variation-settings: 'FILL' 1">settings</span>
+                </div>
+                
+                <div class="absolute top-1/4 right-8 w-16 h-16 border border-white/5 rounded-full flex items-center justify-center opacity-40 select-none pointer-events-none">
+                    <div class="w-8 h-[1px] bg-white/5"></div>
+                    <div class="h-8 w-[1px] bg-white/5 absolute"></div>
+                </div>
+
+                <div class="relative z-10">
+                    <img src="../pictures/RRlogo2.png" alt="Rapid Repair logo" class="w-44 md:w-56 h-auto object-contain mb-8 mx-auto drop-shadow-[0_4px_12px_rgba(220,38,38,0.15)] transition-transform duration-500 group-hover:scale-105">
+                    <h1 class="text-3xl md:text-4xl font-bold leading-tight tracking-tight">RapidRepair Super Admin Portal</h1>
+                    <p class="mt-3 text-slate-300 text-base md:text-lg max-w-md mx-auto">Car Repair Shop System</p>
+                    <p class="mt-8 text-sm text-red-200/80 max-w-md mx-auto">Welcome back. Sign in to manage tenants, reports, and subscriptions.</p>
+                </div>
             </section>
 
-            <!-- Right Login Container -->
-            <section class="p-8 md:p-12 flex flex-col justify-center">
-                <div class="mb-8">
+            <section class="p-8 md:p-12 flex flex-col justify-center bg-white relative overflow-hidden">
+                <div class="absolute -bottom-10 -right-10 text-slate-100/70 pointer-events-none select-none">
+                    <span class="material-symbols-outlined text-[180px] rotate-45 font-light">build</span>
+                </div>
+                
+                <div class="absolute top-8 right-8 text-slate-100/60 pointer-events-none select-none animate-float-slow hidden sm:block">
+                    <span class="material-symbols-outlined text-5xl">manage_accounts</span>
+                </div>
+
+                <div class="mb-8 relative z-10">
                     <h2 class="text-3xl font-bold text-slate-900">Log In</h2>
                     <p class="text-slate-500 text-sm mt-2">Please enter your credentials to access the SuperAdmin dashboard.</p>
                 </div>
 
-                <form class="space-y-5" method="POST" action="">
+                <form class="space-y-5 relative z-10" method="POST" action="">
                     <div class="space-y-2">
                         <label class="block text-sm font-medium text-slate-700" for="login_input">Username or Email</label>
                         <div class="relative">
@@ -152,7 +253,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                     </button>
                 </form>
 
-                <div class="mt-8 pt-6 border-t border-slate-200 flex items-center justify-between text-xs text-slate-400">
+                <div class="mt-8 pt-6 border-t border-slate-200 flex items-center justify-between text-xs text-slate-400 relative z-10">
                     <span>Encrypted Connection</span>
                     <span>Secure Connection</span>
                 </div>
