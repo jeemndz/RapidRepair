@@ -263,7 +263,7 @@ try {
         'reference_number' => $referenceNumber,
         'reservation_paid' => 1,
         'reservation_payment_status' => 'Paid',
-        'appointment_status' => 'Confirmed',
+        'appointment_status' => 'Pending',
         'payment_recorded' => $paymentRecorded,
         'payment_warning' => $paymentInsertWarning
     ]);
